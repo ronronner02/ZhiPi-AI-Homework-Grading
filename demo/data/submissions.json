@@ -1,0 +1,141 @@
+{
+  "class_id": "C001",
+  "class_name": "初二(3)班",
+  "submissions": [
+    {
+      "submission_id": "SUB001",
+      "question_id": "Q001",
+      "student_id": "S001",
+      "student_name": "张明",
+      "class_id": "C001",
+      "ocr": {"text": "x²-5x+6=0\n(x-2)(x-3)=0\nx₁=2, x₂=3", "clarity": 96},
+      "confidence_factors": {"ocr_clarity": 96, "answer_match": 95, "rubric_coverage": 100, "llm_self_consistency": 92, "teacher_pass_rate": 88},
+      "step_annotations": [
+        {"step_id": 1, "is_correct": true, "reason": "选择因式分解法，方法得当"},
+        {"step_id": 2, "is_correct": true, "reason": "分解为 (x-2)(x-3)，展开还原正确"},
+        {"step_id": 3, "is_correct": true, "reason": "求得 x₁=2，x₂=3，两根正确"},
+        {"step_id": 4, "is_correct": true, "reason": "两根书写完整、规范"}
+      ]
+    },
+    {
+      "submission_id": "SUB002",
+      "question_id": "Q001",
+      "student_id": "S002",
+      "student_name": "李华",
+      "class_id": "C001",
+      "ocr": {"text": "x²-5x+6=0\n(x-2)(x-3)=0\nx=2", "clarity": 88},
+      "confidence_factors": {"ocr_clarity": 88, "answer_match": 70, "rubric_coverage": 85, "llm_self_consistency": 68, "teacher_pass_rate": 80},
+      "step_annotations": [
+        {"step_id": 1, "is_correct": true, "reason": "选择因式分解法，方法得当"},
+        {"step_id": 2, "is_correct": true, "reason": "分解为 (x-2)(x-3)，正确"},
+        {"step_id": 3, "is_correct": false, "partial_ratio": 0.34, "error_tag": "步骤缺失", "reason": "只求出 x=2，漏掉由 (x-3)=0 得到的 x=3"},
+        {"step_id": 4, "is_correct": false, "error_tag": "表达不完整", "reason": "结论只写一个根，未完整给出两个解"}
+      ]
+    },
+    {
+      "submission_id": "SUB003",
+      "question_id": "Q001",
+      "student_id": "S003",
+      "student_name": "王芳",
+      "class_id": "C001",
+      "ocr": {"text": "x²-5x+6=0\n(x-2)(x+3)=0\nx=-2, x=-3", "clarity": 55},
+      "confidence_factors": {"ocr_clarity": 55, "answer_match": 45, "rubric_coverage": 60, "llm_self_consistency": 50, "teacher_pass_rate": 70},
+      "step_annotations": [
+        {"step_id": 1, "is_correct": true, "reason": "尝试用因式分解法，方向正确"},
+        {"step_id": 2, "is_correct": false, "error_tag": "计算错误", "reason": "分解写成 (x-2)(x+3)，展开常数项为 -6，与原式 +6 不符"},
+        {"step_id": 3, "is_correct": false, "error_tag": "符号书写错误", "reason": "由错误分解得根，正负号处理有误，应为 x₁=2，x₂=3"},
+        {"step_id": 4, "is_correct": false, "error_tag": "表达不完整", "reason": "卷面字迹模糊，最终结论难以辨认"}
+      ]
+    },
+    {
+      "submission_id": "SUB004",
+      "question_id": "Q002",
+      "student_id": "S004",
+      "student_name": "赵磊",
+      "class_id": "C001",
+      "ocr": {"text": "v = s/t = 200/20 = 10 m/s", "clarity": 97},
+      "confidence_factors": {"ocr_clarity": 97, "answer_match": 96, "rubric_coverage": 100, "llm_self_consistency": 94, "teacher_pass_rate": 90},
+      "step_annotations": [
+        {"step_id": 1, "is_correct": true, "reason": "写出速度公式 v=s/t，正确"},
+        {"step_id": 2, "is_correct": true, "reason": "代入 200/20，数值正确"},
+        {"step_id": 3, "is_correct": true, "reason": "计算结果 10，正确"},
+        {"step_id": 4, "is_correct": true, "reason": "单位 m/s，正确"}
+      ]
+    },
+    {
+      "submission_id": "SUB005",
+      "question_id": "Q002",
+      "student_id": "S005",
+      "student_name": "陈伟",
+      "class_id": "C001",
+      "ocr": {"text": "v = s/t = 200/20 = 10 km/s", "clarity": 94},
+      "confidence_factors": {"ocr_clarity": 94, "answer_match": 90, "rubric_coverage": 100, "llm_self_consistency": 90, "teacher_pass_rate": 85},
+      "step_annotations": [
+        {"step_id": 1, "is_correct": true, "reason": "写出速度公式 v=s/t，正确"},
+        {"step_id": 2, "is_correct": true, "reason": "代入 200/20，数值正确"},
+        {"step_id": 3, "is_correct": true, "reason": "计算结果 10，正确"},
+        {"step_id": 4, "is_correct": false, "error_tag": "单位错误", "reason": "结果单位应为 m/s，学生写成 km/s，属单位表达错误"}
+      ]
+    },
+    {
+      "submission_id": "SUB006",
+      "question_id": "Q002",
+      "student_id": "S006",
+      "student_name": "孙涛",
+      "class_id": "C001",
+      "ocr": {"text": "v = t/s = 20/200 = 0.1 m/s", "clarity": 82},
+      "confidence_factors": {"ocr_clarity": 82, "answer_match": 55, "rubric_coverage": 80, "llm_self_consistency": 62, "teacher_pass_rate": 72},
+      "step_annotations": [
+        {"step_id": 1, "is_correct": false, "error_tag": "公式选择错误", "reason": "速度公式应为 v=s/t，学生写成 v=t/s，公式倒置"},
+        {"step_id": 2, "is_correct": false, "reason": "沿用倒置公式代入，数值位置颠倒（受上一步影响）"},
+        {"step_id": 3, "is_correct": false, "reason": "基于错误公式得 0.1，结果不成立（受上一步影响）"},
+        {"step_id": 4, "is_correct": true, "reason": "速度单位 m/s 书写正确"}
+      ]
+    },
+    {
+      "submission_id": "SUB007",
+      "question_id": "Q003",
+      "student_id": "S007",
+      "student_name": "周琳",
+      "class_id": "C001",
+      "ocr": {"text": "Last weekend I had a great time. On Saturday morning I did my homework. In the afternoon I played basketball with my friends. On Sunday I visited my grandparents and helped them clean the house. We had a big dinner together. I felt very happy and relaxd.", "clarity": 92},
+      "confidence_factors": {"ocr_clarity": 92, "answer_match": 88, "rubric_coverage": 95, "llm_self_consistency": 86, "teacher_pass_rate": 84},
+      "step_annotations": [
+        {"step_id": 1, "is_correct": true, "reason": "内容切题，时间、活动、感受要点齐全，字数达标"},
+        {"step_id": 2, "is_correct": true, "reason": "全文一般过去时，时态一致"},
+        {"step_id": 3, "is_correct": false, "partial_ratio": 0.67, "error_tag": "符号书写错误", "reason": "个别拼写错误：relaxd 应为 relaxed"},
+        {"step_id": 4, "is_correct": true, "reason": "句式较丰富，篇章连贯"}
+      ]
+    },
+    {
+      "submission_id": "SUB008",
+      "question_id": "Q003",
+      "student_id": "S008",
+      "student_name": "吴敏",
+      "class_id": "C001",
+      "ocr": {"text": "Last weekend I have a good time. On Saturday I go to the park with my family. We play games and eat lunch there. On Sunday I stay at home and watch TV. It is a happy weekend for me.", "clarity": 85},
+      "confidence_factors": {"ocr_clarity": 85, "answer_match": 68, "rubric_coverage": 85, "llm_self_consistency": 66, "teacher_pass_rate": 76},
+      "step_annotations": [
+        {"step_id": 1, "is_correct": true, "reason": "内容切题，要点基本完整"},
+        {"step_id": 2, "is_correct": false, "partial_ratio": 0.25, "error_tag": "概念理解错误", "reason": "全文应用一般过去时，多处动词误用现在时：have/go/play/eat/stay/watch/is"},
+        {"step_id": 3, "is_correct": true, "reason": "词汇拼写基本正确"},
+        {"step_id": 4, "is_correct": false, "partial_ratio": 0.5, "error_tag": "表达不完整", "reason": "句式单一、缺少连接词，篇章连贯性一般"}
+      ]
+    },
+    {
+      "submission_id": "SUB009",
+      "question_id": "Q003",
+      "student_id": "S009",
+      "student_name": "郑浩",
+      "class_id": "C001",
+      "ocr": {"text": "My weekend is good. I like weekend. Weekend is fun. I want play.", "clarity": 58},
+      "confidence_factors": {"ocr_clarity": 58, "answer_match": 40, "rubric_coverage": 55, "llm_self_consistency": 48, "teacher_pass_rate": 65},
+      "step_annotations": [
+        {"step_id": 1, "is_correct": false, "partial_ratio": 0.25, "error_tag": "审题错误", "reason": "未按要求描述上周末的具体活动，内容空泛跑题，字数远少于 60 词"},
+        {"step_id": 2, "is_correct": false, "partial_ratio": 0.25, "error_tag": "概念理解错误", "reason": "语法多处错误，如 I want play 应为 I want to play"},
+        {"step_id": 3, "is_correct": false, "partial_ratio": 0.34, "error_tag": "表达不完整", "reason": "有效内容过少，词汇量明显不足"},
+        {"step_id": 4, "is_correct": false, "reason": "句子简单重复、无连贯性，且卷面字迹模糊（受整体影响）"}
+      ]
+    }
+  ]
+}

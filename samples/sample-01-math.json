@@ -1,0 +1,48 @@
+{
+  "sample_id": "sample-01-math",
+  "subject": "math",
+  "grade": "初二",
+  "question_type": "一元二次方程求解（配方法）",
+  "input": {
+    "question_text": "用配方法解一元二次方程：x² - 6x + 5 = 0。",
+    "standard_answer": "配方法：x² - 6x + 5 = 0 → 移项 x² - 6x = -5 → 两边同加 (6/2)² = 9，得 x² - 6x + 9 = -5 + 9 → (x - 3)² = 4 → x - 3 = ±2 → x₁ = 5，x₂ = 1。",
+    "rubric": [
+      {"step": "移项", "score": 2, "criteria": "将常数项移到等号右边，符号处理正确，得 x² - 6x = -5"},
+      {"step": "配方", "score": 3, "criteria": "两边同加一次项系数一半的平方 (6/2)² = 9，凑成完全平方式"},
+      {"step": "计算右边并化简", "score": 2, "criteria": "正确计算右边常数 -5 + 9 = 4，写出 (x - 3)² = 4"},
+      {"step": "开方求解", "score": 3, "criteria": "两边开方，求出 x₁ = 5，x₂ = 1"}
+    ],
+    "student_answer_image_desc": "作业纸上以铅笔手写四行竖排解题过程，字迹工整清晰。第一行 x² - 6x = -5，第二行写出配方式 x² - 6x + 9 = -5 + 9，第三行 (x - 3)² = 3 处的数字 3 有轻微描重痕迹，第四、五行给出 x - 3 = ±√3 与 x = 3±√3。全篇无明显涂改，版面整洁，公式排版规范。",
+    "student_answer_transcription": "x² - 6x = -5\nx² - 6x + 9 = -5 + 9\n(x - 3)² = 3\nx - 3 = ±√3\nx = 3 ± √3"
+  },
+  "ai_grading": {
+    "step_analysis": [
+      {"step": "移项", "is_correct": true, "score": 2, "max_score": 2, "reason": "将 +5 移到等号右边得 x² - 6x = -5，符号处理正确。"},
+      {"step": "配方", "is_correct": true, "score": 3, "max_score": 3, "reason": "两边同加一次项系数一半的平方 (6/2)² = 9，写出 x² - 6x + 9 = -5 + 9，配方方法完全正确。"},
+      {"step": "计算右边并化简", "is_correct": false, "score": 0, "max_score": 2, "reason": "-5 + 9 应等于 4，学生算成 3，写成 (x - 3)² = 3，属计算错误。"},
+      {"step": "开方求解", "is_correct": false, "score": 2, "max_score": 3, "reason": "开方操作本身规范（x - 3 = ±√右边），但因上一步数值算错导致最终解 x = 3±√3 错误，属将错就错。保留开方方法分 2 分，扣最终答案 1 分。"}
+    ],
+    "score": 7,
+    "max_score": 10,
+    "knowledge_points": ["一元二次方程", "配方法"],
+    "error_tags": ["计算错误"],
+    "confidence": 0.91,
+    "triage": "green",
+    "student_feedback": "配方法思路和配方步骤都正确，方法你已掌握。问题在第三步：-5+9应得4，你算成3，后面便将错就错。下次配方后把两边数值再核对一遍，就能拿满分。",
+    "teacher_note": "解题路径完整、方法分到位，仅第三步一次算术失误（-5+9 算成 3）并连带最终答案。OCR 清晰、错误定位明确，置信度高，建议直接通过。属该生偶发计算失误，非概念问题。"
+  },
+  "teacher_review": {
+    "action": "confirmed",
+    "final_score": 7,
+    "final_comment": "同意 AI 判分 7/10。配方法掌握良好，失分集中在一次算术失误，已在评语中提示配方后复核的习惯。"
+  },
+  "weak_point_analysis": {
+    "weak_knowledge_points": ["一元二次方程（配方法）计算准确性"],
+    "error_pattern": "方法掌握、计算失误型：解题路径与配方、开方方法全部正确，失分集中在中间的算术合并步骤（本次为常数项 -5+9），并出现将错就错。",
+    "remediation_suggestions": [
+      "配方后养成代入验根习惯：把求得的根代回原方程检验，可当场发现数值错误；",
+      "限时完成 5 道配方法专项题，重点训练移项与两边同加后的常数合并；",
+      "建立个人易错算术点清单，每次作业后回看失分是否属同类计算失误。"
+    ]
+  }
+}

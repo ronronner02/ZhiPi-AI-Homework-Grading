@@ -1,0 +1,55 @@
+{
+  "questions": [
+    {
+      "question_id": "Q001",
+      "subject": "数学",
+      "grade": "初二",
+      "question_type": "计算题",
+      "title": "一元二次方程求解",
+      "knowledge_points": ["一元二次方程", "因式分解"],
+      "question_text": "解方程：x² - 5x + 6 = 0",
+      "standard_answer": "x² - 5x + 6 = 0 → (x - 2)(x - 3) = 0 → x₁ = 2，x₂ = 3",
+      "max_score": 10,
+      "rubric": [
+        {"step_id": 1, "step": "选择合适解法", "max_score": 2, "knowledge_point": "一元二次方程"},
+        {"step_id": 2, "step": "因式分解正确", "max_score": 3, "knowledge_point": "因式分解"},
+        {"step_id": 3, "step": "求出两个根", "max_score": 3, "knowledge_point": "一元二次方程"},
+        {"step_id": 4, "step": "结论表达完整", "max_score": 2, "knowledge_point": "一元二次方程"}
+      ]
+    },
+    {
+      "question_id": "Q002",
+      "subject": "物理",
+      "grade": "初二",
+      "question_type": "计算题",
+      "title": "速度与单位换算",
+      "knowledge_points": ["速度公式", "单位换算"],
+      "question_text": "一辆汽车沿平直公路匀速行驶，通过的路程 s = 200 m，所用时间 t = 20 s。求汽车行驶的速度 v。",
+      "standard_answer": "v = s / t = 200 m ÷ 20 s = 10 m/s",
+      "max_score": 6,
+      "rubric": [
+        {"step_id": 1, "step": "写出正确公式", "max_score": 2, "knowledge_point": "速度公式"},
+        {"step_id": 2, "step": "正确代入数值", "max_score": 2, "knowledge_point": "速度公式"},
+        {"step_id": 3, "step": "计算结果正确", "max_score": 1, "knowledge_point": "速度公式"},
+        {"step_id": 4, "step": "单位正确", "max_score": 1, "knowledge_point": "单位换算"}
+      ]
+    },
+    {
+      "question_id": "Q003",
+      "subject": "英语",
+      "grade": "初二",
+      "question_type": "短文写作",
+      "title": "短文写作 My Weekend",
+      "knowledge_points": ["英语写作", "英语时态", "英语词汇", "英语句法"],
+      "question_text": "请以 “My Weekend” 为题写一篇不少于 60 词的短文，描述你上个周末的活动。",
+      "standard_answer": "要点完整（时间 / 活动 / 感受），全文使用一般过去时，语法与拼写正确，句式连贯，不少于 60 词。",
+      "max_score": 15,
+      "rubric": [
+        {"step_id": 1, "step": "内容切题且要点完整", "max_score": 4, "knowledge_point": "英语写作"},
+        {"step_id": 2, "step": "语法与时态正确", "max_score": 4, "knowledge_point": "英语时态"},
+        {"step_id": 3, "step": "词汇拼写正确", "max_score": 3, "knowledge_point": "英语词汇"},
+        {"step_id": 4, "step": "句式结构与连贯", "max_score": 4, "knowledge_point": "英语句法"}
+      ]
+    }
+  ]
+}
