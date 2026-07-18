@@ -7,10 +7,13 @@
     GET  /api/teacher/results   教师工作台：全部作答的 AI 批改概览（叠加教师审核态）
     POST /api/teacher/review    教师确认 / 修改分数（内存态存储）
     GET  /api/analytics/class   班级学情聚合
+    POST /api/feishu/push       推送审核提醒互动卡片到飞书（§13.2 集成点二）
+    POST /api/feishu/sync-base  同步学情台账到飞书多维表格（§13.2 集成点一）
 
 运行：
     python -m uvicorn app:app --port 8010
 默认 mock 模式无需任何 API Key；配置 ZHIPI_LLM_API_KEY 后自动尝试真实 LLM 批改。
+飞书集成默认 demo 模式，无需任何凭据；配置飞书 Webhook / 多维表格凭据后自动真实推送 / 写表。
 """
 import os
 import json
@@ -20,7 +23,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from pipeline import grader, analytics
+from pipeline import grader, analytics, feishu
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -176,6 +179,33 @@ def api_analytics(class_id: str = CLASS_ID):
     data["mode"] = current_mode()
     data["class_name"] = _submissions_raw.get("class_name", class_id)
     return data
+
+
+def _class_analytics() -> dict:
+    """聚合当前班级学情，并补充班级名（供飞书卡片与台账使用）。"""
+    data = analytics.aggregate(CLASS_ID, grade_all())
+    data["class_name"] = _submissions_raw.get("class_name", CLASS_ID)
+    return data
+
+
+@app.post("/api/feishu/push")
+def api_feishu_push():
+    """推送审核提醒互动卡片到飞书（§13.2 集成点二·机器人互动卡片审核流转）。
+
+    数据来自班级学情聚合；未配置 ZHIPI_FEISHU_WEBHOOK 时返回 demo 模式，
+    展示将推送的卡片内容。
+    """
+    return feishu.push_review_card(_class_analytics())
+
+
+@app.post("/api/feishu/sync-base")
+def api_feishu_sync_base():
+    """同步学情台账到飞书多维表格（§13.2 集成点一·多维表格 AI 学情台账）。
+
+    将逐题批改结果（叠加教师终审）组装为多维表格记录；未配置多维表格凭据时
+    返回 demo 模式，展示将写入的记录。
+    """
+    return feishu.sync_to_base(grade_all(), REVIEWS)
 
 
 # ---------- 内嵌前端页面 ----------
@@ -586,8 +616,96 @@ async function loadBoard(){
       <div class="card">
         <h2>下节课讲评建议</h2>
         <ul class="sugg">${d.teaching_suggestions.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>
+      </div>
+
+      <div class="card">
+        <h2>飞书协同（设计方案 §13.2）</h2>
+        <p class="hint">将本班学情推送到飞书第二现场：机器人互动卡片提醒教师审核（集成点二），
+        多维表格沉淀学情台账并由 AI 字段捷径自动生成错因摘要与学习建议（集成点一·主用飞书 AI 能力）。</p>
+        <div class="row" style="margin-top:6px;">
+          <button class="btn" onclick="pushFeishuCard()">推送飞书审核提醒卡片</button>
+          <button class="btn ghost" onclick="syncFeishuBase()">同步飞书多维表格学情台账</button>
+        </div>
+        <div id="feishu-result" style="margin-top:16px;"></div>
       </div>`;
   }catch(e){ body.innerHTML = `<div class="card"><div class="empty">加载失败：${esc(e.message)}</div></div>`; }
+}
+
+// ---------- 飞书协同（§13.2）----------
+function demoBanner(text){
+  return `<div style="background:#fffbe6;border:1px solid #ffe58f;color:#ad6800;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-weight:700;">⚠ ${esc(text)}</div>`;
+}
+function liveBanner(text){
+  return `<div style="background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-weight:700;">✓ ${esc(text)}</div>`;
+}
+// lark_md 极简渲染：转义后再还原换行与 **加粗**（内容均由后端生成，安全可控）
+function larkMd(s){ return esc(s).replace(/\n/g,'<br>').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'); }
+
+async function pushFeishuCard(){
+  const box = document.getElementById('feishu-result');
+  box.innerHTML = '<div class="muted">推送中…</div>';
+  try{ renderFeishuPush(await api('/api/feishu/push', {method:'POST'})); }
+  catch(e){ box.innerHTML = `<div class="empty">推送失败：${esc(e.message)}</div>`; }
+}
+
+function renderFeishuPush(d){
+  const box = document.getElementById('feishu-result');
+  const banner = d.mode==='demo'
+    ? demoBanner('演示模式：未配置飞书凭据，展示将推送的内容')
+    : liveBanner('已真实推送到飞书自定义机器人');
+  let cardHtml = '';
+  const card = d.card && d.card.card;
+  if(card){
+    const header = (card.header && card.header.title) ? card.header.title.content : '飞书互动卡片';
+    const parts = (card.elements||[]).map(el=>{
+      if(el.tag==='div' && el.text) return `<div style="margin:6px 0;">${larkMd(el.text.content)}</div>`;
+      if(el.tag==='hr') return '<hr style="border:none;border-top:1px dashed var(--line);margin:8px 0;">';
+      if(el.tag==='action' && el.actions){
+        const a = el.actions[0];
+        return `<div style="margin-top:10px;"><span class="btn small" style="pointer-events:none;">${esc(a.text.content)} →</span>
+          <div class="hint" style="margin-top:4px;">按钮链接（占位）：${esc(a.url)}</div></div>`;
+      }
+      if(el.tag==='note' && el.elements) return `<div class="hint" style="margin-top:10px;">${esc(el.elements[0].content)}</div>`;
+      return '';
+    }).join('');
+    cardHtml = `<div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;max-width:480px;box-shadow:0 1px 3px rgba(0,0,0,.06);">
+      <div style="background:var(--brand);color:#fff;padding:12px 16px;font-weight:700;">${esc(header)}</div>
+      <div style="padding:14px 16px;">${parts}</div>
+    </div>`;
+  }
+  box.innerHTML = banner + `<p class="hint">接口消息：${esc(d.message||'')}</p>`
+    + `<h3>飞书互动卡片预览</h3>` + cardHtml
+    + `<h3>接口返回 JSON（msg_type=interactive）</h3><div class="preview">${esc(JSON.stringify(d, null, 2))}</div>`;
+}
+
+async function syncFeishuBase(){
+  const box = document.getElementById('feishu-result');
+  box.innerHTML = '<div class="muted">同步中…</div>';
+  try{ renderFeishuSync(await api('/api/feishu/sync-base', {method:'POST'})); }
+  catch(e){ box.innerHTML = `<div class="empty">同步失败：${esc(e.message)}</div>`; }
+}
+
+function renderFeishuSync(d){
+  const box = document.getElementById('feishu-result');
+  const banner = d.mode==='demo'
+    ? demoBanner('演示模式：未配置飞书凭据，展示将写入的记录')
+    : liveBanner('已真实写入飞书多维表格《学情台账》');
+  const records = d.records || [];
+  let tableHtml = '';
+  if(records.length){
+    const cols = ['学生','题号','得分','满分','错因标签','置信度','分流状态','教师终审'];
+    const head = cols.map(c=>`<th>${c}</th>`).join('');
+    const rows = records.map(r=>{
+      const f = r.fields||{};
+      return `<tr>${cols.map(c=>`<td>${esc(f[c])}</td>`).join('')}</tr>`;
+    }).join('');
+    tableHtml = `<h3>多维表格《学情台账》记录预览（${records.length} 条）</h3>
+      <div style="overflow-x:auto;"><table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="hint">写入后可对「错因标签」「得分/满分」等列配置飞书 <b>AI 字段捷径</b>，逐行自动生成
+      「一句话错因摘要」与「个性化学习建议」（设计方案 §13.2 集成点一）。</p>`;
+  }
+  box.innerHTML = banner + `<p class="hint">接口消息：${esc(d.message||'')}</p>` + tableHtml
+    + `<h3>接口返回 JSON</h3><div class="preview">${esc(JSON.stringify(d, null, 2))}</div>`;
 }
 
 init();
