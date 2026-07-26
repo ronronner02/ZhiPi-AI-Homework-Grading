@@ -2,47 +2,55 @@
   "sample_id": "sample-02-physics",
   "subject": "physics",
   "grade": "初二",
-  "question_type": "欧姆定律与并联电路计算",
+  "question_type": "速度与单位换算（匀速直线运动计算）",
   "input": {
-    "question_text": "如图，电阻 R1 = 6Ω 与 R2 = 3Ω 并联后接在电压 U = 6V 的电源两端。求电路的总电阻和干路电流。",
-    "standard_answer": "两电阻为并联。总电阻 R = R1·R2 / (R1 + R2) = 6×3 / (6+3) = 18/9 = 2Ω；干路电流 I = U / R = 6V / 2Ω = 3A。（分支验证：I1 = 6/6 = 1A，I2 = 6/3 = 2A，I总 = I1 + I2 = 3A。）",
+    "demo_submission_id": "SUB005",
+    "demo_question_id": "Q002",
+    "input_image": "../demo/data/sample_images/SUB005.png",
+    "input_image_note": "仿手写合成样例图片（由 demo/tools/gen_sample_images.py 程序渲染生成，无真实学生信息）。在 Demo「① 拍照提交」中上传该图，即可离线复现本样例「识别 → 逐步批改 → 分流 → 教师审核」全流程。",
+    "question_text": "一辆汽车沿平直公路匀速行驶，通过的路程 s = 200 m，所用时间 t = 20 s。求汽车行驶的速度 v。（满分 6 分）",
+    "standard_answer": "v = s / t = 200 m ÷ 20 s = 10 m/s",
     "rubric": [
-      {"step": "电路结构识别", "score": 2, "criteria": "正确判断 R1、R2 为并联连接"},
-      {"step": "公式选择", "score": 2, "criteria": "选用并联总电阻公式 R = R1·R2/(R1+R2)"},
-      {"step": "数值代入", "score": 2, "criteria": "正确代入数值并完成运算"},
-      {"step": "最终答案", "score": 2, "criteria": "总电阻 2Ω、干路电流 3A，单位正确"}
+      {"step_id": 1, "step": "写出正确公式", "max_score": 2, "knowledge_point": "速度公式", "criteria": "明确匀速直线运动求速度，先写出公式原式 v = s/t"},
+      {"step_id": 2, "step": "正确代入数值", "max_score": 2, "knowledge_point": "速度公式", "criteria": "代入已知量：v = 200 m ÷ 20 s"},
+      {"step_id": 3, "step": "计算结果正确", "max_score": 1, "knowledge_point": "速度公式", "criteria": "计算得数值结果 v = 10"},
+      {"step_id": 4, "step": "单位正确", "max_score": 1, "knowledge_point": "单位换算", "criteria": "补全单位，写出最终结果 v = 10 m/s"}
     ],
-    "student_answer_image_desc": "手写物理计算，左上角画有一幅简易电路草图，两个电阻并排画出。字迹中等清晰。解答首句写有『这是串联电路』，其下两行为 R = R1 + R2 = 6Ω + 3Ω = 9Ω 与 I = U/R = 6V/9Ω ≈ 0.67A，末行写出结论。电路图中两电阻的连接节点线条较随意，无涂改。",
-    "student_answer_transcription": "这是串联电路。\nR = R1 + R2 = 6Ω + 3Ω = 9Ω\nI = U / R = 6V / 9Ω ≈ 0.67A\n答：电路总电流约为 0.67A。"
+    "student_answer_image_desc": "程序合成的拍照作业照片：作业纸抬头为「初二(3)班 · 物理作业」与手写姓名「陈伟」，印刷体题目下方以蓝色钢笔楷体风格手写一行作答——v = s/t = 200/20 = 10 km/s。字迹清晰工整（清晰度 94），整页带轻微拍照旋转、噪点与暗角。",
+    "student_answer_transcription": "v = s/t = 200/20 = 10 km/s"
   },
   "ai_grading": {
+    "mode": "mock（Demo 默认离线规则引擎，逐步判分确定性可复现；配置 LLM 密钥后同一链路切换为真实大模型批改）",
     "step_analysis": [
-      {"step": "电路结构识别", "is_correct": false, "score": 0, "max_score": 2, "reason": "R1、R2 为并联，学生明确写为『串联电路』，电路结构识别错误，属图形理解错误。"},
-      {"step": "公式选择", "is_correct": false, "score": 0, "max_score": 2, "reason": "应选并联总电阻公式 R = R1·R2/(R1+R2)，学生用了串联公式 R = R1 + R2，属公式选择错误；其根源是上一步的电路结构识别错误。"},
-      {"step": "数值代入", "is_correct": false, "score": 1, "max_score": 2, "reason": "就其所选（错误）公式而言，6+3=9、6/9≈0.67 的代入与运算本身没有算术错误；因所用公式错误，该步不予满分，保留运算规范分 1 分。"},
-      {"step": "最终答案", "is_correct": false, "score": 0, "max_score": 2, "reason": "正确答案为总电阻 2Ω、干路电流 3A；学生得 0.67A 错误。失分根源是电路结构识别，而非计算能力。"}
+      {"step": "写出正确公式", "is_correct": true, "score": 2, "max_score": 2, "error_tag": null, "knowledge_point": "速度公式", "reason": "写出速度公式 v=s/t，正确", "evidence": "v = s/t", "legible": true},
+      {"step": "正确代入数值", "is_correct": true, "score": 2, "max_score": 2, "error_tag": null, "knowledge_point": "速度公式", "reason": "代入 200/20，数值正确", "evidence": "200/20", "legible": true},
+      {"step": "计算结果正确", "is_correct": true, "score": 1, "max_score": 1, "error_tag": null, "knowledge_point": "速度公式", "reason": "计算结果 10，正确", "evidence": "200/20 = 10", "legible": true},
+      {"step": "单位正确", "is_correct": false, "score": 0, "max_score": 1, "error_tag": "单位错误", "knowledge_point": "单位换算", "reason": "结果单位应为 m/s，学生写成 km/s，属单位表达错误", "evidence": "10 km/s", "legible": true}
     ],
-    "score": 1,
-    "max_score": 8,
-    "knowledge_points": ["欧姆定律", "串并联电路"],
-    "error_tags": ["图形理解错误", "公式选择错误"],
-    "confidence": 0.72,
-    "triage": "yellow",
-    "student_feedback": "你欧姆定律I=U/R用得很熟，代入运算都没错。问题在最前一步：这是并联不是串联，总电阻应按并联算得2Ω、总电流3A。以后先判断电路是串还是并，再选公式。",
-    "teacher_note": "根因是电路结构识别（并联误判为串联）而非计算能力——下游代入与运算均无误。图形结构判断存在识别不确定性，置信度落在黄色区间，建议教师确认。可将代入步骤的规范分是否给足交由教师定夺，并归入『串并联识别』薄弱项跟踪。"
+    "total_score": 5,
+    "max_score": 6,
+    "knowledge_points": ["速度公式", "单位换算"],
+    "error_tags": ["单位错误"],
+    "confidence_factors": {"ocr_clarity": 94, "answer_match": 90, "rubric_coverage": 100, "llm_self_consistency": 90, "teacher_pass_rate": 85},
+    "confidence": 92.5,
+    "confidence_note": "§9.7 加权公式（百分制）：94×0.25 + 90×0.25 + 100×0.20 + 90×0.20 + 85×0.10 = 92.5；≥ 85 判绿色。绿色反映的是 AI 置信度高，并非学生全对——本例 AI 高置信度地定位了单位错误并自动完成批改。",
+    "status": "green",
+    "status_label": "绿色 · 自动通过",
+    "student_feedback": "你在写出正确公式、正确代入数值、计算结果正确方面是正确的，说明基本思路没有问题。本次主要问题出在「单位正确」，属于单位错误。代入数值前先统一单位，最终结果记得写对单位。",
+    "teacher_note": "AI 置信度高，可直接通过或抽查。涉及错因：单位错误。"
   },
   "teacher_review": {
-    "action": "modified",
-    "final_score": 2,
-    "final_comment": "微调：数值代入步骤给满分（欧姆定律运用规范、无算术错误），总分由 1 改为 2/8。主要问题为并联误判为串联导致公式选错，已在评语中点明根因，归入串并联识别专项跟踪。"
+    "action": "confirmed",
+    "final_score": 5,
+    "final_comment": "绿色自动通过后抽查确认，维持 5/6。公式、代入、计算全对，唯一失分是把 m/s 误写成 km/s——10 km/s 已超过第一宇宙速度（7.9 km/s），汽车不可能达到。建议该生养成「结果数量级自检」的习惯，这类失误可当场发现。"
   },
   "weak_point_analysis": {
-    "weak_knowledge_points": ["串并联电路识别", "并联电路等效电阻"],
-    "error_pattern": "结构识别驱动型错误：电路串并联判断错误（把并联当串联），进而选错总电阻公式；下游代入与运算无误，说明是『模型错』而非『算错』。",
+    "weak_knowledge_points": ["物理量单位规范（速度单位）"],
+    "error_pattern": "结果正确、单位误写型：公式选择、数值代入与计算全部正确，唯一失分点是把 m/s 写成 km/s——属书写规范问题而非概念或计算问题，与「公式倒置」「代入错误」等能力型错因需区别对待。",
     "remediation_suggestions": [
-      "先做 5 道纯『串并联判别』题（只判断结构、不计算），巩固电路识别；",
-      "再做并联与串联总电阻的对照练习，强化两套公式的适用条件；",
-      "最后做 2 道混联综合题，检验识别与计算是否打通。"
+      "整理常用速度单位换算表（m/s ↔ km/h），弄清两套单位的量级差异；",
+      "答题固定加一步「回看单位」：写完结果先核对单位是否与题目物理量匹配；",
+      "用数量级常识自检：汽车 10 m/s ≈ 36 km/h 合理，10 km/s 超过第一宇宙速度必错。"
     ]
   }
 }

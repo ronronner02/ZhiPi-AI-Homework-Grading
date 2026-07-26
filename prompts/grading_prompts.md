@@ -37,11 +37,13 @@
 
 【批改要求】
 1. 必须按照评分规则（Rubric）逐项评分，不允许只根据最终答案判断；
-2. 必须按以下批改节点逐步分析：题意理解 → 知识点识别 → 公式选择 →
-   解题步骤 → 数值代入 → 单位检查 → 最终答案；
+2. 按批改节点框架（题意理解 → 知识点识别 → 公式选择 → 解题步骤 →
+   数值代入 → 单位检查 → 最终答案）逐步分析，step_analysis 逐项对应
+   Rubric，且每步 step 名称必须与 Rubric 步骤同名；
 3. 必须指出具体错误步骤及错误位置；
 4. 错因标签必须从【可选错因标签】中选择，不得自造标签；
-5. 每一步分析都要给出判断依据（AI 判断依据），依据须引用学生作答的具体内容。
+5. 每一步都必须给出判断依据 evidence，须引用学生作答中的原文片段；
+   学生未写出对应内容时 evidence 置为空字符串 ""。
 
 【防幻觉与降级约束】
 6. 只能依据学生实际写出的内容评判，不得臆造、补全学生未写出的步骤或结论；
@@ -77,11 +79,12 @@
   "max_score": 数字,
   "step_analysis": [
     {
-      "step": "批改节点名称",
+      "step": "与 Rubric 同名的步骤名称",
       "is_correct": true/false,
       "score": 数字,
+      "error_tag": "错因标签或 null",
       "reason": "错误位置与原因",
-      "evidence": "引用学生作答中的具体内容作为判断依据",
+      "evidence": "引用学生作答原文片段，无则为空字符串",
       "legible": true/false
     }
   ],
@@ -100,13 +103,13 @@
   "score": 5,
   "max_score": 6,
   "step_analysis": [
-    { "step": "公式选择", "is_correct": true, "score": 2,
+    { "step": "写出正确公式", "is_correct": true, "score": 2, "error_tag": null,
       "reason": "正确选用 v = s / t", "evidence": "学生写出 v = s / t", "legible": true },
-    { "step": "数值代入", "is_correct": true, "score": 2,
+    { "step": "正确代入数值", "is_correct": true, "score": 2, "error_tag": null,
       "reason": "代入 200 / 20 正确", "evidence": "v = 200 / 20", "legible": true },
-    { "step": "最终答案", "is_correct": true, "score": 1,
+    { "step": "计算结果正确", "is_correct": true, "score": 1, "error_tag": null,
       "reason": "数值 10 正确", "evidence": "= 10", "legible": true },
-    { "step": "单位检查", "is_correct": false, "score": 0,
+    { "step": "单位正确", "is_correct": false, "score": 0, "error_tag": "单位错误",
       "reason": "单位应为 m/s，学生写成 km/s", "evidence": "10 km/s", "legible": true }
   ],
   "knowledge_points": ["速度与平均速度", "单位换算"],
@@ -119,8 +122,8 @@
 
 ### 注意事项
 
-- `error_tags` 必须是 `{error_tags}` 的子集，禁止自造；与设计方案 §6.11 严格一致。
-- `step_analysis` 的节点应覆盖 Rubric 各项并对应设计方案 §6.2 的七节点，不得只给最终答案分。
+- `error_tags`（含每步 `error_tag`）必须是 `{error_tags}` 的子集，禁止自造；与设计方案 §6.11 严格一致。
+- `step_analysis` 须覆盖 Rubric 各项且 `step` 与 Rubric 步骤同名，不得只给最终答案分；七节点（设计方案 §6.2）作为分析框架融入各步 `reason`。工程侧（`demo/pipeline/grader.py`）按步骤名精确匹配 → difflib 模糊匹配（阈值 0.6）→ 位置回退三级策略对齐，容忍乱序，但同名输出可保证零损耗对齐。
 - `legible=false` 的步骤必须同步压低 `confidence`，触发红黄绿分流中的红色人工（技术文档 §5.2）。
 - 输出必须是可解析 JSON，`score` 不得超过 `max_score`。
 
@@ -480,6 +483,7 @@
 
 - `consistency` 直接进入置信度公式（设计方案 §9.7，权重 0.20），一致性低会拉低总置信度并触发红黄绿分流偏向人工（技术文档 §5.2、§5.3）。
 - 第二次批改必须"先独立评分、后比对"，避免直接抄首次结果导致虚高一致性。
+- Demo 工程实现（`demo/pipeline/grader.py` 的 `consistency_check`，开关 `ZHIPI_DOUBLE_CHECK`）与本 Prompt 思路等价：用主批改 Prompt 以 temperature=0.3 独立复批一次，程序化比对两次总分与错因标签，按 `consistency = max(0, 100 - |分差|/满分×200 - 标签对称差个数×10)`（百分制）折算一致性分；本 Prompt 供生产环境希望单次调用内完成"独立批改 + 比对"时使用。
 - 分歧较大时应如实输出低 `consistency`，符合设计方案 §6.5"AI 没把握主动交给老师"的原则。
 
 ---

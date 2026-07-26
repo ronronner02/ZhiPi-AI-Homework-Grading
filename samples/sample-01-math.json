@@ -2,47 +2,55 @@
   "sample_id": "sample-01-math",
   "subject": "math",
   "grade": "初二",
-  "question_type": "一元二次方程求解（配方法）",
+  "question_type": "一元二次方程求解（因式分解法）",
   "input": {
-    "question_text": "用配方法解一元二次方程：x² - 6x + 5 = 0。",
-    "standard_answer": "配方法：x² - 6x + 5 = 0 → 移项 x² - 6x = -5 → 两边同加 (6/2)² = 9，得 x² - 6x + 9 = -5 + 9 → (x - 3)² = 4 → x - 3 = ±2 → x₁ = 5，x₂ = 1。",
+    "demo_submission_id": "SUB002",
+    "demo_question_id": "Q001",
+    "input_image": "../demo/data/sample_images/SUB002.png",
+    "input_image_note": "仿手写合成样例图片（由 demo/tools/gen_sample_images.py 程序渲染生成，无真实学生信息）。在 Demo「① 拍照提交」中上传该图，即可离线复现本样例「识别 → 逐步批改 → 分流 → 教师审核」全流程。",
+    "question_text": "解方程：x² - 5x + 6 = 0（满分 10 分）",
+    "standard_answer": "x² - 5x + 6 = 0 → (x - 2)(x - 3) = 0 → x₁ = 2，x₂ = 3",
     "rubric": [
-      {"step": "移项", "score": 2, "criteria": "将常数项移到等号右边，符号处理正确，得 x² - 6x = -5"},
-      {"step": "配方", "score": 3, "criteria": "两边同加一次项系数一半的平方 (6/2)² = 9，凑成完全平方式"},
-      {"step": "计算右边并化简", "score": 2, "criteria": "正确计算右边常数 -5 + 9 = 4，写出 (x - 3)² = 4"},
-      {"step": "开方求解", "score": 3, "criteria": "两边开方，求出 x₁ = 5，x₂ = 1"}
+      {"step_id": 1, "step": "选择合适解法", "max_score": 2, "knowledge_point": "一元二次方程", "criteria": "观察方程结构，判断可用因式分解法求解"},
+      {"step_id": 2, "step": "因式分解正确", "max_score": 3, "knowledge_point": "因式分解", "criteria": "寻找两数使其积为 6、和为 5，分解为 (x-2)(x-3)=0，展开可还原原式"},
+      {"step_id": 3, "step": "求出两个根", "max_score": 3, "knowledge_point": "一元二次方程", "criteria": "由每个因式分别为零，解得 x₁=2，x₂=3"},
+      {"step_id": 4, "step": "结论表达完整", "max_score": 2, "knowledge_point": "一元二次方程", "criteria": "完整写出结论：方程的解为 x₁=2，x₂=3"}
     ],
-    "student_answer_image_desc": "作业纸上以铅笔手写四行竖排解题过程，字迹工整清晰。第一行 x² - 6x = -5，第二行写出配方式 x² - 6x + 9 = -5 + 9，第三行 (x - 3)² = 3 处的数字 3 有轻微描重痕迹，第四、五行给出 x - 3 = ±√3 与 x = 3±√3。全篇无明显涂改，版面整洁，公式排版规范。",
-    "student_answer_transcription": "x² - 6x = -5\nx² - 6x + 9 = -5 + 9\n(x - 3)² = 3\nx - 3 = ±√3\nx = 3 ± √3"
+    "student_answer_image_desc": "程序合成的拍照作业照片：作业纸抬头为「初二(3)班 · 数学作业」与手写姓名「李华」，印刷体题目下方以蓝色钢笔楷体风格手写三行作答——x²-5x+6=0、(x-2)(x-3)=0、x=2。字迹较清晰（清晰度 88），整页带轻微拍照旋转、噪点与暗角。",
+    "student_answer_transcription": "x²-5x+6=0\n(x-2)(x-3)=0\nx=2"
   },
   "ai_grading": {
+    "mode": "mock（Demo 默认离线规则引擎，逐步判分确定性可复现；配置 LLM 密钥后同一链路切换为真实大模型批改）",
     "step_analysis": [
-      {"step": "移项", "is_correct": true, "score": 2, "max_score": 2, "reason": "将 +5 移到等号右边得 x² - 6x = -5，符号处理正确。"},
-      {"step": "配方", "is_correct": true, "score": 3, "max_score": 3, "reason": "两边同加一次项系数一半的平方 (6/2)² = 9，写出 x² - 6x + 9 = -5 + 9，配方方法完全正确。"},
-      {"step": "计算右边并化简", "is_correct": false, "score": 0, "max_score": 2, "reason": "-5 + 9 应等于 4，学生算成 3，写成 (x - 3)² = 3，属计算错误。"},
-      {"step": "开方求解", "is_correct": false, "score": 2, "max_score": 3, "reason": "开方操作本身规范（x - 3 = ±√右边），但因上一步数值算错导致最终解 x = 3±√3 错误，属将错就错。保留开方方法分 2 分，扣最终答案 1 分。"}
+      {"step": "选择合适解法", "is_correct": true, "score": 2, "max_score": 2, "error_tag": null, "knowledge_point": "一元二次方程", "reason": "选择因式分解法，方法得当", "evidence": "(x-2)(x-3)=0", "legible": true},
+      {"step": "因式分解正确", "is_correct": true, "score": 3, "max_score": 3, "error_tag": null, "knowledge_point": "因式分解", "reason": "分解为 (x-2)(x-3)，正确", "evidence": "(x-2)(x-3)=0", "legible": true},
+      {"step": "求出两个根", "is_correct": false, "score": 1, "max_score": 3, "error_tag": "步骤缺失", "knowledge_point": "一元二次方程", "reason": "只求出 x=2，漏掉由 (x-3)=0 得到的 x=3；x=2 本身是正确根之一，按部分分比例 0.34 保留 1 分过程分", "evidence": "x=2", "legible": true},
+      {"step": "结论表达完整", "is_correct": false, "score": 0, "max_score": 2, "error_tag": "表达不完整", "knowledge_point": "一元二次方程", "reason": "结论只写一个根，未完整给出两个解", "evidence": "x=2", "legible": true}
     ],
-    "score": 7,
+    "total_score": 6,
     "max_score": 10,
-    "knowledge_points": ["一元二次方程", "配方法"],
-    "error_tags": ["计算错误"],
-    "confidence": 0.91,
-    "triage": "green",
-    "student_feedback": "配方法思路和配方步骤都正确，方法你已掌握。问题在第三步：-5+9应得4，你算成3，后面便将错就错。下次配方后把两边数值再核对一遍，就能拿满分。",
-    "teacher_note": "解题路径完整、方法分到位，仅第三步一次算术失误（-5+9 算成 3）并连带最终答案。OCR 清晰、错误定位明确，置信度高，建议直接通过。属该生偶发计算失误，非概念问题。"
+    "knowledge_points": ["一元二次方程", "因式分解"],
+    "error_tags": ["步骤缺失", "表达不完整"],
+    "confidence_factors": {"ocr_clarity": 88, "answer_match": 70, "rubric_coverage": 85, "llm_self_consistency": 68, "teacher_pass_rate": 80},
+    "confidence": 78.1,
+    "confidence_note": "§9.7 加权公式（百分制）：88×0.25 + 70×0.25 + 85×0.20 + 68×0.20 + 80×0.10 = 78.1；落在 60 ≤ c < 85 区间判黄色。",
+    "status": "yellow",
+    "status_label": "黄色 · 教师确认",
+    "student_feedback": "这次作答中选择合适解法、因式分解正确完成得不错，看得出你思考得很认真。本次主要问题出在「求出两个根」，属于步骤缺失。把每一步推理都写在卷面上，检查时逐步核对是否有遗漏。写完后对照题目所求检查一遍，别漏写任何一问的答案。",
+    "teacher_note": "AI 置信度中等，请确认判分与错因是否准确。涉及错因：步骤缺失、表达不完整。"
   },
   "teacher_review": {
     "action": "confirmed",
-    "final_score": 7,
-    "final_comment": "同意 AI 判分 7/10。配方法掌握良好，失分集中在一次算术失误，已在评语中提示配方后复核的习惯。"
+    "final_score": 6,
+    "final_comment": "一键确认 AI 判分 6/10。解法选择与因式分解都对，失分在「每个因式都要令零」这一步——漏掉了 x=3，且结论未写完整。评语已提示逐因式求根与写完整结论的习惯。"
   },
   "weak_point_analysis": {
-    "weak_knowledge_points": ["一元二次方程（配方法）计算准确性"],
-    "error_pattern": "方法掌握、计算失误型：解题路径与配方、开方方法全部正确，失分集中在中间的算术合并步骤（本次为常数项 -5+9），并出现将错就错。",
+    "weak_knowledge_points": ["一元二次方程求根完整性（逐因式取零）"],
+    "error_pattern": "步骤缺失型：解法选择与因式分解全部正确，但只由 (x-2)=0 求出 x=2，漏掉 (x-3)=0 的第二个根，结论也未完整表述——属「会分解、不会收尾」，而非概念不懂。",
     "remediation_suggestions": [
-      "配方后养成代入验根习惯：把求得的根代回原方程检验，可当场发现数值错误；",
-      "限时完成 5 道配方法专项题，重点训练移项与两边同加后的常数合并；",
-      "建立个人易错算术点清单，每次作业后回看失分是否属同类计算失误。"
+      "因式分解后逐个因式令零，列表写出全部根，再对照「一元二次方程最多两个根」自查；",
+      "做 5 道因式分解求根专项，每题强制写完整结论句「方程的解为 x₁=…，x₂=…」；",
+      "养成验根习惯：把求得的根逐一代回原方程检验，漏根当场暴露。"
     ]
   }
 }

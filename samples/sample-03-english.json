@@ -2,47 +2,55 @@
   "sample_id": "sample-03-english",
   "subject": "english",
   "grade": "初二",
-  "question_type": "看图写话（书面表达片段）",
+  "question_type": "短文写作（My Weekend）",
   "input": {
-    "question_text": "看图写话：根据图片内容，用 60~80 词写一篇短文，描述你上周末做了什么。（图片：周末与家人到公园野餐、踢球、拍照）",
-    "standard_answer": "Last weekend, I went to the park with my family. The weather was sunny and beautiful. We had a picnic on the grass and ate a lot of delicious food. After lunch, my father and I played football together. I also took some nice photos of the flowers. We had a really good time. I liked the weekend very much and hope to go there again.",
+    "demo_submission_id": "SUB008",
+    "demo_question_id": "Q003",
+    "input_image": "../demo/data/sample_images/SUB008.png",
+    "input_image_note": "仿手写合成样例图片（由 demo/tools/gen_sample_images.py 程序渲染生成，无真实学生信息）。在 Demo「① 拍照提交」中上传该图，即可离线复现本样例「识别 → 逐步批改 → 分流 → 教师审核」全流程。",
+    "question_text": "请以 \"My Weekend\" 为题写一篇不少于 60 词的短文，描述你上个周末的活动。（满分 15 分）",
+    "standard_answer": "要点完整（时间 / 活动 / 感受），全文使用一般过去时，语法与拼写正确，句式连贯，不少于 60 词。",
     "rubric": [
-      {"step": "内容完整", "score": 5, "criteria": "覆盖图片要点：时间、地点、人物、活动、感受"},
-      {"step": "结构连贯", "score": 3, "criteria": "句子顺序合理、使用衔接词、行文连贯"},
-      {"step": "语法准确", "score": 4, "criteria": "时态正确（叙述过去用一般过去时）、主谓一致"},
-      {"step": "词汇拼写", "score": 3, "criteria": "用词恰当地道、拼写正确"}
+      {"step_id": 1, "step": "内容切题且要点完整", "max_score": 4, "knowledge_point": "英语写作", "criteria": "围绕上个周末，覆盖时间、活动、感受三要素，篇幅不少于 60 词"},
+      {"step_id": 2, "step": "语法与时态正确", "max_score": 4, "knowledge_point": "英语时态", "criteria": "叙述已发生的事，通篇使用一般过去时并保持一致，主谓一致"},
+      {"step_id": 3, "step": "词汇拼写正确", "max_score": 3, "knowledge_point": "英语词汇", "criteria": "用词恰当、拼写正确"},
+      {"step_id": 4, "step": "句式结构与连贯", "max_score": 4, "knowledge_point": "英语句法", "criteria": "使用连接词衔接句子，长短句搭配，篇章连贯"}
     ],
-    "student_answer_image_desc": "横格纸手写英文短文一段，约 60 词，整体书写清楚，但个别单词潦草。倒数第二句的主要动词连笔严重、辨识困难（疑为 take 或 took）。wether、beatiful 两处拼写清晰可辨。第三句 many 一词旁有一处划改痕迹。段落首行未缩进。",
-    "student_answer_transcription": "Last weekend, I go to the park with my family. The wether is sunny and very beatiful. We have a picnic on the grass and eat many delicious food. My father and I play football together. I very like this day. We [潦草，OCR 在 take / took 间不确定] many nice photos. I hope go there again next time."
+    "student_answer_image_desc": "程序合成的拍照作业照片：作业纸抬头为「初二(3)班 · 英语作业」与手写姓名「吴敏」，居中手写标题 My Weekend，正文以 Segoe Print 仿手写英文书写五句短文，基线与字号轻微抖动。字迹可辨认（清晰度 85），整页带轻微拍照旋转、噪点与暗角。",
+    "student_answer_transcription": "Last weekend I have a good time. On Saturday I go to the park with my family. We play games and eat lunch there. On Sunday I stay at home and watch TV. It is a happy weekend for me."
   },
   "ai_grading": {
+    "mode": "mock（Demo 默认离线规则引擎，逐步判分确定性可复现；配置 LLM 密钥后同一链路切换为真实大模型批改）",
     "step_analysis": [
-      {"step": "内容完整", "is_correct": true, "score": 5, "max_score": 5, "reason": "涵盖时间（上周末）、地点（公园）、人物（家人、父亲）、活动（野餐、踢球、拍照）与感受，图片要点齐全。"},
-      {"step": "结构连贯", "is_correct": true, "score": 2, "max_score": 3, "reason": "句子按时间顺序展开，基本连贯；衔接词偏少（缺少 then/after 等），扣 1 分。"},
-      {"step": "语法准确", "is_correct": false, "score": 1, "max_score": 4, "reason": "叙述过去却系统性使用一般现在时（go/is/have/eat/play 应为过去式），时态错误贯穿全文，属对时态概念掌握不牢。"},
-      {"step": "词汇拼写", "is_correct": false, "score": 1, "max_score": 3, "reason": "拼写错误 wether→weather、beatiful→beautiful（符号书写层面）；very like 为中式表达，应为 liked … very much / really liked（表达不规范）。"}
+      {"step": "内容切题且要点完整", "is_correct": true, "score": 4, "max_score": 4, "error_tag": null, "knowledge_point": "英语写作", "reason": "内容切题，要点基本完整", "evidence": "Last weekend I have a good time.", "legible": true},
+      {"step": "语法与时态正确", "is_correct": false, "score": 1, "max_score": 4, "error_tag": "概念理解错误", "knowledge_point": "英语时态", "reason": "全文应用一般过去时，多处动词误用现在时：have/go/play/eat/stay/watch/is；错误系统性出现，按部分分比例 0.25 保留 1 分", "evidence": "On Saturday I go to the park with my family. We play games and eat lunch there.", "legible": true},
+      {"step": "词汇拼写正确", "is_correct": true, "score": 3, "max_score": 3, "error_tag": null, "knowledge_point": "英语词汇", "reason": "词汇拼写基本正确", "evidence": "We play games and eat lunch there.", "legible": true},
+      {"step": "句式结构与连贯", "is_correct": false, "score": 2, "max_score": 4, "error_tag": "表达不完整", "knowledge_point": "英语句法", "reason": "句式单一、缺少连接词，篇章连贯性一般，按部分分比例 0.5 保留 2 分", "evidence": "On Sunday I stay at home and watch TV. It is a happy weekend for me.", "legible": true}
     ],
-    "score": 9,
+    "total_score": 10,
     "max_score": 15,
-    "knowledge_points": ["英语时态", "书面表达（看图写话）"],
-    "error_tags": ["概念理解错误", "符号书写错误", "表达不完整"],
-    "confidence": 0.55,
-    "triage": "red",
-    "student_feedback": "内容完整、要点齐全，把周末活动写清楚了，值得肯定。主要问题在时态：写过去的事要用一般过去时（go→went、is→was）。建议通读一遍，把动词都改成过去式。",
-    "teacher_note": "本题为主观书面表达，且倒数第二句动词字迹潦草，OCR 在 take/took 间无法确定（识别置信度低），叠加作文评分主观性，综合置信度 < 0.60 判红、转人工，AI 分数 9/15 仅作参考建议、不自动判分。请教师辨读该词后据 rubric 定终分。"
+    "knowledge_points": ["英语写作", "英语时态", "英语词汇", "英语句法"],
+    "error_tags": ["概念理解错误", "表达不完整"],
+    "confidence_factors": {"ocr_clarity": 85, "answer_match": 68, "rubric_coverage": 85, "llm_self_consistency": 66, "teacher_pass_rate": 76},
+    "confidence": 76.0,
+    "confidence_note": "§9.7 加权公式（百分制）：85×0.25 + 68×0.25 + 85×0.20 + 66×0.20 + 76×0.10 ≈ 76.0；主观书面表达答案匹配度低（68）、两次批改一致性一般（66），落在 60 ≤ c < 85 区间判黄色，AI 判分仅作建议、教师确认后生效。",
+    "status": "yellow",
+    "status_label": "黄色 · 教师确认",
+    "student_feedback": "内容切题且要点完整、词汇拼写正确处理得当，整体解题框架已经搭起来了。本次主要问题出在「语法与时态正确」，属于概念理解错误。从课本定义出发，弄清概念的适用范围，再做两道同类题巩固。答题最后补上完整结论句，确认每一问都有明确回答。",
+    "teacher_note": "AI 置信度中等，请确认判分与错因是否准确。涉及错因：概念理解错误、表达不完整。"
   },
   "teacher_review": {
     "action": "modified",
-    "final_score": 10,
-    "final_comment": "内容完整，时间、地点、活动、感受都写到了，很好。最需要改进的是时态：上周末的事要用一般过去时，不能用现在时。建议重写时先把每个动词都改成过去式，再检查两处拼写。"
+    "final_score": 11,
+    "final_comment": "微调：认可内容与时态两步的判定；「句式结构与连贯」由 2 分调为 3 分——短文按时间顺序展开、达意清楚，仅句式单一，酌情回调 1 分，总分由 10 改为 11/15。改写给学生的评语：内容要点齐全、拼写也不错，值得肯定；最需要突破的是时态，写上周末的事要通篇用一般过去时（have→had、go→went、play→played），再学着用 First / Then / After that 把句子串起来，短文会更连贯。"
   },
   "weak_point_analysis": {
-    "weak_knowledge_points": ["一般过去时（叙事时态一致）", "英语拼写", "地道表达（避免中式英语）"],
-    "error_pattern": "时态一致性薄弱：叙述过去事件时系统性误用一般现在时，属概念性而非偶发错误；伴随少量拼写错误与一处中式表达。",
+    "weak_knowledge_points": ["一般过去时（叙事时态一致）", "篇章衔接与句式多样性"],
+    "error_pattern": "概念性时态误用：叙述过去事件通篇使用一般现在时（have/go/play/eat/stay/watch/is），错误系统性出现，属时态概念未掌握而非偶发笔误；伴随句式单一、缺少衔接词的表达短板。",
     "remediation_suggestions": [
-      "做 5 句『现在时→过去时』改写专项，强化叙事全篇时态一致；",
-      "整理本次拼写错词 weather、beautiful 并抄写记忆；",
-      "用 liked … very much / really liked 替换 very like，积累 3 组地道表达。"
+      "做 5 句「现在时 → 过去时」改写专项，覆盖本篇错用的 have/go/play/eat/stay/watch/is；",
+      "把本篇短文通篇改写为一般过去时，改完逐个动词核对时态；",
+      "用 First / Then / After that / Finally 各造一句，下次写作至少使用两个衔接词。"
     ]
   }
 }
