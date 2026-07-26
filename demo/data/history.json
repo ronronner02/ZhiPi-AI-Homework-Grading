@@ -1,0 +1,29 @@
+{
+  "_note": "模拟历史数据，仅用于演示画像形态",
+  "students": {
+    "S001": {
+      "student_name": "张明",
+      "history": [
+        {"assignment": "第1次作业（一周前）", "subject": "物理", "score_pct": 50, "error_tags": ["公式选择错误", "单位错误"]},
+        {"assignment": "第2次作业（四天前）", "subject": "物理", "score_pct": 67, "error_tags": ["答案正确但过程不规范", "步骤缺失"]},
+        {"assignment": "第3次作业（两天前）", "subject": "数学", "score_pct": 80, "error_tags": ["答案正确但过程不规范"]}
+      ]
+    },
+    "S006": {
+      "student_name": "孙涛",
+      "history": [
+        {"assignment": "第1次作业（一周前）", "subject": "物理", "score_pct": 45, "error_tags": ["公式选择错误", "计算错误"]},
+        {"assignment": "第2次作业（四天前）", "subject": "物理", "score_pct": 50, "error_tags": ["公式选择错误", "单位错误"]},
+        {"assignment": "第3次作业（两天前）", "subject": "物理", "score_pct": 55, "error_tags": ["公式选择错误"]}
+      ]
+    },
+    "S009": {
+      "student_name": "郑浩",
+      "history": [
+        {"assignment": "第1次作业（一周前）", "subject": "英语", "score_pct": 35, "error_tags": ["审题错误", "表达不完整", "概念理解错误"]},
+        {"assignment": "第2次作业（四天前）", "subject": "数学", "score_pct": 40, "error_tags": ["审题错误", "表达不完整", "计算错误"]},
+        {"assignment": "第3次作业（两天前）", "subject": "英语", "score_pct": 42, "error_tags": ["审题错误", "表达不完整"]}
+      ]
+    }
+  }
+}

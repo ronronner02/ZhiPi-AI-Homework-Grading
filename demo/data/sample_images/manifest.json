@@ -1,0 +1,90 @@
+{
+  "SUB001": {
+    "file": "SUB001.png",
+    "sha256": "7cb8108697fff9b0e34ab1472aa2a29d92e6226f48f5c4cdaf1e362eadb92ad6",
+    "student_name": "张明",
+    "question_id": "Q001",
+    "subject": "数学",
+    "clarity": 96
+  },
+  "SUB002": {
+    "file": "SUB002.png",
+    "sha256": "7b4ba3c5649ef4f5346532949cd0ec08e694ad3d74e415f50f5c00e842028a48",
+    "student_name": "李华",
+    "question_id": "Q001",
+    "subject": "数学",
+    "clarity": 88
+  },
+  "SUB003": {
+    "file": "SUB003.png",
+    "sha256": "c75cb84dd69476ee59ca10e3df7eb9ce89c2fd9fadce0bec622c3c9dfe06bd56",
+    "student_name": "王芳",
+    "question_id": "Q001",
+    "subject": "数学",
+    "clarity": 55
+  },
+  "SUB004": {
+    "file": "SUB004.png",
+    "sha256": "7a9349a71a3cbacd9be61e39b25ae5385bd066b2e95607f963bbddba676b94c9",
+    "student_name": "赵磊",
+    "question_id": "Q002",
+    "subject": "物理",
+    "clarity": 97
+  },
+  "SUB005": {
+    "file": "SUB005.png",
+    "sha256": "e6b3e61587b531864e4b4868b95604da6dc5d1be4a0f98e91e6df35ccf84145c",
+    "student_name": "陈伟",
+    "question_id": "Q002",
+    "subject": "物理",
+    "clarity": 94
+  },
+  "SUB006": {
+    "file": "SUB006.png",
+    "sha256": "e2182472fc33c5d93eccca070bd85fe5cb4bb554258fc3381f7f1f87a1faf8cf",
+    "student_name": "孙涛",
+    "question_id": "Q002",
+    "subject": "物理",
+    "clarity": 82
+  },
+  "SUB007": {
+    "file": "SUB007.png",
+    "sha256": "6ca3c3d63c00739585a2b6a2cbfbd5d70b5a47ef82daca32630a95cb2a768796",
+    "student_name": "周琳",
+    "question_id": "Q003",
+    "subject": "英语",
+    "clarity": 92
+  },
+  "SUB008": {
+    "file": "SUB008.png",
+    "sha256": "08967219b34a9af5756f904671d19ccf522b8fe8af0cf4feb75eebc52d3a38af",
+    "student_name": "吴敏",
+    "question_id": "Q003",
+    "subject": "英语",
+    "clarity": 85
+  },
+  "SUB009": {
+    "file": "SUB009.png",
+    "sha256": "2edaefe08ddb026ffc0a67e0955819cc4a505cd4f4b2cea577f2cff89876355d",
+    "student_name": "郑浩",
+    "question_id": "Q003",
+    "subject": "英语",
+    "clarity": 58
+  },
+  "SUB010": {
+    "file": "SUB010.png",
+    "sha256": "057beaa1cbb9c7c0becba0d2f0c7b4c965dffb33c939cca47bc09e6ca56e671b",
+    "student_name": "张明",
+    "question_id": "Q002",
+    "subject": "物理",
+    "clarity": 90
+  },
+  "SUB011": {
+    "file": "SUB011.png",
+    "sha256": "875aacb8747deec521a71ee859ceee0e18f750b7c15e9a23c335094aacdf3207",
+    "student_name": "张明",
+    "question_id": "Q003",
+    "subject": "英语",
+    "clarity": 93
+  }
+}

@@ -207,11 +207,13 @@ def build_base_records(grading_results: list, reviews: dict = None) -> list:
         tags = r.get("error_tags") or []
         tag_text = "、".join(tags) if tags else "无"
 
-        # 教师终审：已审核则展示动作与终分，否则标记"待终审"
+        # 教师终审：已审核则展示动作、终分与错因修订，否则标记"待终审"
         review = reviews.get(r.get("submission_id"))
         if review:
             action_label = "已修改" if review.get("teacher_action") == "modified" else "已确认"
             final = "%s %s/%s" % (action_label, review.get("final_score"), r.get("max_score"))
+            if review.get("final_error_tags"):
+                final += "，错因修订：" + "、".join(review["final_error_tags"])
         else:
             final = "待终审"
 
