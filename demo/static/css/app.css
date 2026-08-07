@@ -393,8 +393,9 @@ a { color: var(--riso-blue); text-underline-offset: 3px; }
   padding: var(--sp-3) var(--sp-5) var(--sp-3) 0;
   margin-right: var(--sp-5);
   display: flex;
-  align-items: baseline;
+  align-items: center;           /* DESIGN：触控对齐 */
   gap: var(--sp-2);
+  min-height: 44px;              /* DESIGN：热区 ≥44 */
   cursor: pointer;
   color: var(--ink-soft);
   white-space: nowrap;
@@ -485,30 +486,38 @@ a { color: var(--riso-blue); text-underline-offset: 3px; }
   appearance: none;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--sp-2);
   background: var(--ink);
   color: var(--paper);
   border: 1px solid var(--ink);
   padding: 10px 18px;
+  min-height: 44px;              /* DESIGN §6.1 触控热区 */
   font-family: var(--font-sans);
   font-size: var(--fs-small);
   letter-spacing: .03em;
   cursor: pointer;
   position: relative;
+  border-radius: var(--r-2, 8px); /* 与 tokens 圆角阶梯对齐；保留墨线个性 */
   transition: transform var(--dur-1) var(--ease-paper),
               box-shadow var(--dur-1) var(--ease-paper),
               background var(--dur-1) var(--ease-ink);
 }
 .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
-.btn:active { transform: translate(1px, 1px); box-shadow: none; }
+.btn:active { transform: translate(1px, 1px) scale(0.97); box-shadow: none; }
+.btn:focus-visible {
+  outline: 2px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 .btn[disabled] { opacity: .45; pointer-events: none; }
 
 .btn--ghost { background: transparent; color: var(--ink); }
 .btn--ghost:hover { box-shadow: 3px 3px 0 var(--rule); background: var(--paper-warm); }
 .btn--blue { background: var(--riso-blue); border-color: var(--riso-blue); }
 .btn--blue:hover { box-shadow: 3px 3px 0 var(--ink); }
-.btn--sm { padding: 6px 12px; font-size: var(--fs-micro); }
-.btn--lg { padding: 14px 28px; font-size: var(--fs-body); }
+/* sm 视觉可更扁，热区仍 ≥44（padding 纵向补足） */
+.btn--sm { padding: 10px 12px; font-size: var(--fs-micro); min-height: 44px; }
+.btn--lg { padding: 14px 28px; font-size: var(--fs-body); min-height: 48px; }
 
 /* --------------------------------------------------------------------------
    7. 标记：分流章、标签、因子
@@ -1538,8 +1547,14 @@ textarea.is-invalid {
   .stat__label { font-size: var(--fs-micro); line-height: 1.35; }
   .stat__sub { letter-spacing: .04em; }
   .trail { flex-direction: column; }
-  .trail__step { border-right: 0; border-bottom: 1px solid var(--rule); flex-direction: row;
-    align-items: baseline; gap: var(--sp-3); }
+  .trail__step {
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-3);
+    min-height: 44px;                    /* 引导条可点 */
+  }
   .trail__step:last-child { border-bottom: 0; }
   .sheet { padding: var(--sp-4) var(--sp-4) var(--sp-5); }
   .bar { grid-template-columns: 1fr auto; }
@@ -1550,5 +1565,16 @@ textarea.is-invalid {
      「10 / 10」折成两行，读起来比横向滚动更糟。给一个可读下限，让 .tablewrap
      真正进入滚动状态，而不是把列挤瘦。 */
   .tablewrap table { min-width: 700px; }
+  /* 教师台操作列：按钮可换行，避免挤成不可点 */
+  .tablewrap .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .tablewrap .btn--sm {
+    min-height: 40px;                    /* 表内略收，仍接近热区 */
+  }
+  /* 输入框移动端 ≥16px，避免 iOS 聚焦放大（DESIGN §3.2） */
+  input, select, textarea { font-size: 16px; }
 }
 
