@@ -346,6 +346,12 @@ a { color: var(--riso-blue); text-underline-offset: 3px; }
   background: var(--paper);
   border-bottom: 3px solid var(--ink);
 }
+/* 吸顶栏会盖住 scrollIntoView({block:'start'}) 的落点：目标顶边贴到视口顶边，
+   而那块正被吸顶栏占着，于是标题整条消失在栏后。给所有滚动目标留出栏高，
+   浏览器自己就会多滚这一截。--masthead-h 由 app.js 启动时按实测值改写，
+   这里的兜底值对应两行栏（品牌行 + 标签行）。 */
+:root { --masthead-h: 104px; }
+.sheet, .screen { scroll-margin-top: calc(var(--masthead-h) + var(--sp-4)); }
 .masthead__bar {
   max-width: var(--maxw);
   margin: 0 auto;
@@ -668,118 +674,172 @@ a { color: var(--riso-blue); text-underline-offset: 3px; }
 
 .folder-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: var(--sp-5) var(--sp-4);
-  padding-top: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: var(--sp-6) var(--sp-5);
+  padding-top: var(--sp-2);
 }
 
 .folder-card {
   appearance: none;
   background: transparent;
   border: 0;
-  padding: 0 0 8px;
+  padding: 0 0 var(--sp-2);
   cursor: pointer;
   text-align: center;
   position: relative;
   color: inherit;
   font: inherit;
 }
-.folder-card:focus-visible { outline: 2px solid var(--riso-blue); outline-offset: 4px; }
-.folder-card.is-on .folder-card__tab,
-.folder-card.is-on .folder-card__body {
-  box-shadow: 0 0 0 2px var(--riso-blue);
-}
-.folder-card.is-on .folder-card__name { color: var(--riso-blue); }
+.folder-card:focus-visible { outline: 2px solid var(--riso-blue); outline-offset: 5px; }
 
-/* 叠在一起的纸张：最多 3 层偏移 */
-.folder-card__stack {
+/* --- 夹体几何 -------------------------------------------------------------
+   从后往前四层：后板 → 夹内纸张 → 前袋 → 角标。
+   全部 display:block —— 这些是 <button> 里的 <span>，不写就是 inline，
+   width / aspect-ratio 会被静默丢掉，盒子塌成 0 高，绝对定位子元素全部归零。
+   （本项目已经在 .plate__cap 上踩过一次同样的坑。） */
+.folder-card__vis {
+  display: block;
   position: relative;
   width: 100%;
-  aspect-ratio: 1.15 / 1;
-  margin: 0 auto 10px;
-  max-width: 148px;
+  max-width: 156px;
+  aspect-ratio: 1 / .82;
+  margin: 0 auto var(--sp-3);
+  isolation: isolate;            /* 关住内部 z-index，不与页面其他层纠缠 */
+  transition: transform var(--dur-2) var(--ease-paper);
 }
-.folder-card__sheet {
+
+/* 后板：整体轮廓来源。露出的上沿 + 左上标签耳，是「这是个夹子」的全部信号。
+   参考图那张图标没有耳朵也能认出来，是因为它在深色底上、轮廓无歧义；
+   放到本项目的米白纸底上，没耳朵的圆角口袋更像钱包。耳朵留着，但做窄做浅。 */
+.folder-card__back {
+  display: block;
   position: absolute;
-  inset: 10% 8% 6% 8%;
+  left: 0; right: 0;
+  top: 8%;
+  bottom: 3%;
+  z-index: 1;
+  background: var(--folder-ink-deep);
+  border-radius: 3px 9px 9px 9px;
+}
+.folder-card__back::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -9%;
+  width: 38%;
+  height: 10%;
+  background: inherit;           /* 跟着后板换色，状态多了也不会漏改 */
+  border-radius: 3px 7px 0 0;
+}
+
+/* 夹内纸张：从后板上沿探出。用 --paper-white 而不是纯白，
+   纯白在米白纸底上会显得发蓝，像贴上去的而不是夹在里面的。 */
+.folder-card__paper {
+  display: block;
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 12%;
+  height: 46%;
+  z-index: 2;
   background: var(--paper-white);
   border: 1px solid var(--rule);
-  border-radius: 2px 2px 3px 3px;
-  box-shadow: 0 1px 0 rgba(20, 24, 32, .04);
+  border-bottom: 0;
+  border-radius: 2px 2px 0 0;
+  transform-origin: 50% 100%;
+  transition: transform var(--dur-2) var(--ease-paper);
 }
-.folder-card__sheet:nth-child(1) { transform: translate(6px, -7px) rotate(3deg); z-index: 1; }
-.folder-card__sheet:nth-child(2) { transform: translate(-5px, -4px) rotate(-2.5deg); z-index: 2; }
-.folder-card__sheet:nth-child(3) { transform: translate(2px, -2px) rotate(1deg); z-index: 3; }
-.folder-card__sheet.is-top { z-index: 4; transform: none; }
-
-/* 文件夹本体：橙色夹 + 白标签，贴近参考图 */
-.folder-card__body {
+/* 纸上的横线：暗示这是写过字的作业，不是空白纸 */
+.folder-card__paper::after {
+  content: "";
   position: absolute;
-  left: 4%;
-  right: 4%;
-  bottom: 0;
-  top: 22%;
-  background: linear-gradient(180deg, #f0a14a 0%, #e8892a 55%, #d97818 100%);
-  border-radius: 0 10px 10px 10px;
-  box-shadow: 0 6px 14px rgba(120, 60, 0, .18), inset 0 1px 0 rgba(255,255,255,.35);
-  z-index: 5;
-  overflow: hidden;
-}
-.folder-card__tab {
-  position: absolute;
-  left: 4%;
-  top: 8%;
-  width: 42%;
-  height: 18%;
-  background: linear-gradient(180deg, #f4b15d 0%, #e8892a 100%);
-  border-radius: 8px 12px 0 0;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.4);
-  z-index: 6;
-}
-.folder-card__label {
-  position: absolute;
-  left: 10%;
-  right: 10%;
-  top: 18%;
-  bottom: 18%;
-  background: rgba(255,255,255,.92);
-  border-radius: 3px;
-  box-shadow: 0 1px 2px rgba(0,0,0,.06);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px;
-}
-.folder-card__label-lines {
-  width: 70%;
-  height: 55%;
+  left: 14%; right: 14%;
+  top: 26%;
+  height: 42%;
   background:
-    linear-gradient(var(--rule-soft), var(--rule-soft)) 0 20% / 100% 1px no-repeat,
-    linear-gradient(var(--rule-soft), var(--rule-soft)) 0 50% / 100% 1px no-repeat,
-    linear-gradient(var(--rule-soft), var(--rule-soft)) 0 80% / 85% 1px no-repeat;
-  opacity: .85;
+    linear-gradient(var(--rule-soft), var(--rule-soft)) 0 0    / 100% 1px no-repeat,
+    linear-gradient(var(--rule-soft), var(--rule-soft)) 0 40%  / 100% 1px no-repeat,
+    linear-gradient(var(--rule-soft), var(--rule-soft)) 0 80%  / 72% 1px no-repeat;
 }
-.folder-card__badge {
+/* 三张纸各自倾斜，做出「一叠手写作业」的错落。奇偶反向，避免整叠歪向一边。
+   刻意用修饰类而不是 :nth-of-type —— of-type 按标签名数，而夹体所有零件都是
+   <button> 里的 <span>，:nth-of-type(1) 会数到 __back 上，一条都命不中。 */
+.folder-card__paper--1 { transform: rotate(-3.2deg) translate(-4%, 1%); }
+.folder-card__paper--2 { transform: rotate(2.4deg)  translate(3%, -1%); }
+.folder-card__paper--3 { transform: rotate(-.6deg); z-index: 3; }
+
+/* 前袋：夹体正面，压在纸张之上。上沿平齐（参考图如此），不做凹口。 */
+.folder-card__front {
+  display: block;
   position: absolute;
-  right: 8px;
-  bottom: 8px;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
-  border-radius: 99px;
-  background: rgba(20, 24, 32, .78);
-  color: #fff;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 22px;
-  z-index: 7;
+  left: 0; right: 0;
+  bottom: 3%;
+  height: 70%;
+  z-index: 4;
+  background: var(--folder-ink);
+  border-radius: 7px 7px 9px 9px;
 }
+/* 半调网点：孔版印刷的质感来源，让纯色块不至于像塑料。
+   currentColor 走 --folder-ink-soft，所以任何夹面色都成立。 */
+.folder-card__front::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  color: var(--folder-ink-soft);
+  background-image: radial-gradient(currentColor .8px, transparent .9px);
+  background-size: var(--halftone-size) var(--halftone-size);
+  opacity: .42;
+}
+/* 袋口受光的一条细边：夹面与后板之间的厚度感全靠它 */
+.folder-card__front::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 2px;
+  border-radius: 7px 7px 0 0;
+  background: var(--folder-ink-soft);
+  opacity: .6;
+}
+
+/* 份数角标：压在夹面右下，像盖上去的编号章 */
+.folder-card__badge {
+  display: block;
+  position: absolute;
+  right: 7%;
+  bottom: 7%;
+  z-index: 5;
+  min-width: 20px;
+  padding: 1px 6px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.55;
+  letter-spacing: .04em;
+}
+
+/* 落影：硬偏移 + 极淡扩散，与 --shadow-sheet 同一套语言。
+   不用 box-shadow 是因为 clip-path 会把它一起裁掉。 */
+.folder-card__vis::after {
+  content: "";
+  position: absolute;
+  left: 6%; right: 4%;
+  bottom: -3px;
+  height: 10px;
+  z-index: 0;
+  background: var(--paper-deep);
+  filter: blur(3px);
+  opacity: .75;
+}
+
 .folder-card__name {
   display: block;
   font-size: var(--fs-small);
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.32;
   word-break: break-word;
+  transition: color var(--dur-1) linear;
 }
 .folder-card__meta {
   display: block;
@@ -789,13 +849,70 @@ a { color: var(--riso-blue); text-underline-offset: 3px; }
   color: var(--ink-soft);
   letter-spacing: .04em;
 }
-.folder-card--demo .folder-card__body {
-  background: linear-gradient(180deg, #5b8def 0%, #3b6fd8 55%, #2f5fc0 100%);
-  box-shadow: 0 6px 14px rgba(30, 60, 140, .2), inset 0 1px 0 rgba(255,255,255,.35);
+
+/* Demo 系统夹与自建夹同色，靠夹下的「系统夹」字样区分，不靠颜色。
+   （早先给 Demo 夹单独上蓝墨、自建夹上橙墨，等于维护两套夹面配色，
+   状态一多必然漏改一处；而且「颜色不同」本身没说明任何事。） */
+
+/* --- 空夹：只是「没有纸探出来」，夹子本身照旧。
+       先前把空夹整体褪成纸色 + 虚线边，结果它不再像文件夹，而像个待拖入的空卡片，
+       和旁边的实心夹放在一起完全是两种物件。份数「0 份作业」已经说清楚了，
+       颜色不必再重复一遍——降一点饱和度点到为止。 --- */
+/* 换色而不是调 opacity，且不动 __vis 整体：
+   「当前」印章是状态指示，跟着夹体一起褪色会让选中的空夹看起来没选中。 */
+.folder-card--empty .folder-card__back  { background: var(--folder-tint-deep); }
+.folder-card--empty .folder-card__front { background: var(--folder-tint); }
+.folder-card--empty .folder-card__front::before { opacity: .22; }
+.folder-card--empty .folder-card__front::after  { opacity: .35; }
+.folder-card--empty .folder-card__vis::after { opacity: .45; }   /* 落影一并收淡 */
+
+/* --- 悬停：夹体轻抬，纸张外扇，像被抽出来一点 --- */
+@media (hover: hover) {
+  .folder-card:hover .folder-card__vis { transform: translateY(-3px); }
+  .folder-card:hover .folder-card__paper--1 { transform: rotate(-5.4deg) translate(-6%, -2%); }
+  .folder-card:hover .folder-card__paper--2 { transform: rotate(4.2deg)  translate(5%, -3%); }
+  .folder-card:hover .folder-card__paper--3 { transform: rotate(-1deg) translateY(-2%); }
 }
-.folder-card--demo .folder-card__tab {
-  background: linear-gradient(180deg, #7aa4f5 0%, #3b6fd8 100%);
+
+/* --- 选中：当前上传目标。
+       用「错版套印」表达——后板向左上偏移一层蓝墨影，正是本项目首屏标题
+       overprint 的同一套语言。之前给前袋 inset 边、后板 outset 边，两个矩形
+       尺寸不同又不同心，看上去像画歪了的框，而不是选中。
+       三重冗余：墨影 + 名称变蓝 + 「当前」印章。不单靠颜色，色弱用户也能分辨。 --- */
+.folder-card.is-on .folder-card__vis { transform: translateY(-2px); }
+/* 选中框画在夹子**外面**的一个完整矩形上，不去描夹体本身的复合轮廓。
+   试过两种更"聪明"的做法，都不成立：
+   给前袋 inset 边 + 后板 outset 边 —— 两个不同心不同尺寸的矩形，像画歪了；
+   后板偏移一层蓝墨做错版套印 —— 偏移量铺满整个上沿宽度，看着像加了个蓝色页头。
+   一个干净的细墨框反而最稳，任何夹面色、任何份数下都不会退化成"看起来坏了"。 */
+.folder-card.is-on .folder-card__vis::before {
+  content: "";
+  position: absolute;
+  inset: -7px -5px -4px;
+  z-index: 0;
+  border: 1px solid var(--ink);
 }
+.folder-card.is-on .folder-card__name { color: var(--riso-blue); }
+
+/* 「当前」印章：贴夹面左下。份数角标在右下，两者各占一角不打架
+   （居中放会正好压在角标上，也会骑在夹子下沿的落影里）。 */
+.folder-card__now {
+  display: none;
+  position: absolute;
+  left: 7%;
+  bottom: 7%;
+  z-index: 6;
+  transform: rotate(-1.5deg);
+  padding: 1px 7px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.55;
+  letter-spacing: .1em;
+  white-space: nowrap;
+}
+.folder-card.is-on .folder-card__now { display: block; }
 .folder-actions {
   display: flex;
   flex-wrap: wrap;
@@ -820,52 +937,21 @@ a { color: var(--riso-blue); text-underline-offset: 3px; }
   flex: 0 0 auto;
 }
 .folder-item__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 选中的那一行：左侧压一道蓝墨边，与夹卡选中态同一套语言 */
+.folder-item.is-on {
+  border-color: var(--riso-blue);
+  box-shadow: inset 3px 0 0 var(--riso-blue);
+}
 .folder-item__body { flex: 1 1 auto; min-width: 0; }
 .folder-item__name { font-size: var(--fs-small); font-weight: 600; }
 .folder-item__meta { font-family: var(--font-mono); font-size: var(--fs-micro); color: var(--ink-soft); }
 
 /* --------------------------------------------------------------------------
-   9. 样例图库
+   9. 上传区
+   （样例平铺图库 .gallery / .plate 已撤除：同一批内置样例原先在 01b 平铺一次、
+    「查看夹内文件」里又列一次，一屏之内重复出现。现在样例只在夹内清单里列出，
+    对应规则见上一节的 .folder-item。）
    -------------------------------------------------------------------------- */
-.gallery {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: var(--sp-4);
-}
-.plate {
-  appearance: none;
-  padding: 0;
-  text-align: left;
-  background: var(--paper-white);
-  border: 1px solid var(--rule);
-  cursor: pointer;
-  position: relative;
-  /* 题注有一行也有两行（学科 + 题名长短不一）。按列 flex 排、题注吃掉剩余高度，
-     整行卡片底边才会齐平；否则短题注的卡片会比邻居矮一截。 */
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  transition: transform var(--dur-2) var(--ease-paper),
-              box-shadow var(--dur-2) var(--ease-paper);
-}
-.plate:hover { transform: translateY(-3px) rotate(-.5deg); box-shadow: var(--shadow-sheet); }
-.plate.is-on { border-color: var(--riso-blue); box-shadow: 0 0 0 2px var(--riso-blue); }
-/* 两个子节点是 <button> 里的 <span>，默认 display:inline —— 那样 height 会被静默忽略，
-   卡片高度退化成图片原始高度，题注位置就参差不齐、行与行互相穿插。 */
-.plate__img {
-  display: block;
-  position: relative;
-  overflow: hidden;
-  height: 132px;
-  flex: 0 0 auto;
-  background: var(--paper-warm);
-}
-.plate__img img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
-.plate__cap { display: block; flex: 1 1 auto; padding: 8px 10px 10px; border-top: 1px solid var(--rule-soft); }
-.plate__name { font-size: var(--fs-small); font-weight: 600; }
-.plate__meta { font-family: var(--font-mono); font-size: var(--fs-micro);
-  color: var(--ink-soft); letter-spacing: .05em; }
-
 .dropzone {
   border: 1px dashed var(--rule);
   background: var(--paper-warm);
@@ -1181,19 +1267,168 @@ td .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
 
 /* --------------------------------------------------------------------------
-   14. 状态：加载 / 空
+   14. 状态：Loading / Empty / Error / Toast（DESIGN.md §7）
    -------------------------------------------------------------------------- */
 .spin { display: inline-block; animation: spin 900ms linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.loading, .empty {
-  display: flex; align-items: center; justify-content: center; gap: var(--sp-3);
+/* 短时 fallback：仍可用；列表/网格优先 skeleton */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
   padding: var(--sp-7) var(--sp-4);
   color: var(--ink-soft);
   font-size: var(--fs-small);
-  border: 1px dashed var(--rule);
+  border: 1px solid var(--rule-soft);
   background: var(--paper-warm);
+  border-radius: var(--r-2, 8px);
 }
+
+/* Composed empty：图标 + 文案；CTA 由调用方可选追加 .empty__actions */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--sp-3);
+  padding: var(--sp-8) var(--sp-5);
+  color: var(--ink-soft);
+  font-size: var(--fs-small);
+  border: 1px solid var(--rule-soft);
+  background: var(--paper);
+  border-radius: var(--r-2, 8px);
+  line-height: 1.6;
+}
+.empty__ico {
+  display: flex;
+  color: var(--ink-faint);
+}
+.empty__ico svg { width: 36px; height: 36px; }
+.empty__title {
+  margin: 0;
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  color: var(--ink);
+}
+.empty__desc {
+  margin: 0;
+  max-width: 42ch;
+  color: var(--ink-soft);
+  font-size: var(--fs-small);
+}
+.empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  justify-content: center;
+  margin-top: var(--sp-2);
+}
+/* 兼容旧 emptyBox：直接子级 svg + 文本节点 */
+.empty > svg {
+  width: 36px;
+  height: 36px;
+  color: var(--ink-faint);
+  flex: 0 0 auto;
+}
+
+/* Skeleton shimmer：Paper Warm 底 + 轻扫；仅 transform */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--paper-warm);
+  border-radius: var(--r-1, 4px);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(251, 249, 245, 0.7),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: sk-shimmer 1.2s linear infinite;
+}
+.skeleton--line {
+  height: 12px;
+  margin: 6px 0;
+}
+.skeleton--line.w40 { width: 40%; }
+.skeleton--line.w60 { width: 60%; }
+.skeleton--line.w80 { width: 80%; }
+.skeleton--block {
+  height: 72px;
+  border-radius: var(--r-2, 8px);
+}
+.skeleton--row {
+  display: grid;
+  grid-template-columns: 4px 1fr 48px;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.skeleton--row .skeleton--bar {
+  width: 4px;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--paper-deep);
+}
+@keyframes sk-shimmer {
+  100% { transform: translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; display: none; }
+  .spin { animation: none; }
+}
+
+/* 字段级错误（系统校验，≠ 业务分流红 stamp） */
+.is-invalid,
+.input.is-invalid,
+input.is-invalid,
+textarea.is-invalid {
+  border-color: var(--riso-red) !important;
+  background: var(--riso-red-lt);
+}
+.field-error {
+  display: block;
+  margin-top: 6px;
+  font-size: var(--fs-micro);
+  color: var(--riso-red);
+  line-height: 1.4;
+}
+/* 系统错误 note 别名：与 note--red 同貌，语义上区分「转人工」业务红 */
+.note--error { border-color: #EFC5C1; background: var(--riso-red-lt); }
+.note--error .note__ico { color: var(--riso-red); }
+
+/* Toast：成功/提示；可打断；默认隐藏由 JS 控制 */
+.toast {
+  position: fixed;
+  right: var(--sp-4);
+  bottom: var(--sp-4);
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 12px 14px;
+  background: var(--ink);
+  color: var(--paper-white);
+  border-radius: var(--r-2, 8px);
+  box-shadow: var(--shadow-pop, var(--shadow-sheet));
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+.toast[hidden] { display: none !important; }
+.toast--ok { background: var(--riso-green); }
+.toast--err { background: var(--riso-red); }
+.toast b { font-weight: 600; }
 
 /* 飞书卡片预览 */
 .larkcard { border: 1px solid var(--rule); max-width: 480px; background: var(--paper-white); }

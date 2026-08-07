@@ -54,8 +54,13 @@
       I('loader', { size: 16 }) + '</span>' + esc(text || '处理中') + '</div>';
   }
 
-  function emptyBox(text, iconName) {
-    return '<div class="empty">' + I(iconName || 'info', { size: 16 }) + esc(text) + '</div>';
+  function emptyBox(text, iconName, actionHtml) {
+    /* DESIGN §7.2 composed empty：图标 + 说明；可选 CTA HTML */
+    return '<div class="empty">' +
+      '<div class="empty__ico">' + I(iconName || 'info', { size: 36 }) + '</div>' +
+      '<p class="empty__desc">' + esc(text) + '</p>' +
+      (actionHtml ? '<div class="empty__actions">' + actionHtml + '</div>' : '') +
+      '</div>';
   }
 
   /* ======================================================================
@@ -81,9 +86,9 @@
 
   var TRAIL = [
     { tab: 'submit', n: '01', t: '选文件夹 / 上传', tip: '自建文件夹、指定上传目标；也可打开 Demo 样例夹点内置照片。整夹可一键批改并自动飞书提醒。' },
-    { tab: 'result', n: '02', t: '看过程级批改', tip: '每一步判分都附「引用学生原文」的证据链，右侧是置信度五因子明细。' },
-    { tab: 'teacher', n: '03', t: '当一次教师终审', tip: '改一份的分数或错因——提交后，同题其他作答的置信度会按你的通过率实时变化。' },
-    { tab: 'board', n: '04', t: '看班级学情', tip: '薄弱点、错因分布与讲评课件大纲，全部由上面的批改结果实时聚合而来。' }
+    { tab: 'result', n: '02', t: '过程级批改', tip: '每一步判分都附「引用学生原文」的证据链，右侧是置信度五因子明细。' },
+    { tab: 'teacher', n: '03', t: '教师终审', tip: '改一份的分数或错因——提交后，同题其他作答的置信度会按教师的通过率实时变化。' },
+    { tab: 'board', n: '04', t: '班级学情', tip: '薄弱点、错因分布与讲评课件大纲，根据批改结果实时聚合。' }
   ];
 
   /* ======================================================================
@@ -139,6 +144,9 @@
       $('#app').classList.add('is-on');
       window.scrollTo(0, 0);
       switchTab('submit');
+      // 到这里吸顶栏才真正可见、才有高度可量。init() 里那次量的是隐藏状态，
+      // 拿到 0 会被守卫挡掉，只能落在 CSS 兜底值上。
+      syncMastheadHeight();
     });
   }
 
@@ -259,7 +267,7 @@
       $('#folder-detail-sheet').style.display = 'none';
       $('#folder-feishu-note').style.display = 'none';
       $('#result-body').innerHTML = emptyBox('请先在「01 拍照提交」中选择样例或上传照片，识别后点击「提交批改」。');
-      $$('.plate').forEach(function (p) { p.classList.remove('is-on'); });
+      markPlate(null);        // 清掉夹内清单上的选中标记
       loadFolders();
       switchTab('submit');
     }).catch(function (e) {
@@ -291,9 +299,6 @@
     var del = $('#folder-delete-btn');
     if (ren) ren.style.display = (meta && meta.kind !== 'demo') ? '' : 'none';
     if (del) del.style.display = (meta && meta.kind !== 'demo') ? '' : 'none';
-    // Demo 夹展开样例图库；自建夹隐藏
-    var gal = $('#gallery');
-    if (gal) gal.style.display = (meta && meta.kind === 'demo') ? '' : 'none';
   }
 
   function renderFolders() {
@@ -305,27 +310,34 @@
       return;
     }
     grid.innerHTML = FOLDERS.map(function (f) {
-      var stackN = Math.max(0, Math.min(3, f.stack || f.count || 0));
-      var sheets = '';
-      for (var i = 0; i < stackN; i++) {
-        sheets += '<span class="folder-card__sheet' +
-          (i === stackN - 1 ? ' is-top' : '') + '"></span>';
+      var count = f.count || 0;
+      // 夹内纸张最多画 3 张：再多也看不出差别，份数由角标给准数
+      var papers = '';
+      var paperN = Math.max(0, Math.min(3, f.stack || count));
+      for (var i = 1; i <= paperN; i++) {
+        papers += '<span class="folder-card__paper folder-card__paper--' + i + '"></span>';
       }
-      if (!stackN) {
-        sheets = '<span class="folder-card__sheet is-top" style="opacity:.35;"></span>';
-      }
-      var kindCls = f.kind === 'demo' ? ' folder-card--demo' : '';
-      var onCls = f.folder_id === ACTIVE_FOLDER ? ' is-on' : '';
-      var meta = f.kind === 'demo' ? '系统夹 · ' + f.count + ' 份' : f.count + ' 份作业';
-      return '<button type="button" class="folder-card' + kindCls + onCls +
-        '" data-folder="' + esc(f.folder_id) + '" title="' + esc(f.name) + '">' +
-        '<span class="folder-card__stack" aria-hidden="true">' +
-          sheets +
-          '<span class="folder-card__tab"></span>' +
-          '<span class="folder-card__body">' +
-            '<span class="folder-card__label"><span class="folder-card__label-lines"></span></span>' +
-            (f.count ? '<span class="folder-card__badge">' + f.count + '</span>' : '') +
-          '</span>' +
+
+      var cls = 'folder-card';
+      if (f.kind === 'demo') cls += ' folder-card--demo';
+      if (!count) cls += ' folder-card--empty';
+      if (f.folder_id === ACTIVE_FOLDER) cls += ' is-on';
+
+      var meta = f.kind === 'demo' ? '系统夹 · ' + count + ' 份' : count + ' 份作业';
+      // 无障碍：夹体纯装饰，语义全部交给这一句，读屏不会听到一串空 span
+      var label = f.name + '，' + meta +
+        (f.folder_id === ACTIVE_FOLDER ? '，当前上传目标' : '');
+
+      return '<button type="button" class="' + cls +
+        '" data-folder="' + esc(f.folder_id) + '"' +
+        ' aria-pressed="' + (f.folder_id === ACTIVE_FOLDER) + '"' +
+        ' aria-label="' + esc(label) + '" title="' + esc(f.name) + '">' +
+        '<span class="folder-card__vis" aria-hidden="true">' +
+          '<span class="folder-card__back"></span>' +
+          papers +
+          '<span class="folder-card__front"></span>' +
+          (count ? '<span class="folder-card__badge">' + count + '</span>' : '') +
+          '<span class="folder-card__now">当前</span>' +
         '</span>' +
         '<span class="folder-card__name">' + esc(f.name) + '</span>' +
         '<span class="folder-card__meta">' + esc(meta) + '</span>' +
@@ -559,24 +571,21 @@
       ? '支持 PNG / JPG / WebP，超过 1MB 会自动压缩后上传（原图 &#8804; ' + mb + 'MB）'
       : '当前为离线演示模式，<b>只能识别内置样例照片</b>；识别任意照片需服务端配置多模态密钥';
 
+    // 样例照片只在「查看夹内文件」里列出，01b 不再平铺一遍。
+    // 之前两处都渲染，同一批 11 张在一屏里出现两次，翻页时尤其明显。
+    // SAMPLE_IMAGES 仍要留着——首屏拼贴（buildCollage）用的是它。
     SAMPLE_IMAGES = data.images || [];
-    $('#gallery').innerHTML = SAMPLE_IMAGES.map(function (im) {
-      return '<button type="button" class="plate" data-sample="' + esc(im.submission_id) +
-        '" data-url="' + esc(im.url) + '">' +
-        '<span class="plate__img"><img src="' + esc(im.url) + '" alt="' +
-        esc(im.student_name) + '的作业照片" loading="lazy"></span>' +
-        '<span class="plate__cap">' +
-        '<span class="plate__name">' + esc(im.student_name) + '</span><br>' +
-        '<span class="plate__meta">' + esc(im.subject) + ' · ' + esc(im.question_title) + '</span>' +
-        '</span></button>';
-    }).join('');
     buildCollage(SAMPLE_IMAGES);
     updateUploadTargetHint();
   }
 
+  /* 标记当前选中的样例。
+     样例平铺图库撤掉后，承载 data-sample 的是夹内清单里的「批改」按钮，
+     所以标记打在它所属的那一行上，而不再找 .plate。 */
   function markPlate(sid) {
-    $$('.plate').forEach(function (p) {
-      p.classList.toggle('is-on', !!sid && p.dataset.sample === sid);
+    $$('[data-sample]').forEach(function (b) {
+      var row = (b.closest && b.closest('.folder-item')) || b;
+      row.classList.toggle('is-on', !!sid && b.dataset.sample === sid);
     });
   }
 
@@ -985,13 +994,25 @@
     });
   }
 
+  /* 识别失败后的兜底入口：改用内置样例。
+     内置样例只挂在 Demo 夹下，所以先切到 Demo 夹再展开夹内清单——
+     体验者此刻可能正停在某个自建夹上，直接开当前夹会开出一个空列表。 */
   function useSampleInstead() {
     $('#recog-sheet').style.display = 'none';
-    var g = $('#gallery');
-    g.scrollIntoView({ behavior: M.reduced ? 'auto' : 'smooth', block: 'center' });
-    g.style.transition = 'box-shadow 300ms var(--ease-ink)';
-    g.style.boxShadow = '0 0 0 3px var(--riso-blue-lt)';
-    setTimeout(function () { g.style.boxShadow = ''; }, 1600);
+    if (ACTIVE_FOLDER === 'demo') { openFolderDetail(); return; }
+    api('/api/folders/active', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder_id: 'demo' })
+    }).then(function (d) {
+      ACTIVE_FOLDER = d.active_folder_id || 'demo';
+      FOLDERS.forEach(function (f) { f.is_active = (f.folder_id === ACTIVE_FOLDER); });
+      renderFolders();
+      openFolderDetail();
+    }).catch(function () {
+      // 切夹失败也要给出路：至少把夹区滚到眼前，让人自己点 Demo 夹
+      $('#folder-grid').scrollIntoView({
+        behavior: M.reduced ? 'auto' : 'smooth', block: 'center' });
+    });
   }
 
   function submitImageGrade() {
@@ -1807,10 +1828,10 @@
         selectFolder(fcard.dataset.folder);
         return;
       }
-      // 夹内「批改」按钮也带 data-sample
-      var plate = t.closest && t.closest('[data-sample]');
-      if (plate && (plate.classList.contains('plate') || plate.dataset.url)) {
-        selectSample(plate.dataset.sample, plate.dataset.url);
+      // 样例入口现在只有一处：夹内清单里的「批改」按钮
+      var pick = t.closest && t.closest('[data-sample]');
+      if (pick && pick.dataset.url) {
+        selectSample(pick.dataset.sample, pick.dataset.url);
         return;
       }
 
@@ -1870,10 +1891,26 @@
      10. 启动
      ====================================================================== */
 
+  /* 把吸顶栏实测高度写进 --masthead-h，供 scroll-margin-top 用。
+     CSS 里有兜底值，但栏高随视口变（窄屏品牌行会换行、字号是流体的），
+     写死一个数迟早对不上，所以量一次、并在 resize 后重量。 */
+  function syncMastheadHeight() {
+    var m = document.querySelector('.masthead');
+    if (!m) return;
+    var h = Math.round(m.getBoundingClientRect().height);
+    if (h > 0) document.documentElement.style.setProperty('--masthead-h', h + 'px');
+  }
+
   function init() {
     Icons.hydrate();
     bind();
     renderTrail();
+    syncMastheadHeight();
+    var rt = null;
+    window.addEventListener('resize', function () {
+      clearTimeout(rt);
+      rt = setTimeout(syncMastheadHeight, 150);
+    });
 
     api('/api/demo/config').then(function (c) {
       CONFIG = c;
@@ -1893,8 +1930,10 @@
       renderGallery(data);
       Icons.hydrate();
     }).catch(function (e) {
-      $('#gallery').innerHTML = emptyBox('图库加载失败：' + e.message, 'alert');
-      Icons.hydrate();
+      // 样例清单拿不到时，把话说在识别引擎那一行——#gallery 容器已经撤掉，
+      // 往它上面写会直接抛 null。夹内清单自己会显示各自的加载失败。
+      var hint = $('#engine-hint');
+      if (hint) hint.innerHTML = '样例清单加载失败：' + esc(e.message);
     });
 
     // 首屏三色统计取真实分流数据，不写死数字

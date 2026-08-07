@@ -140,7 +140,7 @@
           <span class="folio">01</span>
         </div>
         <p class="hint" id="engine-hint">识别引擎载入中</p>
-        <p class="hint">文件夹像一叠作业：可自建命名、指定上传目标；选中后可整夹一键批改，批改完成自动发飞书审核提醒。</p>
+        <p class="hint">文件夹：可自建命名、指定上传目标；选中后可整夹一键批改，批改完成自动发飞书审核提醒。</p>
 
         <div class="folder-toolbar mt-4">
           <div class="folder-toolbar__left">
@@ -191,9 +191,6 @@
           <span class="folio">01b</span>
         </div>
         <p class="hint" id="upload-target-hint">上传目标：Demo 样例</p>
-        <div class="gallery mt-4" id="gallery" style="display:none;">
-          <div class="loading"><span class="spin" data-icon="loader" data-icon-size="16"></span>载入样例图库</div>
-        </div>
 
         <div class="dropzone mt-4" id="dropzone">
           <span data-icon="upload" data-icon-size="22" style="color:var(--ink-soft)"></span>
@@ -265,8 +262,11 @@
     <section class="screen" id="screen-result">
       <div id="result-body">
         <div class="empty">
-          <span data-icon="info" data-icon-size="16"></span>
-          请先在「01 拍照提交」中选择样例或上传照片，识别后点击「提交批改」。
+          <div class="empty__ico"><span data-icon="info" data-icon-size="36"></span></div>
+          <p class="empty__desc">请先在「01 拍照提交」中选择样例或上传照片，识别后点击「提交批改」。</p>
+          <div class="empty__actions">
+            <button class="btn btn--sm" type="button" data-goto="submit">去拍照提交</button>
+          </div>
         </div>
       </div>
     </section>
