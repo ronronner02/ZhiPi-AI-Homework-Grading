@@ -33,6 +33,19 @@
   --st-yellow:    var(--riso-amber);
   --st-red:       var(--riso-red);
 
+  /* 文件夹专色：统一走主强调蓝，系统夹与自建夹同色。
+     刻意**不用**红/黄/绿三色——那三色在本系统里是分流语义（人工/确认/通过），
+     染在夹子上会被读成「这夹里的作业是什么状态」，而夹子只是容器。
+     蓝色不参与分流，借来做容器色没有歧义。 */
+  --folder-ink:      var(--riso-blue);   /* 夹面主色 */
+  --folder-ink-deep: #1E2E8E;            /* 夹体压深：后板与厚度 */
+  --folder-ink-soft: #7C8AE0;            /* 夹面提亮：受光上沿与网点 */
+  /* 空夹的淡色版。刻意给成两个确定值，而不是对上面两色加 opacity——
+     压深色本身偏灰，透过纸底后比夹面色更浅，会把「后板深、前袋浅」的
+     纵深关系整个反过来，夹子看着像内外翻了面。 */
+  --folder-tint:      #B3BBE4;           /* 空夹前袋 */
+  --folder-tint-deep: #9AA3D2;           /* 空夹后板：仍比前袋深 */
+
   /* ---- 字体 -------------------------------------------------------------- */
   /* 拉丁衬线放在 CJK 之前，让中英混排时英文走 Times、中文走宋体 */
   --font-display: "Times New Roman", Georgia, "Songti SC", "STSong", "STZhongsong",
@@ -67,14 +80,29 @@
   --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
   --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 72px; --sp-9: 112px;
 
-  /* ---- 动效 -------------------------------------------------------------- */
-  --ease-paper: cubic-bezier(.16, .84, .28, 1);    /* 纸张滑移：快出慢收 */
-  --ease-ink:   cubic-bezier(.62, .02, .2, 1);     /* 油墨渗透：先慢后快再收 */
-  --dur-1: 160ms; --dur-2: 320ms; --dur-3: 520ms; --dur-4: 820ms;
+  /* ---- 圆角（DESIGN.md §4.3 · 统一 0/6/8/10 混用） ---------------------- */
+  --r-0:    0;        /* 可选严格印刷风 */
+  --r-1:    4px;      /* 输入、小 tag */
+  --r-2:    8px;      /* 按钮、stamp */
+  --r-3:    12px;     /* sheet、dialog、上传区 */
+  --r-4:    16px;     /* 大卡片、文件夹 */
+  --r-pill: 999px;    /* 仅 filter chip；主按钮不用 */
+
+  /* ---- 动效（DESIGN.md §8.2 · Motion dial=3） -------------------------- */
+  --ease-paper:   cubic-bezier(.16, .84, .28, 1);   /* 纸张滑移：快出慢收 */
+  --ease-ink:     cubic-bezier(.62, .02, .2, 1);    /* 油墨渗透 */
+  --ease-out-ui:  cubic-bezier(0.23, 1, 0.32, 1);  /* 通用 UI 出场 */
+  --ease-move:    cubic-bezier(0.77, 0, 0.175, 1);  /* 位移动效 */
+  /* dur-2/3 略收：日用反馈更干脆；dur-4 仍留给 Hero 叙事 */
+  --dur-1: 160ms;
+  --dur-2: 240ms;
+  --dur-3: 400ms;
+  --dur-4: 820ms;
 
   /* ---- 质感 -------------------------------------------------------------- */
-  /* 纸纹：分形噪声，叠在最上层做 multiply，让整页有纤维感 */
+  /* 纸纹：仅 Hero / 口令门启用（见 app.css 作用域）；工作台默认关 */
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  --grain-opacity-hero: 0.12;   /* DESIGN：Hero grain ≤ 0.12；旧全局 0.34 过脏 */
   /* 半调网点：用 currentColor，套在任意专色上都成立 */
   --halftone-size: 5px;
 
