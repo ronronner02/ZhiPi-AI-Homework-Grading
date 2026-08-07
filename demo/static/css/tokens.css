@@ -59,8 +59,9 @@
   /* 流体字号：首屏标题在窄屏也要有压迫感，但不能撑破容器。
      上限按「7 栏宽度 ÷ 5 个汉字」反推：1440px 视口下栏宽约 760px，
      字距 -.06em 后每字约占 0.94em，故 136px 仍能单行落位，留足余量。 */
-  --fs-hero:      clamp(2.6rem, 8.4vw, 8.5rem);
-  --fs-display:   clamp(2.1rem, 6.4vw, 4.6rem);
+  /* DESIGN §3.2：Hero 上限 ~6rem，避免小屏压正文 */
+  --fs-hero:      clamp(2.6rem, 8.4vw, 6rem);
+  --fs-display:   clamp(2.1rem, 5vw, 3.5rem);
   --fs-h1:        clamp(1.6rem, 3.4vw, 2.5rem);
   --fs-h2:        clamp(1.15rem, 2vw, 1.5rem);
   --fs-h3:        1rem;

@@ -22,17 +22,8 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 纸纤维噪点：铺满视口，multiply 叠在所有内容之上，给整页统一的印刷手感 */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: var(--grain);
-  mix-blend-mode: multiply;
-  opacity: .34;
-  pointer-events: none;
-  z-index: 9000;
-}
+/* grain 不再挂 body（工作台表格会发脏，且 z-index:9000 盖过 toast）。
+   仅 Hero 入口 .stage 启用，见下方 .stage::after。 */
 
 /* 12 栏栏线：editorial 版面把网格画出来，而不是藏起来 */
 .gridlines {
@@ -128,9 +119,21 @@ a { color: var(--riso-blue); text-underline-offset: 3px; }
    3. 叙事首屏
    -------------------------------------------------------------------------- */
 .stage { position: relative; z-index: 1; }
+/* DESIGN：grain 仅 Hero/口令门；opacity ≤ 0.12；不盖业务控件 */
+.stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--grain);
+  mix-blend-mode: multiply;
+  opacity: var(--grain-opacity-hero, 0.12);
+  pointer-events: none;
+  z-index: 0;
+}
 
 .hero {
   position: relative;
+  z-index: 1; /* 高于 .stage::after grain */
   min-height: 100svh;
   padding: var(--sp-5) var(--margin);
   max-width: var(--maxw);
