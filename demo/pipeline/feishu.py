@@ -16,7 +16,11 @@
 
 本模块不硬编码任何真实凭据或 Webhook 地址，全部经环境变量注入。
 """
+import base64
+import hashlib
+import hmac
 import os
+import time
 
 import requests
 
@@ -30,11 +34,24 @@ TOKEN_URL = FEISHU_OPEN_HOST + "/open-apis/auth/v3/tenant_access_token/internal"
 # 审核工作台跳转链接（占位）。真实部署时经 ZHIPI_REVIEW_CONSOLE_URL 注入本校地址。
 DEFAULT_CONSOLE_URL = "https://zhipi.example.com/teacher/workbench"
 
-# 分流状态中文标签（与 confidence.STATUS_LABEL 对齐）
+# 分流状态中文标签（与 confidence.STATUS_LABEL 对齐；卡片正文用）
 STATUS_LABEL = {
     "green": "绿色 · 自动通过",
     "yellow": "黄色 · 教师确认",
     "red": "红色 · 人工批改",
+}
+# 多维表格「分流状态」是单选：必须写入表内已有选项名，否则 batch_create 整批失败。
+# 现场表里可能没有「红色 · 人工批改」，红色统一落到「已分流-补差」（语义最接近需人工跟进）。
+STATUS_BASE_OPTION = {
+    "green": "绿色 · 自动通过",
+    "yellow": "黄色 · 教师确认",
+    "red": "已分流-补差",
+}
+# 多维表格「教师终审」也是单选：只写短状态，详细改分/错因仍在系统内查看。
+REVIEW_BASE_OPTION = {
+    None: "待终审",
+    "confirmed": "通过",
+    "modified": "通过",
 }
 # 分流状态对应的信号灯，用于卡片富文本
 STATUS_EMOJI = {"green": "🟢", "yellow": "🟡", "red": "🔴"}
@@ -133,11 +150,27 @@ def build_review_card(class_analytics: dict, assignment_name: str = None) -> dic
     return {"msg_type": "interactive", "card": card}
 
 
+def _webhook_sign(secret: str) -> tuple[str, str]:
+    """飞书自定义机器人签名校验（开启「签名校验」时必填）。
+
+    算法：timestamp + "\\n" + secret，HmacSHA256 后 Base64。
+    返回 (timestamp, sign)，调用方塞进 POST body。
+    """
+    timestamp = str(int(time.time()))
+    string_to_sign = "%s\n%s" % (timestamp, secret)
+    digest = hmac.new(
+        string_to_sign.encode("utf-8"), digestmod=hashlib.sha256
+    ).digest()
+    return timestamp, base64.b64encode(digest).decode("utf-8")
+
+
 def push_review_card(class_analytics: dict, assignment_name: str = None) -> dict:
     """推送审核提醒卡片到飞书自定义机器人。
 
-    读取环境变量 ZHIPI_FEISHU_WEBHOOK（自定义机器人 Webhook 地址）：
-    - 已配置：用 requests POST 真实推送，返回飞书响应；
+    读取环境变量：
+        ZHIPI_FEISHU_WEBHOOK         自定义机器人 Webhook 地址
+        ZHIPI_FEISHU_WEBHOOK_SECRET  可选；机器人开启了签名校验时必填
+    - 已配置 Webhook：用 requests POST 真实推送，返回飞书响应；
     - 未配置：返回 demo 模式数据，展示"将要推送的卡片内容"。
     任何网络 / 接口异常自动降级 demo，保证 Demo 现场始终可跑。
 
@@ -155,13 +188,25 @@ def push_review_card(class_analytics: dict, assignment_name: str = None) -> dict
         }
 
     # 已配置：真实推送到飞书自定义机器人
+    payload = dict(card_msg)
+    secret = os.environ.get("ZHIPI_FEISHU_WEBHOOK_SECRET", "").strip()
+    if secret:
+        ts, sign = _webhook_sign(secret)
+        payload["timestamp"] = ts
+        payload["sign"] = sign
+
     try:
-        resp = requests.post(webhook, json=card_msg, timeout=10)
+        resp = requests.post(webhook, json=payload, timeout=10)
         resp.raise_for_status()
         try:
             body = resp.json()
         except ValueError:
             body = {"raw": resp.text}
+        # 飞书自定义机器人成功时 code=0；非 0 也按失败降级，避免把 19021 签名错误
+        # 当成"已推送"展示给教师。
+        if isinstance(body, dict) and body.get("code", 0) not in (0, None):
+            raise RuntimeError("飞书返回 code=%s：%s" % (
+                body.get("code"), body.get("msg") or body))
         return {
             "mode": "live",
             "message": "已推送至飞书自定义机器人",
@@ -207,18 +252,28 @@ def build_base_records(grading_results: list, reviews: dict = None) -> list:
         tags = r.get("error_tags") or []
         tag_text = "、".join(tags) if tags else "无"
 
-        # 教师终审：已审核则展示动作、终分与错因修订，否则标记"待终审"
+        # 教师终审：多维表格侧是单选（待终审 / 通过 / 驳回 / 未审），
+        # 只写短状态；改分与错因修订仍在系统审核工作台查看。
         review = reviews.get(r.get("submission_id"))
         if review:
-            action_label = "已修改" if review.get("teacher_action") == "modified" else "已确认"
-            final = "%s %s/%s" % (action_label, review.get("final_score"), r.get("max_score"))
-            if review.get("final_error_tags"):
-                final += "，错因修订：" + "、".join(review["final_error_tags"])
+            action = review.get("teacher_action")
+            # 教师把分改低，语义上更接近"驳回 AI 判分"，落到「驳回」；
+            # 其余（确认 / 仅改评语错因 / 改高）都记「通过」。
+            if (action == "modified"
+                    and review.get("final_score") is not None
+                    and review.get("ai_score") is not None
+                    and review.get("final_score") < review.get("ai_score")):
+                final = "驳回"
+            else:
+                final = REVIEW_BASE_OPTION.get(action, "通过")
         else:
-            final = "待终审"
+            final = REVIEW_BASE_OPTION[None]
 
         # 题号：题目 ID 与标题组合，便于台账内快速辨识题目
         question_no = "%s · %s" % (r.get("question_id", ""), r.get("question_title", ""))
+        status_key = r.get("status")
+        status_text = STATUS_BASE_OPTION.get(
+            status_key, STATUS_LABEL.get(status_key, status_key or ""))
 
         records.append({
             "fields": {
@@ -228,7 +283,7 @@ def build_base_records(grading_results: list, reviews: dict = None) -> list:
                 "满分": r.get("max_score", 0),
                 "错因标签": tag_text,
                 "置信度": r.get("confidence", 0),
-                "分流状态": STATUS_LABEL.get(r.get("status"), r.get("status", "")),
+                "分流状态": status_text,
                 "教师终审": final,
             }
         })
