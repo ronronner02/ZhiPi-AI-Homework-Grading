@@ -1,0 +1,94 @@
+/* ==========================================================================
+   智批π · 设计令牌
+   艺术方向：编辑部 Riso —— 米白纸张、宋体×黑体对撞、油墨专色与错版套印。
+   全部资源内联（纸纹与半调网点均由 SVG / 渐变生成），零外部请求，断网可用。
+   ========================================================================== */
+
+:root {
+  /* ---- 纸张与油墨 -------------------------------------------------------- */
+  --paper:        #F4F1EA;   /* 主纸色 */
+  --paper-warm:   #EFEADF;   /* 次级纸色，用于分区 */
+  --paper-deep:   #E4DDCD;   /* 压深，用于边界与内凹 */
+  --paper-white:  #FBF9F5;   /* 提亮，用于浮起的卡片 */
+
+  --ink:          #16130E;   /* 主墨（正文与标题） */
+  --ink-mid:      #4A4237;   /* 次级文字 */
+  --ink-soft:     #857B6C;   /* 辅助说明 */
+  --ink-faint:    #B3A996;   /* 占位与禁用 */
+  --rule:         #D6CFBE;   /* 细线 */
+  --rule-soft:    #E6E0D2;   /* 更淡的线 */
+
+  /* Riso 专色：饱和但不刺眼，模拟孔版印刷的三种油墨 */
+  --riso-blue:    #2B41C8;   /* 主强调色，呼应样例作业上的蓝墨手写 */
+  --riso-blue-lt: #E5E7F8;
+  --riso-red:     #D8332A;   /* 分流：转人工 */
+  --riso-red-lt:  #FAE6E4;
+  --riso-amber:   #DE8A0B;   /* 分流：教师确认 */
+  --riso-amber-lt:#FBF0DC;
+  --riso-green:   #1F7A4C;   /* 分流：自动通过 */
+  --riso-green-lt:#E2F0E8;
+
+  /* 状态语义别名：业务代码只认这三个，换色不用改逻辑 */
+  --st-green:     var(--riso-green);
+  --st-yellow:    var(--riso-amber);
+  --st-red:       var(--riso-red);
+
+  /* ---- 字体 -------------------------------------------------------------- */
+  /* 拉丁衬线放在 CJK 之前，让中英混排时英文走 Times、中文走宋体 */
+  --font-display: "Times New Roman", Georgia, "Songti SC", "STSong", "STZhongsong",
+                  "Noto Serif SC", "Source Han Serif SC", SimSun, serif;
+  --font-serif:   "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", SimSun, serif;
+  --font-sans:    -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+                  "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "Roboto Mono",
+                  "Courier New", monospace;
+
+  /* 流体字号：首屏标题在窄屏也要有压迫感，但不能撑破容器。
+     上限按「7 栏宽度 ÷ 5 个汉字」反推：1440px 视口下栏宽约 760px，
+     字距 -.06em 后每字约占 0.94em，故 136px 仍能单行落位，留足余量。 */
+  --fs-hero:      clamp(2.6rem, 8.4vw, 8.5rem);
+  --fs-display:   clamp(2.1rem, 6.4vw, 4.6rem);
+  --fs-h1:        clamp(1.6rem, 3.4vw, 2.5rem);
+  --fs-h2:        clamp(1.15rem, 2vw, 1.5rem);
+  --fs-h3:        1rem;
+  --fs-body:      0.95rem;
+  --fs-small:     0.8125rem;
+  --fs-micro:     0.6875rem;
+
+  --tracking-tight: -0.045em;   /* 大标题负字距，制造版面张力 */
+  --tracking-wide:  0.22em;     /* 栏号 / 标签 / 眉批 */
+
+  /* ---- 网格与间距 -------------------------------------------------------- */
+  --cols: 12;
+  --gutter: clamp(12px, 1.6vw, 24px);
+  --margin: clamp(16px, 4.2vw, 72px);
+  --maxw: 1440px;
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 72px; --sp-9: 112px;
+
+  /* ---- 动效 -------------------------------------------------------------- */
+  --ease-paper: cubic-bezier(.16, .84, .28, 1);    /* 纸张滑移：快出慢收 */
+  --ease-ink:   cubic-bezier(.62, .02, .2, 1);     /* 油墨渗透：先慢后快再收 */
+  --dur-1: 160ms; --dur-2: 320ms; --dur-3: 520ms; --dur-4: 820ms;
+
+  /* ---- 质感 -------------------------------------------------------------- */
+  /* 纸纹：分形噪声，叠在最上层做 multiply，让整页有纤维感 */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  /* 半调网点：用 currentColor，套在任意专色上都成立 */
+  --halftone-size: 5px;
+
+  --shadow-lift: 0 1px 0 var(--paper-deep), 0 10px 26px -18px rgba(22,19,14,.5);
+  --shadow-sheet: 2px 3px 0 var(--paper-deep), 6px 10px 28px -14px rgba(22,19,14,.42);
+}
+
+/* 尊重系统的减弱动效设置：把位移与旋转类动画全部关掉，只保留必要的淡入 */
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-1: 1ms; --dur-2: 1ms; --dur-3: 1ms; --dur-4: 1ms; }
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

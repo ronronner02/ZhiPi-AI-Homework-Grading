@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="description" content="智批π · 教师可控的多模态作业批改与错因诊断系统。拍照提交、手写识别、过程级证据链批改、红黄绿置信度分流、教师终审、班级学情看板。">
+<title>智批π · 教师可控的多模态作业批改与错因诊断</title>
+<link rel="stylesheet" href="/static/css/tokens.css">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+<!-- 12 栏栏线：editorial 版面把网格画出来 -->
+<div class="gridlines" aria-hidden="true">
+  <span></span><span></span><span></span><span></span><span></span><span></span>
+  <span></span><span></span><span></span><span></span><span></span><span></span>
+</div>
+
+<!-- ==========================================================================
+     叙事首屏
+     ========================================================================== -->
+<main class="stage" id="stage">
+  <section class="hero">
+
+    <div class="hero__top">
+      <div class="hero__mark">智批&#960;</div>
+      <div class="hero__meta">
+        <span>希沃智教&#960; · AI 智能作业批改</span>
+        <span id="hero-mode">运行模式载入中</span>
+        <span>2026</span>
+      </div>
+    </div>
+
+    <div class="hero__body">
+      <div class="hero__title">
+        <span class="kicker">不漏一题 · 不落一人</span>
+        <h1 class="display">
+          <span class="line" data-t="教师可控的">教师可控的</span>
+          <span class="line" data-t="多模态批改">多模态批改</span>
+        </h1>
+      </div>
+
+      <!-- 手写样例照片拼贴：材料来自内置样例图库，滚动时按不同速率产生景深 -->
+      <div class="collage" id="collage" aria-hidden="true"></div>
+
+      <p class="hero__claim">
+        普通 AI 批改回答「这道题对不对」。我们回答的是：<b>学生为什么错、错在哪一步、老师敢不敢信这个判断、下节课怎么讲。</b>
+        <em>技术主张：多模态批改的主要失败发生在转写，而不是评分。故拆成转写置信 × 评分置信两个可测环节，由校准过的置信度决定人机分工。</em>
+      </p>
+
+      <div class="hero__stats" id="hero-stats">
+        <div class="stat">
+          <span class="stat__swatch" style="background:var(--riso-green)"></span>
+          <span class="stat__n num" data-stat="green">0</span>
+          <span class="stat__label">自动通过</span>
+          <span class="stat__sub">confidence &#8805; 85</span>
+        </div>
+        <div class="stat">
+          <span class="stat__swatch" style="background:var(--riso-amber)"></span>
+          <span class="stat__n num" data-stat="yellow">0</span>
+          <span class="stat__label">教师一键确认</span>
+          <span class="stat__sub">60 &#8211; 85</span>
+        </div>
+        <div class="stat">
+          <span class="stat__swatch" style="background:var(--riso-red)"></span>
+          <span class="stat__n num" data-stat="red">0</span>
+          <span class="stat__label">转人工批改</span>
+          <span class="stat__sub">&lt; 60</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero__foot">
+      <button class="btn btn--lg" id="enter-btn" type="button">
+        <span>开始体验完整批改动线</span>
+        <span data-icon="arrowRight" data-icon-size="18"></span>
+      </button>
+      <span class="hero__scroll">
+        <span>四步走完 · 约 2 分钟</span>
+        <span data-icon="arrowDown" data-icon-size="14"></span>
+      </span>
+    </div>
+
+  </section>
+</main>
+
+<!-- ==========================================================================
+     工作台
+     ========================================================================== -->
+<div class="app" id="app">
+
+  <header class="masthead">
+    <div class="masthead__bar">
+      <button class="masthead__brand" id="back-home" type="button" title="回到首页">
+        智批&#960;
+        <small>教师可控的多模态批改</small>
+      </button>
+      <div class="masthead__tools">
+        <span class="stamp stamp--quiet" id="mode-stamp">载入中</span>
+        <button class="btn btn--ghost btn--sm" id="reset-btn" type="button"
+                title="清空我自己的终审记录与上传作业">
+          <span data-icon="rotate" data-icon-size="15"></span>
+          <span>重置演示</span>
+        </button>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="主动线">
+      <button class="tab is-on" data-tab="submit" type="button">
+        <span class="tab__n">01</span><span class="tab__t">拍照提交</span>
+      </button>
+      <button class="tab" data-tab="result" type="button">
+        <span class="tab__n">02</span><span class="tab__t">批改结果</span>
+      </button>
+      <button class="tab" data-tab="teacher" type="button">
+        <span class="tab__n">03</span><span class="tab__t">教师工作台</span>
+      </button>
+      <button class="tab" data-tab="board" type="button">
+        <span class="tab__n">04</span><span class="tab__t">班级看板</span>
+      </button>
+    </nav>
+  </header>
+
+  <div class="sheetwrap">
+
+    <div id="intro-slot"></div>
+
+    <!-- 动线引导：陌生人打开后知道该点哪 -->
+    <nav class="trail" id="trail" aria-label="体验引导"></nav>
+    <p class="hint mt-4" id="trail-tip" style="margin-bottom:var(--sp-5);"></p>
+
+    <!-- ---------------- 01 拍照提交 ---------------- -->
+    <section class="screen is-on" id="screen-submit">
+      <div class="sheet">
+        <div class="sheet__head">
+          <div>
+            <span class="kicker">Step 01 · Folders</span>
+            <h2 class="sheet__title">作业文件夹</h2>
+          </div>
+          <span class="folio">01</span>
+        </div>
+        <p class="hint" id="engine-hint">识别引擎载入中</p>
+        <p class="hint">文件夹像一叠作业：可自建命名、指定上传目标；选中后可整夹一键批改，批改完成自动发飞书审核提醒。</p>
+
+        <div class="folder-toolbar mt-4">
+          <div class="folder-toolbar__left">
+            <input type="text" id="folder-name-input" maxlength="24"
+                   placeholder="新文件夹名称，如：周一数学作业" autocomplete="off">
+            <button class="btn btn--sm" type="button" id="folder-create-btn">
+              <span data-icon="layers" data-icon-size="14"></span>
+              <span>新建文件夹</span>
+            </button>
+          </div>
+          <div class="folder-toolbar__right hint" id="folder-active-hint">当前上传目标：Demo 样例</div>
+        </div>
+
+        <div class="folder-grid mt-4" id="folder-grid">
+          <div class="loading"><span class="spin" data-icon="loader" data-icon-size="16"></span>载入文件夹</div>
+        </div>
+
+        <div class="folder-actions mt-4" id="folder-actions" style="display:none;">
+          <button class="btn" type="button" id="folder-grade-btn">
+            <span data-icon="scan" data-icon-size="16"></span>
+            <span>整夹一键批改</span>
+          </button>
+          <button class="btn btn--ghost btn--sm" type="button" id="folder-rename-btn">重命名</button>
+          <button class="btn btn--ghost btn--sm" type="button" id="folder-delete-btn">删除</button>
+          <button class="btn btn--ghost btn--sm" type="button" id="folder-open-btn">查看夹内文件</button>
+          <span class="hint" id="folder-grade-hint"></span>
+        </div>
+        <div id="folder-feishu-note" class="mt-4" style="display:none;"></div>
+      </div>
+
+      <div class="sheet" id="folder-detail-sheet" style="display:none;">
+        <div class="sheet__head">
+          <div>
+            <span class="kicker">Step 01 · Inside</span>
+            <h2 class="sheet__title" id="folder-detail-title">夹内文件</h2>
+          </div>
+          <span class="folio">01a</span>
+        </div>
+        <div id="folder-detail-body"></div>
+      </div>
+
+      <div class="sheet">
+        <div class="sheet__head">
+          <div>
+            <span class="kicker">Step 01 · Capture</span>
+            <h2 class="sheet__title">上传到当前文件夹</h2>
+          </div>
+          <span class="folio">01b</span>
+        </div>
+        <p class="hint" id="upload-target-hint">上传目标：Demo 样例</p>
+        <div class="gallery mt-4" id="gallery" style="display:none;">
+          <div class="loading"><span class="spin" data-icon="loader" data-icon-size="16"></span>载入样例图库</div>
+        </div>
+
+        <div class="dropzone mt-4" id="dropzone">
+          <span data-icon="upload" data-icon-size="22" style="color:var(--ink-soft)"></span>
+          <div style="flex:1;min-width:200px;">
+            <div style="font-weight:600;font-size:var(--fs-small);">上传你自己的作业照片</div>
+            <p class="hint" id="upload-hint">支持 PNG / JPG / WebP</p>
+          </div>
+          <label class="btn btn--ghost btn--sm" style="cursor:pointer;">
+            <span data-icon="image" data-icon-size="15"></span>
+            <span>选择照片</span>
+            <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp"
+                   multiple class="sr-only">
+          </label>
+        </div>
+        <p class="hint mt-4">一次可选多张：单张会先给你确认转写；<b>多张自动进入批量流水线</b>。上传件会进入上方选中的文件夹。</p>
+      </div>
+
+      <div class="sheet" id="batch-sheet" style="display:none;">
+        <div class="sheet__head">
+          <div>
+            <span class="kicker">Step 01b · Batch</span>
+            <h2 class="sheet__title">批量识别与批改</h2>
+          </div>
+          <span class="folio">01b</span>
+        </div>
+        <div id="batch-progress" class="hint"></div>
+        <div id="batch-bar" style="height:8px;border-radius:99px;background:var(--paper-warm);
+             border:1px solid var(--rule);overflow:hidden;margin-top:var(--sp-3);">
+          <div id="batch-bar-fill" style="width:0%;height:100%;background:var(--riso-blue);
+               transition:width 240ms var(--ease-ink);"></div>
+        </div>
+        <div id="batch-list" class="mt-4" style="display:grid;gap:8px;"></div>
+        <div id="batch-done" style="display:none;"></div>
+      </div>
+
+      <div class="sheet" id="recog-sheet" style="display:none;">
+        <div class="sheet__head">
+          <div>
+            <span class="kicker">Step 01b · Transcribe</span>
+            <h2 class="sheet__title">手写识别</h2>
+          </div>
+          <span class="folio">01b</span>
+        </div>
+        <div class="split">
+          <div>
+            <div class="photo"><img id="chosen-img" alt="待批改的作业照片"></div>
+          </div>
+          <div>
+            <div id="recog-status"></div>
+            <div id="recog-result" style="display:none;">
+              <div id="recog-badges" class="inline" style="margin-bottom:var(--sp-4);"></div>
+              <h3 id="ocr-title">转写文本</h3>
+              <textarea id="ocr-text" rows="9"></textarea>
+              <p class="hint mt-4" id="ocr-hint"></p>
+              <div class="inline mt-4">
+                <button class="btn" id="grade-btn" type="button">
+                  <span data-icon="scan" data-icon-size="16"></span>
+                  <span>提交批改</span>
+                </button>
+                <span class="hint" id="grade-hint"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------- 02 批改结果 ---------------- -->
+    <section class="screen" id="screen-result">
+      <div id="result-body">
+        <div class="empty">
+          <span data-icon="info" data-icon-size="16"></span>
+          请先在「01 拍照提交」中选择样例或上传照片，识别后点击「提交批改」。
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------- 03 教师工作台 ---------------- -->
+    <section class="screen" id="screen-teacher">
+      <div class="sheet">
+        <div class="sheet__head">
+          <div>
+            <span class="kicker">Step 03 · Review</span>
+            <h2 class="sheet__title">教师终审 · 红黄绿审核列表</h2>
+          </div>
+          <span class="folio">03</span>
+        </div>
+        <p class="hint">
+          绿色可抽查通过；黄色与红色可「确认」或「终审修改」（改分 / 改判错因 / 修订评语）。
+          教师终审会回灌该题的历史通过率因子，同题未终审作答的置信度实时更新——
+          这条回路就是设计方案 &#167;9.7 的数据飞轮。
+        </p>
+        <div id="teacher-note"></div>
+        <div id="teacher-body" class="mt-4">
+          <div class="loading"><span class="spin" data-icon="loader" data-icon-size="16"></span>载入中</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------- 04 班级看板 ---------------- -->
+    <section class="screen" id="screen-board">
+      <div id="board-body">
+        <div class="loading"><span class="spin" data-icon="loader" data-icon-size="16"></span>载入中</div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div id="modal-root"></div>
+
+<script src="/static/js/icons.js"></script>
+<script src="/static/js/motion.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
