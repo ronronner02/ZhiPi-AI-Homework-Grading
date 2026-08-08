@@ -662,6 +662,7 @@ screen
 | 日期 | 变更 |
 |------|------|
 | 2026-08-07 | 初版：调研沉淀；**不改业务代码**；保留 Riso 暖纸与分流色；收敛软件区衬线；补齐四态与 radius |
+| 2026-08-08 | 执行 §13 回写表：`design-mock/` 迁入 `demo/static/**`。Hero 改 §9.1 双栏；页眉由「kicker + 折号」改紧凑 `.toolbar > h3 + .sub`；文件夹改扁平夹（§6.6）；口令门重绘（§9.7）。新增 `.toast` 与接口原文折叠块。**8 处同名不同义的类**统一以新稿为准，现网侧改名让路：`.bar`→图表行 `.bar-row`、`.evidence` 归步骤容器（引文改 `.step__quote`）、`.meter` 归轨道本身（刻度改兄弟节点 `.meter__ticks`）、`.swatch` 归 Hero 色条（图例改 `.swatch-i`）、`.split`→`.recog-split`、`.stamp--green/yellow/red`→`--g/--y/--r`（业务层仍只认 green/yellow/red，靠 JS 里的 `STATUS_STAMP` 映射）。自检脚本见 `demo/tools/ui_check_{shell,screens}.js` |
 
 ---
 
