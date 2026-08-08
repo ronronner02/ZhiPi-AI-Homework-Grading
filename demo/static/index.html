@@ -11,196 +11,192 @@
 </head>
 <body>
 
-<!-- 12 栏栏线：editorial 版面把网格画出来 -->
-<div class="gridlines" aria-hidden="true">
-  <span></span><span></span><span></span><span></span><span></span><span></span>
-  <span></span><span></span><span></span><span></span><span></span><span></span>
-</div>
-
 <!-- ==========================================================================
-     叙事首屏
+     叙事首屏（DESIGN §9.1）
      ========================================================================== -->
-<main class="stage" id="stage">
-  <section class="hero">
+<div class="stage" id="stage">
+  <section class="section section--tight">
+    <div class="frame frame--hero">
+      <div class="grain" aria-hidden="true"></div>
 
-    <div class="hero__top">
-      <div class="hero__mark">智批&#960;</div>
-      <div class="hero__meta">
-        <span>希沃智教&#960; · AI 智能作业批改</span>
-        <span id="hero-mode">运行模式载入中</span>
-        <span>2026</span>
+      <div class="hero">
+        <div class="hero-top">
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true">&#960;</span>
+            智批&#960;
+          </div>
+          <div class="hero-meta">
+            <span class="tag">希沃智教&#960; · AI 智能作业批改</span>
+            <span class="tag" id="hero-mode">运行模式载入中</span>
+            <span class="tag">2026</span>
+          </div>
+        </div>
+
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <div class="kicker">不漏一题 · 不落一人</div>
+            <h1>教师可控的<br>多模态批改</h1>
+
+            <p class="claim">
+              普通 AI 批改回答「这道题对不对」。我们回答的是：<b>学生为什么错、错在哪一步、老师敢不敢信这个判断、下节课怎么讲。</b>
+              <em>技术主张：多模态批改的主要失败发生在转写，而不是评分。故拆成转写置信 × 评分置信两个可测环节，由校准过的置信度决定人机分工。</em>
+            </p>
+
+            <!-- 计数来自 /api/analytics/class 的真实分流，不写死（DESIGN §9.1） -->
+            <div class="stats" id="hero-stats" aria-label="本班分流">
+              <div class="stat stat--g">
+                <b class="mono" data-stat="green">0</b><span>自动通过</span>
+              </div>
+              <div class="stat stat--y">
+                <b class="mono" data-stat="yellow">0</b><span>教师确认</span>
+              </div>
+              <div class="stat stat--r">
+                <b class="mono" data-stat="red">0</b><span>转人工</span>
+              </div>
+            </div>
+
+            <button class="btn btn--primary btn--lg" id="enter-btn" type="button">
+              <span>开始体验完整批改动线</span>
+              <span data-icon="arrowRight" data-icon-size="18"></span>
+            </button>
+          </div>
+
+          <aside class="hero-side" aria-label="分流说明">
+            <h3>人机分工</h3>
+            <div class="proof-row">
+              <span class="swatch" style="background:var(--st-green)"></span>
+              <div><strong>自动通过</strong><br><span class="meta-line">置信度 &#8805; 85</span></div>
+            </div>
+            <div class="proof-row">
+              <span class="swatch" style="background:var(--st-yellow)"></span>
+              <div><strong>教师确认</strong><br><span class="meta-line">60 &#8211; 85</span></div>
+            </div>
+            <div class="proof-row">
+              <span class="swatch" style="background:var(--st-red)"></span>
+              <div><strong>转人工批改</strong><br><span class="meta-line">&lt; 60</span></div>
+            </div>
+          </aside>
+
+          <!-- 作业照片拼贴：图源为内置样例，滚动时按不同速率产生景深 -->
+          <div class="collage" id="collage" aria-hidden="true"></div>
+        </div>
       </div>
     </div>
-
-    <div class="hero__body">
-      <div class="hero__title">
-        <span class="kicker">不漏一题 · 不落一人</span>
-        <h1 class="display">
-          <span class="line" data-t="教师可控的">教师可控的</span>
-          <span class="line" data-t="多模态批改">多模态批改</span>
-        </h1>
-      </div>
-
-      <!-- 手写样例照片拼贴：材料来自内置样例图库，滚动时按不同速率产生景深 -->
-      <div class="collage" id="collage" aria-hidden="true"></div>
-
-      <p class="hero__claim">
-        普通 AI 批改回答「这道题对不对」。我们回答的是：<b>学生为什么错、错在哪一步、老师敢不敢信这个判断、下节课怎么讲。</b>
-        <em>技术主张：多模态批改的主要失败发生在转写，而不是评分。故拆成转写置信 × 评分置信两个可测环节，由校准过的置信度决定人机分工。</em>
-      </p>
-
-      <div class="hero__stats" id="hero-stats">
-        <div class="stat">
-          <span class="stat__swatch" style="background:var(--riso-green)"></span>
-          <span class="stat__n num" data-stat="green">0</span>
-          <span class="stat__label">自动通过</span>
-          <span class="stat__sub">confidence &#8805; 85</span>
-        </div>
-        <div class="stat">
-          <span class="stat__swatch" style="background:var(--riso-amber)"></span>
-          <span class="stat__n num" data-stat="yellow">0</span>
-          <span class="stat__label">教师一键确认</span>
-          <span class="stat__sub">60 &#8211; 85</span>
-        </div>
-        <div class="stat">
-          <span class="stat__swatch" style="background:var(--riso-red)"></span>
-          <span class="stat__n num" data-stat="red">0</span>
-          <span class="stat__label">转人工批改</span>
-          <span class="stat__sub">&lt; 60</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="hero__foot">
-      <button class="btn btn--lg" id="enter-btn" type="button">
-        <span>开始体验完整批改动线</span>
-        <span data-icon="arrowRight" data-icon-size="18"></span>
-      </button>
-      <span class="hero__scroll">
-        <span>四步走完 · 约 2 分钟</span>
-        <span data-icon="arrowDown" data-icon-size="14"></span>
-      </span>
-    </div>
-
   </section>
-</main>
+</div>
 
 <!-- ==========================================================================
      工作台
      ========================================================================== -->
 <div class="app" id="app">
+  <div class="app-shell frame">
 
-  <header class="masthead">
-    <div class="masthead__bar">
-      <button class="masthead__brand" id="back-home" type="button" title="回到首页">
-        智批&#960;
-        <small>教师可控的多模态批改</small>
-      </button>
-      <div class="masthead__tools">
+    <!-- 吸顶栏：品牌行 + 页签行。整体高度由 app.js 实测写入 --masthead-h -->
+    <header class="masthead">
+      <div class="masthead__bar">
+        <button class="brand brand--btn" id="back-home" type="button" title="回到首页">
+          <span class="brand-mark" aria-hidden="true">&#960;</span>
+          智批&#960;
+        </button>
         <span class="stamp stamp--quiet" id="mode-stamp">载入中</span>
+        <span class="spacer"></span>
         <button class="btn btn--ghost btn--sm" id="reset-btn" type="button"
                 title="清空我自己的终审记录与上传作业">
           <span data-icon="rotate" data-icon-size="15"></span>
           <span>重置演示</span>
         </button>
       </div>
-    </div>
-    <nav class="tabs" id="tabs" aria-label="主动线">
-      <button class="tab is-on" data-tab="submit" type="button">
-        <span class="tab__n">01</span><span class="tab__t">拍照提交</span>
-      </button>
-      <button class="tab" data-tab="result" type="button">
-        <span class="tab__n">02</span><span class="tab__t">批改结果</span>
-      </button>
-      <button class="tab" data-tab="teacher" type="button">
-        <span class="tab__n">03</span><span class="tab__t">教师工作台</span>
-      </button>
-      <button class="tab" data-tab="board" type="button">
-        <span class="tab__n">04</span><span class="tab__t">班级看板</span>
-      </button>
-    </nav>
-  </header>
 
-  <div class="sheetwrap">
+      <nav class="tabs" id="tabs" aria-label="主动线">
+        <button class="tab is-on" data-tab="submit" type="button">
+          <span class="n">01</span>拍照提交
+        </button>
+        <button class="tab" data-tab="result" type="button">
+          <span class="n">02</span>批改结果
+        </button>
+        <button class="tab" data-tab="teacher" type="button">
+          <span class="n">03</span>教师工作台
+        </button>
+        <button class="tab" data-tab="board" type="button">
+          <span class="n">04</span>班级看板
+        </button>
+      </nav>
+    </header>
 
-    <div id="intro-slot"></div>
-
-    <!-- 动线引导：陌生人打开后知道该点哪 -->
+    <!-- 动线引导：四步可点 + 当前步提示 + 当前上传目标 -->
     <nav class="trail" id="trail" aria-label="体验引导"></nav>
-    <p class="hint mt-4" id="trail-tip" style="margin-bottom:var(--sp-5);"></p>
+    <div class="trail-tip">
+      <span id="trail-tip"></span>
+      <span class="trail-sep">·</span>
+      <span>当前上传目标：<strong id="folder-active-hint">Demo 样例</strong></span>
+    </div>
+
+    <!-- 说明块。刻意放在四屏之外：01 屏完整展开，02-04 屏收成一行常驻，
+         renderIntro() 按 INTRO_OPEN 切换两种形态。 -->
+    <div id="intro-slot"></div>
 
     <!-- ---------------- 01 拍照提交 ---------------- -->
     <section class="screen is-on" id="screen-submit">
+
       <div class="sheet">
-        <div class="sheet__head">
-          <div>
-            <span class="kicker">Step 01 · Folders</span>
-            <h2 class="sheet__title">作业文件夹</h2>
-          </div>
-          <span class="folio">01</span>
+        <div class="toolbar">
+          <h3>作业文件夹</h3>
+          <span class="spacer"></span>
+          <span class="hint-inline">选中后可整夹一键批改</span>
         </div>
         <p class="hint" id="engine-hint">识别引擎载入中</p>
+
         <!-- 批改链路：几个模型参与、哪级复核开着。两级复核都静默降级，
              不明写出来的话，「配齐生效」与「配了但每次超时」界面上无从分辨。 -->
         <ul class="chain" id="chain-list"></ul>
-        <p class="hint">文件夹：可自建命名、指定上传目标；选中后可整夹一键批改，批改完成自动发飞书审核提醒。</p>
 
-        <div class="folder-toolbar mt-4">
-          <div class="folder-toolbar__left">
-            <input type="text" id="folder-name-input" maxlength="24"
-                   placeholder="新文件夹名称，如：周一数学作业" autocomplete="off">
-            <button class="btn btn--sm" type="button" id="folder-create-btn">
-              <span data-icon="layers" data-icon-size="14"></span>
-              <span>新建文件夹</span>
-            </button>
-          </div>
-          <div class="folder-toolbar__right hint" id="folder-active-hint">当前上传目标：Demo 样例</div>
+        <p class="hint mt-4">可自建命名、指定上传目标；选中后可整夹一键批改，批改完成自动发飞书审核提醒。</p>
+
+        <div class="folder-create mt-4">
+          <input class="input" type="text" id="folder-name-input" maxlength="24"
+                 placeholder="新文件夹名称，如：周一数学作业" autocomplete="off"
+                 aria-label="新文件夹名称">
+          <button class="btn btn--primary btn--sm" type="button" id="folder-create-btn">
+            <span data-icon="layers" data-icon-size="14"></span>
+            <span>新建文件夹</span>
+          </button>
         </div>
 
-        <div class="folder-grid mt-4" id="folder-grid">
+        <div class="folder-grid" id="folder-grid">
           <div class="loading"><span class="spin" data-icon="loader" data-icon-size="16"></span>载入文件夹</div>
         </div>
 
-        <div class="folder-actions mt-4" id="folder-actions" style="display:none;">
-          <button class="btn" type="button" id="folder-grade-btn">
+        <div class="folder-actions" id="folder-actions" style="display:none;">
+          <button class="btn btn--accent" type="button" id="folder-grade-btn">
             <span data-icon="scan" data-icon-size="16"></span>
             <span>整夹一键批改</span>
           </button>
           <button class="btn btn--ghost btn--sm" type="button" id="folder-rename-btn">重命名</button>
           <button class="btn btn--ghost btn--sm" type="button" id="folder-delete-btn">删除</button>
           <button class="btn btn--ghost btn--sm" type="button" id="folder-open-btn">查看夹内文件</button>
-          <span class="hint" id="folder-grade-hint"></span>
+          <span class="hint-inline" id="folder-grade-hint"></span>
         </div>
+
         <div id="folder-feishu-note" class="mt-4" style="display:none;"></div>
       </div>
 
       <div class="sheet" id="folder-detail-sheet" style="display:none;">
-        <div class="sheet__head">
-          <div>
-            <span class="kicker">Step 01 · Inside</span>
-            <h2 class="sheet__title" id="folder-detail-title">夹内文件</h2>
-          </div>
-          <span class="folio">01a</span>
+        <div class="toolbar">
+          <h3 id="folder-detail-title">夹内文件</h3>
         </div>
         <div id="folder-detail-body"></div>
       </div>
 
       <div class="sheet">
-        <div class="sheet__head">
-          <div>
-            <span class="kicker">Step 01 · Capture</span>
-            <h2 class="sheet__title">上传到当前文件夹</h2>
-          </div>
-          <span class="folio">01b</span>
+        <div class="toolbar">
+          <h3>上传到当前文件夹</h3>
         </div>
-        <p class="hint" id="upload-target-hint">上传目标：Demo 样例</p>
+        <p class="sub" id="upload-target-hint">上传目标：<b>Demo 样例</b></p>
 
-        <div class="dropzone mt-4" id="dropzone">
-          <span data-icon="upload" data-icon-size="22" style="color:var(--ink-soft)"></span>
-          <div style="flex:1;min-width:200px;">
-            <div style="font-weight:600;font-size:var(--fs-small);">上传你自己的作业照片</div>
-            <p class="hint" id="upload-hint">支持 PNG / JPG / WebP</p>
-          </div>
+        <div class="dropzone" id="dropzone">
+          <span data-icon="upload" data-icon-size="28"></span>
+          <h4>上传你自己的作业照片</h4>
+          <p id="upload-hint">支持 PNG / JPG / WebP</p>
           <label class="btn btn--ghost btn--sm" style="cursor:pointer;">
             <span data-icon="image" data-icon-size="15"></span>
             <span>选择照片</span>
@@ -212,48 +208,35 @@
       </div>
 
       <div class="sheet" id="batch-sheet" style="display:none;">
-        <div class="sheet__head">
-          <div>
-            <span class="kicker">Step 01b · Batch</span>
-            <h2 class="sheet__title">批量识别与批改</h2>
-          </div>
-          <span class="folio">01b</span>
+        <div class="toolbar">
+          <h3>批量识别与批改</h3>
+          <span class="spacer"></span>
+          <span class="hint-inline" id="batch-progress"></span>
         </div>
-        <div id="batch-progress" class="hint"></div>
-        <div id="batch-bar" style="height:8px;border-radius:99px;background:var(--paper-warm);
-             border:1px solid var(--rule);overflow:hidden;margin-top:var(--sp-3);">
-          <div id="batch-bar-fill" style="width:0%;height:100%;background:var(--riso-blue);
-               transition:width 240ms var(--ease-ink);"></div>
-        </div>
-        <div id="batch-list" class="mt-4" style="display:grid;gap:8px;"></div>
-        <div id="batch-done" style="display:none;"></div>
+        <div class="bar" aria-hidden="true"><i id="batch-bar-fill"></i></div>
+        <div class="batch-list" id="batch-list"></div>
+        <div id="batch-done" class="mt-4" style="display:none;"></div>
       </div>
 
       <div class="sheet" id="recog-sheet" style="display:none;">
-        <div class="sheet__head">
-          <div>
-            <span class="kicker">Step 01b · Transcribe</span>
-            <h2 class="sheet__title">手写识别</h2>
-          </div>
-          <span class="folio">01b</span>
+        <div class="toolbar">
+          <h3>手写识别</h3>
         </div>
-        <div class="split">
-          <div>
-            <div class="photo"><img id="chosen-img" alt="待批改的作业照片"></div>
-          </div>
+        <div class="recog-split">
+          <div class="photo"><img id="chosen-img" alt="待批改的作业照片"></div>
           <div>
             <div id="recog-status"></div>
             <div id="recog-result" style="display:none;">
-              <div id="recog-badges" class="inline" style="margin-bottom:var(--sp-4);"></div>
-              <h3 id="ocr-title">转写文本</h3>
-              <textarea id="ocr-text" rows="9"></textarea>
+              <div class="factor-wrap" id="recog-badges" style="margin-bottom:14px;"></div>
+              <label class="field-label" id="ocr-title" for="ocr-text">转写文本</label>
+              <textarea id="ocr-text" class="textarea" rows="9"></textarea>
               <p class="hint mt-4" id="ocr-hint"></p>
-              <div class="inline mt-4">
-                <button class="btn" id="grade-btn" type="button">
+              <div class="toolbar" style="margin:14px 0 0;">
+                <button class="btn btn--accent" id="grade-btn" type="button">
                   <span data-icon="scan" data-icon-size="16"></span>
                   <span>提交批改</span>
                 </button>
-                <span class="hint" id="grade-hint"></span>
+                <span class="hint-inline" id="grade-hint"></span>
               </div>
             </div>
           </div>
@@ -265,10 +248,10 @@
     <section class="screen" id="screen-result">
       <div id="result-body">
         <div class="empty">
-          <div class="empty__ico"><span data-icon="info" data-icon-size="36"></span></div>
+          <div class="empty__ico"><span data-icon="info" data-icon-size="40"></span></div>
           <p class="empty__desc">请先在「01 拍照提交」中选择样例或上传照片，识别后点击「提交批改」。</p>
           <div class="empty__actions">
-            <button class="btn btn--sm" type="button" data-goto="submit">去拍照提交</button>
+            <button class="btn btn--accent btn--sm" type="button" data-goto="submit">去拍照提交</button>
           </div>
         </div>
       </div>
@@ -277,17 +260,14 @@
     <!-- ---------------- 03 教师工作台 ---------------- -->
     <section class="screen" id="screen-teacher">
       <div class="sheet">
-        <div class="sheet__head">
+        <div class="toolbar">
           <div>
-            <span class="kicker">Step 03 · Review</span>
-            <h2 class="sheet__title">教师终审 · 红黄绿审核列表</h2>
+            <h3>教师终审 · 红黄绿审核列表</h3>
+            <p class="sub" style="margin:4px 0 0;">绿色可抽查通过；黄色与红色可确认或终审修改（改分 / 改判错因 / 修订评语）</p>
           </div>
-          <span class="folio">03</span>
         </div>
         <p class="hint">
-          绿色可抽查通过；黄色与红色可「确认」或「终审修改」（改分 / 改判错因 / 修订评语）。
-          教师终审会回灌该题的历史通过率因子，同题未终审作答的置信度实时更新——
-          这条回路就是设计方案 &#167;9.7 的数据飞轮。
+          教师终审会回灌该题的历史通过率因子，同题未终审作答的置信度实时更新。
         </p>
         <div id="teacher-note"></div>
         <div id="teacher-body" class="mt-4">
@@ -306,6 +286,10 @@
   </div>
 </div>
 
+<!-- 轻提示：终审 / 确认 / 飞书推送 / 复制成功 -->
+<div class="toast" id="toast" role="status" hidden><b></b><span></span></div>
+
+<!-- 终审弹层挂载点 -->
 <div id="modal-root"></div>
 
 <script src="/static/js/icons.js"></script>
