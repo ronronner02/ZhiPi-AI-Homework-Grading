@@ -13,6 +13,12 @@ from collections import OrderedDict
 DEMO_FOLDER_ID = "demo"
 DEMO_FOLDER_NAME = "Demo 样例"
 
+# 单会话自建夹上限。与 session_store 的 SESSION_MAX / UPLOAD_MAX 同一套思路：
+# 公开链接上任何「用户想建多少就建多少」的结构都是内存增长面——会话本身有
+# 300 个上限和 TTL 兜着，但每个会话里的夹子不封顶，两者乘起来就没有边界了。
+# 32 个夹对真实备课场景（按班级 / 按周次分夹）绰绰有余。
+MAX_FOLDERS = 32
+
 # 夹名：中文 / 英文 / 数字 / 空格 / 常见分隔符，1–24 字
 _NAME_RE = re.compile(r"^[\w\u4e00-\u9fff \-_.·（）()]{1,24}$")
 
@@ -51,6 +57,12 @@ def create(session: dict, name: str) -> dict:
     """自建文件夹，返回夹元数据。"""
     ensure(session)
     clean = _clean_name(name)
+    # 上限只数自建夹：Demo 系统夹是种子化出来的，不该占用户的额度
+    user_count = sum(1 for f in session["folders"].values()
+                     if f.get("kind") != "demo")
+    if user_count >= MAX_FOLDERS:
+        raise ValueError("文件夹数量已达上限（%d 个），请先删除不用的文件夹"
+                         % MAX_FOLDERS)
     for f in session["folders"].values():
         if f["name"] == clean:
             raise ValueError("已存在同名文件夹：%s" % clean)

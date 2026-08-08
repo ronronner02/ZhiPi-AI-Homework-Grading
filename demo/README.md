@@ -16,33 +16,63 @@ pip install -r requirements.txt
 python -m uvicorn app:app --port 8010
 ```
 
-浏览器打开 <http://127.0.0.1:8010/> 即可。默认 **mock 模式**，无需任何 API Key。
+浏览器打开 <http://127.0.0.1:8010/> 即可。
+
+**运行模式怎么定**：启动时会自动读 `deploy/.env`（若存在），因此配了密钥就直接
+进真实大模型链路，不需要手动 export。启动日志会明确打出当前模式：
+
+```
+[智批π] 配置来源：...\deploy\.env
+[智批π] 批改模式：真实大模型（DeepSeek-V4-Flash）
+[智批π] 手写识别：真实多模态（gemini-3.1-flash-lite-preview）
+[智批π] 单次批改超时 30 秒（跑批量评测请调大 ZHIPI_LLM_TIMEOUT）
+```
+
+没有 `.env` 或密钥为空时退回 **mock 模式**，全程不联网、不消耗 API。
+想在配了密钥的机器上临时验证离线表现（比赛断网预案）：
+
+```bash
+ZHIPI_SKIP_DOTENV=1 py -3 app.py     # 强制离线演示模式
+```
+
+> 命令行显式传入的环境变量**优先于** `.env`，Docker 部署由 compose 的
+> `env_file` 注入，不走这条读取逻辑。
+
+> **挂成公开链接**（发给评委/老师点开就能用）见 [`../deploy/README.md`](../deploy/README.md)：
+> Docker 一键部署 + 访问口令 + 限流 + 日配额，五分钟上线。
+>
+> **前端交付自检**（禁表情符号、禁外部请求，比赛断网预案要求）：
+> `py -3 tools/audit_static.py static`
 
 ## 架构
 
 ```text
-                         浏览器（内嵌单页前端，原生 HTML/JS/CSS，完全离线）
+              浏览器（单页前端，原生 HTML/CSS/JS，零外部请求，完全离线）
+                 static/index.html · css/{tokens,app}.css
+                 static/js/{icons,motion,app}.js
                                           │  HTTP / JSON
                                           ▼
 ┌──────────────────────────── app.py （FastAPI） ────────────────────────────┐
-│  GET /  ·  GET /api/submissions  ·  POST /api/grade                         │
+│  GET /（读 static/index.html）  ·  /static/* （StaticFiles 挂载）           │
+│  GET /api/submissions  ·  POST /api/grade                                   │
 │  GET /api/sample-images（/{name}）  ·  POST /api/recognize-image            │
 │  POST /api/grade-image  ·  GET /api/grade-progress （图片批改链路）          │
 │  GET /api/teacher/results  ·  POST /api/teacher/review                      │
 │  GET /api/analytics/class  ·  GET /api/students                             │
 │  GET /api/analytics/student/{id}  ·  GET /api/lecture-outline               │
 │  POST /api/feishu/push  ·  POST /api/feishu/sync-base （§13.2 飞书集成）     │
+│  POST /api/demo/reset  ·  GET /api/demo/config  ·  GET /healthz             │
 └───────────────┬────────────────────────────────────────────┬──────────────┘
                 │                                              │
-                ▼  pipeline（批改流水线）                       ▼  内存态
+                ▼  pipeline（批改流水线）                       ▼  状态分层
    ┌───────────────────────────────────────────┐   ┌────────────────────────┐
-   │ ocr.py        手写识别双引擎：多模态大模型 │   │ GRADED  批改结果缓存    │
-   │               （VLM）/ 离线感知哈希样例匹配│   │ REVIEWS 教师终审记录    │
-   │ grader.py     Rubric 逐步判分 + 证据链    │   └────────────────────────┘
-   │               （规则引擎 / LLM 分支），   │
-   │               二次批改一致性、双模型交叉验证│
-   │ confidence.py §9.7 置信度加权 + 红黄绿分流 │
-   │ analytics.py  班级学情聚合 + 学生错因画像 │
+   │ ocr.py        手写识别双引擎：多模态大模型 │   │ GRADED  AI 基线（全局   │
+   │               （VLM）/ 离线感知哈希样例匹配│   │         共享、只读）    │
+   │ grader.py     Rubric 逐步判分 + 证据链    │   │ session_store.py       │
+   │               （规则引擎 / LLM 分支），   │   │   教师终审 + 上传件     │
+   │               二次批改一致性、双模型交叉验证│   │   按浏览器会话隔离      │
+   │ confidence.py §9.7 置信度加权 + 红黄绿分流 │   │ guard.py 口令/限流/配额 │
+   │ analytics.py  班级学情聚合 + 学生错因画像 │   └────────────────────────┘
    │               + 讲评课件大纲生成          │
    │ feishu.py     飞书互动卡片 / 多维表格台账 │
    └───────────────────────┬───────────────────┘
@@ -95,7 +125,7 @@ python -m uvicorn app:app --port 8010
 
 ## 页面功能（4 个 Tab）
 
-1. **① 拍照提交**：点选 11 张内置仿手写样例图库，或上传本地作业照片（PNG / JPG / WebP，≤ 8MB）→ 手写识别（展示识别引擎、卷面清晰度、命中样例 / 自动判题徽章）→ 转写文本预览（**VLM 模式下可直接修正转写再批改**，体现教师可控；样例匹配模式为预置标准转写，只读）→ 点「提交批改」。
+1. **① 拍照提交**：点选 11 张内置仿手写样例图库，或上传本地作业照片（PNG / JPG / WebP，≤ 8MB）→ 手写识别（展示识别引擎、卷面清晰度、命中样例 / 自动判题徽章）→ 转写文本预览（**VLM 模式下可直接修正转写再批改**，体现教师可控；样例匹配模式为预置标准转写，只读）→ 点「提交批改」。**多选或拖入 ≥2 张会自动进入批量流水线**：串行识别 + 批改，进度条与逐张状态，完成后一键去工作台按红黄绿审核。
 2. **② 批改结果**：总分、置信度、红黄绿分流；逐批改节点展示对错（✓ 全对 / △ 部分 / ✗ 错）、每步得分、错因标签、知识点，以及**证据链**（引用学生作答原文片段作为判断依据，字迹难辨步骤显式提醒人工复核）；置信度五因子明细，llm 模式下附**二次批改一致性**与**双模型交叉验证**徽章；个性化评语与教师备注。
 3. **③ 教师工作台**：全部作答红黄绿审核列表（学生 / 题目 / AI 分 / 置信度 / 状态 / 错因）；绿色可「抽查通过」，全部可「确认」或打开**终审弹窗**——改分（0 ~ 满分校验）、错因标签多选改判（§6.11 十类枚举）、评语修订；提交后显示「该题教师通过率因子回灌」提示，同题未终审作答的置信度实时重算；llm 模式下轮询展示「已批改 x / y」批改进度。
 4. **④ 班级看板**：参与作答 / 平均得分率 / 薄弱点 KPI，红黄绿占比，知识点错误率与错因分布条形图（纯 div + CSS 宽度），下节课讲评建议；「讲评课件大纲」一键生成 Markdown（共性错因 + 匿名典型错例证据 + 分层任务 + 5 分钟复测建议）并可**一键复制为课件底稿**（粘贴至希沃白板、飞书文档等备课环境）；「学生个人错因画像」下拉选学生，展示跨题聚合、错因演变时间线（历史为**模拟数据**，界面已标注）与趋势判断；底部「飞书协同」区提供 **推送飞书审核提醒卡片** 与 **同步飞书多维表格学情台账** 两个按钮（详见下方「飞书集成」）。
@@ -111,7 +141,7 @@ python -m uvicorn app:app --port 8010
 
 | 方法 | 路径 | 入参要点 | 说明 |
 | ---- | ---- | -------- | ---- |
-| GET  | `/` | — | 内嵌单页前端 |
+| GET  | `/` | — | 单页前端（读 `static/index.html`，静态资源挂在 `/static/*`） |
 | GET  | `/api/submissions` | — | 列出 11 份内置作答（含转写预览与清晰度） |
 | POST | `/api/grade` | `submission_id` | 对内置作答走批改流水线，返回过程级批改 JSON |
 | GET  | `/api/sample-images` | — | 内置手写样例图库清单（含 `vlm_configured` 标记） |

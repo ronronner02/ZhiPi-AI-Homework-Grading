@@ -561,6 +561,57 @@
     }).catch(function () { /* 自动推送失败静默 */ });
   }
 
+  /* 批改链路清单：如实写出这次批改由几个模型参与、哪级复核在跑。
+     两级复核（同模型二次复批 / 跨模型交叉验证）都按设计静默降级，
+     所以「配齐并生效」和「配了但每次超时」在界面上本来毫无区别——
+     这份清单就是为了让这两种状态一眼可分。 */
+  function renderChain() {
+    var el = $('#chain-list');
+    if (!el) return;
+    var c = CONFIG.chain;
+    if (!c) { el.innerHTML = ''; return; }
+
+    var rows = [];
+    // 第一级：主批改。mock 模式下没有后两级可谈，单独说清楚。
+    if (CONFIG.mode !== 'llm') {
+      rows.push({ on: false, k: '主批改',
+                  v: 'mock 规则引擎（未配置大模型凭据，分数由规则算出）' });
+      el.innerHTML = rows.map(chainRow).join('');
+      return;
+    }
+    rows.push({ on: true, k: '主批改', v: '大模型逐步批改，每份必跑' });
+
+    rows.push(c.double_check
+      ? { on: true,  k: '二次复批',
+          v: '同模型再批一遍，两次吻合度作为置信度因子（每份多等约 3 秒）' }
+      : { on: false, k: '二次复批',
+          v: '未启用 · 置信度里的「自检一致性」退回模型自报值（ZHIPI_DOUBLE_CHECK=1 开启）' });
+
+    if (!c.cross_check) {
+      rows.push({ on: false, k: '交叉验证',
+                  v: '未启用 · 填入第二模型的链接与密钥即自动启用，用于跨模型复核黄/红件' });
+    } else if (c.cross_budget_tight) {
+      // 这条是硬警告：预算小于最快一次成功耗时，等于每次必然超时后静默丢弃。
+      rows.push({ on: false, k: '交叉验证',
+                  v: c.cross_model + ' · 预算仅 ' + c.cross_timeout +
+                     ' 秒，实测第二模型多需 25-90 秒，几乎必然超时后被丢弃（调大 ZHIPI_CROSS_TIMEOUT）' });
+    } else {
+      rows.push({ on: true, k: '交叉验证',
+                  v: c.cross_model + ' 独立复核，仅黄/红件触发（这类件多等约 ' +
+                     c.cross_timeout + ' 秒内）' });
+    }
+    el.innerHTML = rows.map(chainRow).join('');
+    Icons.hydrate(el);
+  }
+
+  function chainRow(r) {
+    return '<li class="chain__item' + (r.on ? '' : ' chain__item--off') + '">' +
+      '<span class="chain__dot" aria-hidden="true"></span>' +
+      '<span class="chain__k">' + esc(r.k) + '</span>' +
+      '<span class="chain__v">' + esc(r.v) + '</span>' +
+      '<span class="sr-only">（' + (r.on ? '已启用' : '未启用') + '）</span></li>';
+  }
+
   function renderGallery(data) {
     $('#engine-hint').innerHTML = data.vlm_configured
       ? '识别引擎：<b>多模态大模型</b>（已配置密钥，可识别任意手写作业照片）'
@@ -1921,6 +1972,7 @@
         ACTIVE_FOLDER = c.session.active_folder_id;
       }
       renderIntro();
+      renderChain();
       Icons.hydrate();
     }).catch(function () { /* 配置拿不到不阻断主流程 */ });
 

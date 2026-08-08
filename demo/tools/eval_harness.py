@@ -24,7 +24,10 @@
                         #     "human_score":     8,                   # 教师终判分（必填，双评仲裁后的最终分）
                         #     "human_error_tags": ["计算错误"],        # 教师标注错因（必填，可为空数组）
                         #     "human_grader":    "T1",                # 判分教师标识（必填，追溯用）
-                        #     "clarity":         85                   # 卷面清晰度（可选，无图时批改用，默认 85）
+                        #     "clarity":         85,                  # 卷面清晰度（可选，无图时批改用，默认 85）
+                        #     "needs_review":    true                 # 可选：人工判定这份是否**必须**教师过目
+                        #                                           #   （判分有争议 / 字迹无法辨认 / AI 结论有误）
+                        #                                           #   标了才参与「表 F 分流安全性」漏拦率统计
                         #   }
       images/           # 真实作业照片（可选；配置 ZHIPI_VLM_API_KEY 时先跑机器识别）
       questions.json    # 题库补充（可选；格式同 demo/data/questions.json，
@@ -55,6 +58,7 @@ import math
 import os
 import sys
 import tempfile
+import time
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -111,23 +115,74 @@ def _norm_ws(text: str) -> str:
     return "".join(str(text or "").split())
 
 
+# 数学记号等价表：上下标的 Unicode 形式 ←→ ASCII 形式。
+#
+# 为什么必须有这一层：实测发现 VLM 输出 `x^2-5x+6=0`、`x1=2, x2=3`，
+# 而人工校对转写写的是 `x²-5x+6=0`、`x₁=2, x₂=3`。两者**数学含义完全相同**，
+# 但逐字符比会算出 20% 的 CER。若不归一化，报告里「转写字准率」这个
+# 核心指标衡量的其实是「标注者和模型的记号习惯是否撞上」，
+# 而不是「模型认没认对手写」——那会把结论引向完全错误的方向。
+_SUP = {"⁰": "^0", "¹": "^1", "²": "^2", "³": "^3", "⁴": "^4",
+        "⁵": "^5", "⁶": "^6", "⁷": "^7", "⁸": "^8", "⁹": "^9"}
+_SUB = {"₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4",
+        "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9"}
+# 全角 / 印刷体符号 → ASCII。只收敛「同义不同形」，不碰任何会改变含义的字符。
+_PUNCT = {"：": ":", "，": ",", "。": ".", "；": ";", "（": "(", "）": ")",
+          "＝": "=", "－": "-", "×": "*", "÷": "/", "·": "*",
+          "＋": "+", "＜": "<", "＞": ">", "≤": "<=", "≥": ">=",
+          "'": "'", "'": "'", """: '"', """: '"'}
+# 学生不会写、但模型爱加的引导词。去掉它们，避免「模型更啰嗦」被记成转写错误。
+_LEAD = ("解:", "解答:", "答:", "因为", "所以")
+
+
+def _norm_math(text: str) -> str:
+    """数学记号归一化：上下标、全角符号、引导词一律收敛到同一种写法。
+
+    刻意**不做**的事：不折叠大小写（英语作文里 i / I 是真实书写错误），
+    不删除数字与运算符（那会掩盖真正的识别错误）。
+    """
+    s = str(text or "")
+    for src, dst in _SUP.items():
+        s = s.replace(src, dst)
+    for src, dst in _SUB.items():
+        s = s.replace(src, dst)
+    for src, dst in _PUNCT.items():
+        s = s.replace(src, dst)
+    s = "".join(s.split())          # 先去空白，引导词才好整段匹配
+    for lead in _LEAD:
+        if s.startswith(lead):
+            s = s[len(lead):]
+            break
+    return s
+
+
 def compute_cer(machine_text: str, human_text: str) -> dict:
     """字符错误率 CER = 编辑距离(机器转写, 人工转写) / 人工转写长度。
 
-    同时给出两种口径：
-        cer       主口径：去除全部空白后计算（拍照转写的换行 / 空格差异不计错）
+    并列给出三种口径，全部写进报告，让读者自己判断该看哪一个：
+        cer       主口径（预注册方案 §3 定义）：去除全部空白后计算
         cer_raw   严格口径：仅统一换行符，不做其它归一化
+        cer_math  记号归一口径：在主口径之上再统一上下标 / 全角符号 / 引导词，
+                  度量「数学含义是否被认对」，排除记号习惯差异的干扰
+
+    三个并列而非替换：cer / cer_raw 是预注册口径，不能事后改动；
+    cer_math 是新增的补充证据。三者差距本身就是有信息量的——
+    差得越大，说明标注规范与模型输出习惯越不一致。
     """
     raw_h = str(human_text or "").replace("\r\n", "\n").strip()
     raw_m = str(machine_text or "").replace("\r\n", "\n").strip()
     norm_h, norm_m = _norm_ws(human_text), _norm_ws(machine_text)
+    math_h, math_m = _norm_math(human_text), _norm_math(machine_text)
     dist = levenshtein(norm_m, norm_h)
     dist_raw = levenshtein(raw_m, raw_h)
+    dist_math = levenshtein(math_m, math_h)
     return {
         "edit_distance": dist,
         "ref_len": len(norm_h),
         "cer": round(dist / len(norm_h), 4) if norm_h else None,
         "cer_raw": round(dist_raw / len(raw_h), 4) if raw_h else None,
+        "cer_math": round(dist_math / len(math_h), 4) if math_h else None,
+        "edit_distance_math": dist_math,
     }
 
 
@@ -248,8 +303,24 @@ def load_questions(eval_dir: Path = None) -> dict:
     return questions
 
 
-def load_manifest(eval_dir: Path) -> list:
-    """加载并校验 manifest.json，缺必填字段的条目直接报错（保证口径严肃性）。"""
+def load_manifest(eval_dir: Path, questions: dict = None) -> list:
+    """加载并校验 manifest.json：缺字段、类型错、分数越界一律在此拦下。
+
+    为什么校验必须放在这里、而且要严：下游 make_record 会把 human_score 直接
+    转成 float 参与 MAE。实测过一次——一条 `human_score: 9999` 的错标就把
+    MAE 拉到 9991，而报告照样生成、看不出异常；`human_score: null` 更是直接
+    让整轮评测崩在中途。标注是人手工填的，错填是常态而非例外，所以这里
+    宁可啰嗦地逐条报错，也不能让脏数据无声地污染答辩材料。
+
+    校验项：
+        - 必填字段存在；
+        - human_score 是数字（bool 不算）、且在 [0, 该题满分] 内；
+        - human_error_tags 是数组；
+        - needs_review（若给）必须是真正的布尔——字符串 "false" 会被
+          bool() 判成 True，这类错标比缺字段更危险，因为它悄无声息；
+        - clarity（若给）在 [0, 100] 内；
+        - question_id 存在于题库（传入 questions 时才校验）。
+    """
     path = eval_dir / "manifest.json"
     if not path.exists():
         raise SystemExit("评测集缺少 manifest.json：%s" % path)
@@ -257,13 +328,93 @@ def load_manifest(eval_dir: Path) -> list:
         items = json.load(f)
     if not isinstance(items, list) or not items:
         raise SystemExit("manifest.json 应为非空 JSON 数组")
+
     required = ["item_id", "question_id", "ocr_text_human", "human_score",
                 "human_error_tags", "human_grader"]
+    problems = []      # 致命：拒绝跑评测
+    warnings = []      # 可疑：照跑，但必须让人看见
+
     for i, item in enumerate(items):
+        where = "第 %d 条（%s）" % (i + 1, item.get("item_id", "?"))
+        if not isinstance(item, dict):
+            problems.append("%s 不是 JSON 对象" % where)
+            continue
+
         missing = [k for k in required if k not in item]
         if missing:
-            raise SystemExit("manifest 第 %d 条（%s）缺少必填字段：%s"
-                             % (i + 1, item.get("item_id", "?"), "、".join(missing)))
+            problems.append("%s 缺少必填字段：%s" % (where, "、".join(missing)))
+            continue
+
+        # human_score：bool 是 int 的子类，必须显式排除，否则 true 会被当成 1 分
+        score = item["human_score"]
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            problems.append("%s human_score 必须是数字，实际是 %s（%r）"
+                            % (where, type(score).__name__, score))
+        else:
+            max_score = None
+            if questions:
+                q = questions.get(item["question_id"])
+                if q is not None:
+                    max_score = q.get("max_score")
+            if score < 0:
+                problems.append("%s human_score = %s，不能为负" % (where, score))
+            elif max_score is not None and score > max_score:
+                problems.append("%s human_score = %s 超过该题满分 %s"
+                                % (where, score, max_score))
+
+        if not isinstance(item["human_error_tags"], list):
+            problems.append("%s human_error_tags 必须是数组，实际是 %s"
+                            % (where, type(item["human_error_tags"]).__name__))
+        else:
+            # 枚举外的标签不算致命错误（错因枚举本身可能演进），但要提醒：
+            # 它永远不会与 AI 标签相交，会把 Jaccard 拉低成 0 却看不出原因。
+            unknown = [t for t in item["human_error_tags"]
+                       if t not in grader.ERROR_TAGS]
+            if unknown:
+                warnings.append(
+                    "%s 错因标签不在枚举内：%s。这些标签不会与 AI 输出相交，"
+                    "会把 Jaccard 拉低；请确认是笔误还是需要扩充枚举。"
+                    % (where, "、".join(map(str, unknown))))
+
+        # null 视为「这条没标」，与整个字段缺失同义，合法放行（下游会跳过它）。
+        # 但除此之外必须是真布尔：字符串 "false" 被 bool() 判成 True，
+        # 会让「不必复核」算成「漏拦」，安全性指标反着走且毫无征兆。
+        if (item.get("needs_review") is not None
+                and not isinstance(item["needs_review"], bool)):
+            problems.append(
+                "%s needs_review 必须是布尔 true/false（或 null 表示未标注），"
+                "实际是 %s（%r）——字符串 \"false\" 会被判成「需要复核」，指标会反着算"
+                % (where, type(item["needs_review"]).__name__, item["needs_review"]))
+
+        if "clarity" in item:
+            c = item["clarity"]
+            if isinstance(c, bool) or not isinstance(c, (int, float)):
+                problems.append("%s clarity 必须是数字，实际是 %s"
+                                % (where, type(c).__name__))
+            elif not (0 <= c <= 100):
+                problems.append("%s clarity = %s，应在 0-100 之间" % (where, c))
+
+        if questions and item["question_id"] not in questions:
+            problems.append("%s question_id = %r 不存在于题库"
+                            % (where, item["question_id"]))
+
+    if problems:
+        raise SystemExit(
+            "manifest 校验未通过，共 %d 处问题（请先修标注，再跑评测）：\n  - %s"
+            % (len(problems), "\n  - ".join(problems)))
+
+    # 重复标签会让 Jaccard 的分母失真，去重后再交给下游
+    for item in items:
+        tags = item.get("human_error_tags")
+        if isinstance(tags, list) and len(set(tags)) != len(tags):
+            item["human_error_tags"] = list(dict.fromkeys(tags))
+            warnings.append("条目 %s 的错因标签有重复，已自动去重"
+                            % item.get("item_id", "?"))
+
+    if warnings:
+        print("manifest 校验通过，但有 %d 处需要留意：" % len(warnings))
+        for w in warnings:
+            print("  ! " + w)
     return items
 
 
@@ -298,26 +449,80 @@ def eval_ocr(eval_dir: Path, items: list) -> dict:
             row["error"] = "图片不存在：%s" % img_path
             details.append(row)
             continue
-        try:
-            mime = _MIME_BY_EXT.get(img_path.suffix.lower(), "image/png")
-            result = ocr_mod.recognize_vlm(img_path.read_bytes(), mime)
+        mime = _MIME_BY_EXT.get(img_path.suffix.lower(), "image/png")
+        result, attempts, exc = _call_with_retry(
+            lambda: ocr_mod.recognize_vlm(img_path.read_bytes(), mime),
+            "识别 %s" % item["item_id"])
+        if result is None:
+            row["error"] = "识别调用失败（尝试 %d 次）：%s" % (attempts, exc)
+        else:
             row["machine_text"] = result.get("text", "")
             row["clarity"] = result.get("clarity")
             row.update(compute_cer(row["machine_text"], item["ocr_text_human"]))
-        except Exception as exc:   # 单条失败不中断整轮评测
-            row["error"] = "识别调用失败：%s" % exc
+            if attempts > 1:
+                row["retry_attempts"] = attempts
         details.append(row)
 
-    scored = [d for d in details if d.get("cer") is not None]
-    mean_cer = round(sum(d["cer"] for d in scored) / len(scored), 4) if scored else None
-    raw_scored = [d for d in details if d.get("cer_raw") is not None]
-    mean_raw = (round(sum(d["cer_raw"] for d in raw_scored) / len(raw_scored), 4)
-                if raw_scored else None)
+    def _mean(key):
+        vals = [d[key] for d in details if d.get(key) is not None]
+        return (round(sum(vals) / len(vals), 4) if vals else None), len(vals)
+
+    mean_cer, n_cer = _mean("cer")
+    mean_raw, _ = _mean("cer_raw")
+    mean_math, _ = _mean("cer_math")
     return {"evaluated": True, "reason": None, "items": details,
-            "mean_cer": mean_cer, "mean_cer_raw": mean_raw, "n": len(scored)}
+            "mean_cer": mean_cer, "mean_cer_raw": mean_raw,
+            "mean_cer_math": mean_math, "n": n_cer}
 
 
 # ---------- b. 批改一致性评测（真实模式：grade_adhoc） ----------
+
+# 可重试的瞬时故障特征。实测中转网关会出现 RemoteDisconnected、读超时、
+# 502/503/504 这类与「作答内容」完全无关的失败——它们不是模型判断不了，
+# 而是链路抖了一下。评测跑几十张图时几乎必然撞上若干次，
+# 若不重试就会在报告里留下一堆「批改失败」，把样本量白白打掉。
+#
+# 反过来，4xx（除 429）不重试：那是请求本身有问题（模型名错、鉴权失败、
+# 内容被拒），重试只是重复烧钱和时间。
+_RETRIABLE = (
+    "remotedisconnected", "connection aborted", "connection reset",
+    "timed out", "timeout", "read timed out",
+    "502", "503", "504", "429", "bad gateway", "service unavailable",
+    "temporarily", "connectionerror", "chunkedencodingerror",
+)
+
+_RETRY_MAX = 3          # 首次 + 最多 2 次重试
+_RETRY_BASE_SLEEP = 4   # 退避基数（秒）：4、8
+
+
+def _is_retriable(exc: Exception) -> bool:
+    text = ("%s %s" % (type(exc).__name__, exc)).lower()
+    return any(sig in text for sig in _RETRIABLE)
+
+
+def _call_with_retry(fn, label: str):
+    """执行 fn，瞬时故障按指数退避重试。返回 (结果, 尝试次数, 最后异常)。
+
+    刻意把重试次数一并返回：报告里要能看出「这批数据是一次过的，
+    还是靠反复重试才凑齐的」——后者说明网关不稳，结论的可信度要打折。
+    """
+    last = None
+    attempt = 0
+    for attempt in range(1, _RETRY_MAX + 1):
+        try:
+            return fn(), attempt, None
+        except Exception as exc:
+            last = exc
+            if attempt >= _RETRY_MAX or not _is_retriable(exc):
+                break
+            wait = _RETRY_BASE_SLEEP * (2 ** (attempt - 1))
+            print("  [%s] 第 %d 次失败（%s），%d 秒后重试…"
+                  % (label, attempt, type(exc).__name__, wait))
+            time.sleep(wait)
+    # 返回**真实**尝试次数而非上限：鉴权错误只调了 1 次就该报 1 次，
+    # 报成 3 次会让人误判成网关不稳，去查错方向。
+    return None, attempt, last
+
 
 def eval_grading(items: list, questions: dict, ocr_details: list) -> dict:
     """对每条评测条目跑真实 LLM 批改（grade_adhoc），产出逐条 AI 结果。
@@ -347,13 +552,22 @@ def eval_grading(items: list, questions: dict, ocr_details: list) -> dict:
         clarity = ocr_row.get("clarity")
         if clarity is None:
             clarity = float(item.get("clarity", 85))
-        try:
-            ai = grader.grade_adhoc(question, student_text, clarity)
-        except Exception as exc:   # 单条失败不中断整轮评测
-            errors.append({"item_id": item["item_id"], "error": "批改调用失败：%s" % exc})
+        ai, attempts, exc = _call_with_retry(
+            lambda: grader.grade_adhoc(question, student_text, clarity),
+            "批改 %s" % item["item_id"])
+        if ai is None:
+            errors.append({"item_id": item["item_id"],
+                           "error": "批改调用失败（尝试 %d 次）：%s" % (attempts, exc),
+                           "attempts": attempts,
+                           "retriable": _is_retriable(exc) if exc else None})
             continue
-        records.append(make_record(item, question, ai))
-    return {"evaluated": True, "reason": None, "records": records, "errors": errors}
+        rec = make_record(item, question, ai)
+        if attempts > 1:
+            rec["retry_attempts"] = attempts
+        records.append(rec)
+    retried = [r["item_id"] for r in records if r.get("retry_attempts")]
+    return {"evaluated": True, "reason": None, "records": records,
+            "errors": errors, "retried_items": retried}
 
 
 def make_record(item: dict, question: dict, ai: dict) -> dict:
@@ -364,7 +578,14 @@ def make_record(item: dict, question: dict, ai: dict) -> dict:
     """
     max_score = float(ai.get("max_score") or question.get("max_score") or 0)
     ai_score = float(ai.get("total_score") or 0)
-    human_score = float(item["human_score"])
+    # load_manifest 已经拦过脏标注，这里再兜一层：本函数也被自测与单测直接调用，
+    # 不能假设调用方一定先过了校验。null 分数曾在这里抛 TypeError 中断整轮评测。
+    try:
+        human_score = float(item["human_score"])
+    except (TypeError, ValueError):
+        raise ValueError(
+            "条目 %s 的 human_score 无法转成数字：%r。请先修正标注。"
+            % (item.get("item_id", "?"), item.get("human_score")))
     delta = ai_score - human_score
     record = {
         "item_id": item["item_id"],
@@ -384,6 +605,16 @@ def make_record(item: dict, question: dict, ai: dict) -> dict:
         "ai_band": score_band(ai_score, max_score),
         "human_band": score_band(human_score, max_score),
     }
+    # needs_review 为可选标注字段：人工判定「这份**必须**教师过目」
+    # （判分有争议 / 字迹无法辨认 / AI 结论有误）。标了才参与漏拦率统计。
+    if item.get("needs_review") is not None:
+        # 只认真正的布尔。不用 bool() 兜底是刻意的：bool("false") 为 True，
+        # 一条 `"needs_review": "false"` 的错标会让「不必复核」被算成「漏拦」，
+        # 指标反着走还看不出来。非布尔值宁可不纳入统计，也不猜它想表达什么。
+        if isinstance(item["needs_review"], bool):
+            record["needs_review"] = item["needs_review"]
+            # 黄与红都会送到教师面前，只有绿是真正自动通过
+            record["ai_flagged"] = record["status"] in ("yellow", "red")
     record.update(tag_overlap(record["ai_tags"], record["human_tags"]))
     # 升级中的 grader 可能附带的自检 / 交叉验证字段：有则透传，供报告引用
     for key in ("consistency_check", "cross_check", "factor_overrides"):
@@ -438,7 +669,56 @@ def compute_metrics(records: list) -> dict:
 
     kappa = cohens_kappa([(r["ai_band"], r["human_band"]) for r in records])
     return {"n": n, "consistency": consistency, "tags": tags,
-            "calibration": buckets, "kappa": kappa}
+            "calibration": buckets, "kappa": kappa,
+            "safety": compute_safety(records)}
+
+
+def compute_safety(records: list) -> dict:
+    """分流安全性：漏拦率与召回。仅统计标了 needs_review 的条目。
+
+    为什么必须单列这一项：分桶校准（指标 4）回答的是「AI 说绿的时候准不准」，
+    而这里回答「教师认为必须看的，AI 放过了多少」。两者不能互相替代——
+    一个系统可以每桶都很"准"，却恰好把少数高风险作答判进了绿桶。
+
+    四象限：
+        hit         该看的拦住了（人工要看 → AI 判黄/红）
+        miss        **漏拦**：该看的被自动通过 —— 后果最严重
+        false_alarm 误拦：不必看的被转人工 —— 只是浪费教师时间
+        pass_ok     不必看的自动通过 —— 理想情况
+
+    漏拦率的分母刻意用「人工认为该看的份数」，不用全体样本：
+    用全体做分母会把这个数字稀释得很好看，是自欺欺人。
+    """
+    scoped = [r for r in records if r.get("needs_review") is not None]
+    if not scoped:
+        return {"evaluated": False,
+                "reason": ("评测集未标注 needs_review 字段，跳过分流安全性统计。"
+                           "该字段含义：人工判定这份是否**必须**教师过目。"),
+                "n": 0}
+
+    cnt = {"hit": 0, "miss": 0, "false_alarm": 0, "pass_ok": 0}
+    missed_ids = []
+    for r in scoped:
+        if r["needs_review"]:
+            if r["ai_flagged"]:
+                cnt["hit"] += 1
+            else:
+                cnt["miss"] += 1
+                missed_ids.append(r["item_id"])
+        else:
+            cnt["false_alarm" if r["ai_flagged"] else "pass_ok"] += 1
+
+    need = cnt["hit"] + cnt["miss"]
+    safe = cnt["false_alarm"] + cnt["pass_ok"]
+    return {
+        "evaluated": True, "reason": None, "n": len(scoped),
+        "counts": cnt,
+        "need_review": need,
+        "miss_rate": round(cnt["miss"] / need, 4) if need else None,
+        "recall": round(cnt["hit"] / need, 4) if need else None,
+        "false_alarm_rate": round(cnt["false_alarm"] / safe, 4) if safe else None,
+        "missed_items": missed_ids,
+    }
 
 
 # ---------- e. 输出：控制台 + report_data.json + report_tables.md ----------
@@ -461,14 +741,19 @@ def print_report(ocr_section: dict, grading_section: dict, metrics: dict,
         rows = []
         for d in ocr_section["items"]:
             if d.get("error"):
-                rows.append([d["item_id"], "失败", "—", "—", d["error"]])
+                rows.append([d["item_id"], "失败", "—", "—", "—", d["error"]])
             else:
                 rows.append([d["item_id"], _pct(d["cer"], 2), _pct(d["cer_raw"], 2),
-                             d["ref_len"], ""])
-        print(render_table(["条目", "CER(去空白)", "CER(严格)", "参照长度", "备注"], rows))
-        print("  平均 CER（去空白口径）= %s（n=%d）；严格口径 = %s"
+                             _pct(d.get("cer_math"), 2), d["ref_len"], ""])
+        print(render_table(["条目", "CER(去空白)", "CER(严格)", "CER(记号归一)",
+                            "参照长度", "备注"], rows))
+        print("  平均 CER（去空白口径）= %s（n=%d）；严格口径 = %s；记号归一口径 = %s"
               % (_pct(ocr_section["mean_cer"], 2), ocr_section["n"],
-                 _pct(ocr_section["mean_cer_raw"], 2)))
+                 _pct(ocr_section["mean_cer_raw"], 2),
+                 _pct(ocr_section.get("mean_cer_math"), 2)))
+        print("  记号归一口径统一了上下标（x² ↔ x^2）、全角符号与「解:」类引导词，")
+        print("  用于区分「真的认错字」与「记号习惯不同」。三者差距越大，")
+        print("  说明人工标注规范与模型输出习惯越不一致，应优先统一标注规范。")
 
     print("\n[2] 批改一致性（AI 分 vs 教师分）")
     if not grading_section["evaluated"]:
@@ -476,6 +761,11 @@ def print_report(ocr_section: dict, grading_section: dict, metrics: dict,
         return
     for err in grading_section.get("errors", []):
         print("  [条目 %s 失败] %s" % (err["item_id"], err["error"]))
+    # 靠重试才成功的条目要显式点出来：网关不稳时，结论可信度应打折
+    retried = grading_section.get("retried_items") or []
+    if retried:
+        print("  注意：%d 条经重试后才成功（%s）。网关抖动频繁，"
+              "建议重跑一遍确认指标稳定。" % (len(retried), "、".join(retried)))
     if metrics.get("n", 0) == 0:
         print("  无有效批改记录，指标不可计算。")
         return
@@ -510,6 +800,30 @@ def print_report(ocr_section: dict, grading_section: dict, metrics: dict,
     labels = k["labels"]
     rows = [["AI:" + a] + [k["confusion"][a][h] for h in labels] for a in labels]
     print(render_table(["混淆矩阵"] + ["人工:" + h for h in labels], rows))
+
+    sf = metrics.get("safety") or {}
+    print("\n[6] 分流安全性（漏拦率：教师认为必须看的，AI 放过了多少）")
+    if not sf.get("evaluated"):
+        print("  跳过：%s" % sf.get("reason", "无 needs_review 标注"))
+    else:
+        c = sf["counts"]
+        print(render_table(
+            ["象限", "含义", "条数"],
+            [["hit", "该看的拦住了（判黄/红）", c["hit"]],
+             ["miss", "漏拦：该看的被自动通过", c["miss"]],
+             ["false_alarm", "误拦：不必看的被转人工", c["false_alarm"]],
+             ["pass_ok", "不必看的自动通过", c["pass_ok"]]]))
+        print("  漏拦率 = %s（分母 = 教师认为该看的 %d 份，不是全体 %d 份）"
+              % (_pct(sf["miss_rate"], 1), sf["need_review"], sf["n"]))
+        print("  召回   = %s    误拦率 = %s"
+              % (_pct(sf["recall"], 1), _pct(sf["false_alarm_rate"], 1)))
+        if sf["missed_items"]:
+            print("  ⚠ 漏拦条目：%s —— 这些是最该逐份复盘的样本，"
+                  "误拦只浪费教师时间，漏拦会把错误批改直接发给学生。"
+                  % "、".join(sf["missed_items"]))
+        elif sf["need_review"]:
+            print("  本轮无漏拦。")
+
     if selftest:
         print("\n" + SELFTEST_BANNER)
 
@@ -530,13 +844,22 @@ def build_report_tables_md(ocr_section: dict, grading_section: dict, metrics: di
         lines.append("（未评测：%s）" % ocr_section["reason"])
     else:
         rows = [[d["item_id"], _pct(d.get("cer"), 2), _pct(d.get("cer_raw"), 2),
-                 d.get("ref_len"), d.get("error", "")]
+                 _pct(d.get("cer_math"), 2), d.get("ref_len"), d.get("error", "")]
                 for d in ocr_section["items"]]
-        lines.append(md_table(["条目", "CER（去空白）", "CER（严格）", "参照长度", "备注"], rows))
+        lines.append(md_table(["条目", "CER（去空白）", "CER（严格）", "CER（记号归一）",
+                               "参照长度", "备注"], rows))
         lines.append("")
-        lines.append("平均 CER（去空白口径）= **%s**（n=%d）；严格口径 = %s。"
+        lines.append("平均 CER（去空白口径）= **%s**（n=%d）；严格口径 = %s；记号归一口径 = **%s**。"
                      % (_pct(ocr_section["mean_cer"], 2), ocr_section["n"],
-                        _pct(ocr_section["mean_cer_raw"], 2)))
+                        _pct(ocr_section["mean_cer_raw"], 2),
+                        _pct(ocr_section.get("mean_cer_math"), 2)))
+        lines.append("")
+        lines.append("> 前两个口径为 docs/07 §3 预注册定义，未作改动。"
+                     "「记号归一」为新增补充口径：在去空白之上再统一上下标"
+                     "（`x²` ↔ `x^2`）、全角符号与「解:」类引导词，"
+                     "用于区分**真的认错字**与**记号习惯不同**。"
+                     "实测中曾出现模型输出 `x^2`、人工标注 `x²` 而被记成 20% CER 的情况，"
+                     "该口径即为此设。三者差距越大，说明标注规范与模型输出习惯越不一致。")
 
     lines += ["", "## 表 B：批改一致性", ""]
     if not grading_section["evaluated"] or metrics.get("n", 0) == 0:
@@ -587,6 +910,35 @@ def build_report_tables_md(ocr_section: dict, grading_section: dict, metrics: di
     lines.append(md_table(
         [""] + ["人工:" + h for h in k["labels"]],
         [["AI:" + a] + [k["confusion"][a][h] for h in k["labels"]] for a in k["labels"]]))
+
+    sf = metrics.get("safety") or {}
+    lines += ["", "## 表 F：分流安全性（漏拦率）", ""]
+    if not sf.get("evaluated"):
+        lines.append("（未评测：%s）" % sf.get("reason", "无 needs_review 标注"))
+    else:
+        c = sf["counts"]
+        lines.append(md_table(
+            ["象限", "含义", "条数"],
+            [["hit", "该看的拦住了（判黄/红）", c["hit"]],
+             ["miss", "**漏拦**：该看的被自动通过", c["miss"]],
+             ["false_alarm", "误拦：不必看的被转人工", c["false_alarm"]],
+             ["pass_ok", "不必看的自动通过", c["pass_ok"]]]))
+        lines.append("")
+        lines.append(md_table(
+            ["指标", "值", "口径"],
+            [["漏拦率", _pct(sf["miss_rate"], 1),
+              "miss / (hit+miss)；分母为教师认为该看的 %d 份" % sf["need_review"]],
+             ["召回", _pct(sf["recall"], 1), "hit / (hit+miss)"],
+             ["误拦率", _pct(sf["false_alarm_rate"], 1),
+              "false_alarm / (false_alarm+pass_ok)"]]))
+        lines.append("")
+        lines.append("> 分母刻意用「教师认为该看的份数」而非全体样本："
+                     "用全体做分母会把漏拦率稀释得很好看。"
+                     "误拦只浪费教师时间，漏拦会把错误批改直接发到学生手上，"
+                     "两者严重程度不对等，故必须单列。")
+        if sf["missed_items"]:
+            lines.append("")
+            lines.append("**漏拦条目**：%s" % "、".join(sf["missed_items"]))
     return "\n".join(lines) + "\n"
 
 
@@ -624,7 +976,10 @@ def run_eval(eval_dir: Path) -> None:
     """正式评测：读取评测集目录 → OCR 评测 → 批改一致性评测 → 汇总输出。"""
     eval_dir = eval_dir.resolve()
     questions = load_questions(eval_dir)
-    items = load_manifest(eval_dir)
+    # 传入题库，让 human_score 能对着「该题满分」校验越界，
+    # 也能提前发现 question_id 写错——两者都会在跑完几十次真实调用后
+    # 才在指标里露出马脚，那时候额度已经烧掉了。
+    items = load_manifest(eval_dir, questions)
     print("评测集：%s（共 %d 条）" % (eval_dir, len(items)))
 
     ocr_section = eval_ocr(eval_dir, items)
@@ -663,6 +1018,11 @@ def _simulated_human_label(idx: int, ai: dict) -> dict:
         idx % 4 == 3 → 教师分 = AI 分 + 1（模拟 AI 偏低）
         其余         → 教师分 = AI 分（一致）
         idx % 3 == 2 → 教师多标 1 个 AI 未给的错因（模拟 AI 漏标）
+
+    needs_review 的模拟规则：得分率低于 80% 即认为「教师必须过目」。
+    注意：这份模拟数据上 mock 引擎恰好没有漏拦，所以 miss / false_alarm
+    两个象限取不到样本。四象限的公式分支由 tools/test_eval_harness.py
+    直接构造记录来覆盖，不靠这里的模拟数据碰运气。
     """
     max_score = float(ai.get("max_score") or 0)
     ai_score = float(ai.get("total_score") or 0)
@@ -678,8 +1038,9 @@ def _simulated_human_label(idx: int, ai: dict) -> dict:
             if tag not in human_tags:
                 human_tags.append(tag)
                 break
+    needs_review = bool(max_score) and (human_score / max_score) < 0.8
     return {"human_score": human_score, "human_error_tags": human_tags,
-            "human_grader": "SIM"}
+            "human_grader": "SIM", "needs_review": needs_review}
 
 
 def run_selftest() -> None:
@@ -715,10 +1076,16 @@ def run_selftest() -> None:
         ocr_details.append(row)
 
     scored = [d for d in ocr_details if d.get("cer") is not None]
+
+    def _sm(key):
+        vals = [d[key] for d in ocr_details if d.get(key) is not None]
+        return round(sum(vals) / len(vals), 4) if vals else None
+
     ocr_section = {
         "evaluated": True, "reason": None, "items": ocr_details,
-        "mean_cer": round(sum(d["cer"] for d in scored) / len(scored), 4),
-        "mean_cer_raw": round(sum(d["cer_raw"] for d in scored) / len(scored), 4),
+        "mean_cer": _sm("cer"),
+        "mean_cer_raw": _sm("cer_raw"),
+        "mean_cer_math": _sm("cer_math"),
         "n": len(scored),
     }
     grading_section = {"evaluated": True, "reason": None,

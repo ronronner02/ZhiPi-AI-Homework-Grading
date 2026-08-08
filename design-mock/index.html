@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>智批π · 教师可控的作业批改</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- 首页 -->
+  <div class="stage is-on" id="stage" data-view="stage">
+    <section class="section section--tight" id="hero">
+<div class="frame frame--hero">
+      <div class="grain" aria-hidden="true"></div>
+      <div class="hero">
+        <div class="hero-top">
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true">π</span>
+            智批π
+          </div>
+          <span class="tag">希沃智教 · 2026</span>
+        </div>
+
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <div class="kicker">不漏一题 · 不落一人</div>
+            <h1>教师可控的<br />多模态批改</h1>
+            <p class="claim">
+              识别学生为什么错、错在哪一步；用置信度决定人机分工——高置信自动通过，中间带教师确认，低置信转人工。
+            </p>
+            <div class="stats" aria-label="本班分流">
+              <div class="stat stat--g"><b class="mono">12</b><span>自动通过</span></div>
+              <div class="stat stat--y"><b class="mono">7</b><span>教师确认</span></div>
+              <div class="stat stat--r"><b class="mono">3</b><span>转人工</span></div>
+            </div>
+            <button type="button" class="btn btn--primary btn--lg" data-go="submit">开始批改</button>
+          </div>
+
+          <aside class="hero-side" aria-label="分流说明">
+            <h3>人机分工</h3>
+            <div class="proof-row">
+              <span class="swatch" style="background:var(--st-green)"></span>
+              <div><strong>自动通过</strong><br /><span class="meta-line">置信度 ≥ 85</span></div>
+            </div>
+            <div class="proof-row">
+              <span class="swatch" style="background:var(--st-yellow)"></span>
+              <div><strong>教师确认</strong><br /><span class="meta-line">60 – 85</span></div>
+            </div>
+            <div class="proof-row">
+              <span class="swatch" style="background:var(--st-red)"></span>
+              <div><strong>转人工</strong><br /><span class="meta-line">&lt; 60</span></div>
+            </div>
+          </aside>
+
+          <!-- 调研：作业照片拼贴嵌在中间空白；不挡人机卡 -->
+          <div class="collage" aria-hidden="true">
+            <figure class="collage__f collage__f--1">
+              <img src="../demo/data/sample_images/SUB001.png" alt="" loading="lazy" />
+            </figure>
+            <figure class="collage__f collage__f--2">
+              <img src="../demo/data/sample_images/SUB004.png" alt="" loading="lazy" />
+            </figure>
+            <figure class="collage__f collage__f--3">
+              <img src="../demo/data/sample_images/SUB007.png" alt="" loading="lazy" />
+            </figure>
+          </div>
+        </div>
+      </div>
+    </div>
+    </section>
+  </div>
+
+  <!-- 访问口令 -->
+  <div class="stage" id="gate-view" data-view="gate" hidden>
+    <section class="section" id="gate">
+<div class="frame">
+      <div class="gate-wrap">
+        <div class="grain" aria-hidden="true"></div>
+        <div class="gate">
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true">π</span>
+            智批π
+          </div>
+          <h3>输入访问口令</h3>
+          <p>仅授权教师进入批改工作台。</p>
+          <div class="field">
+            <label for="code">访问口令</label>
+            <input id="code" class="input" type="password" autocomplete="off" placeholder="请输入口令" />
+          </div>
+          <div style="margin-top:16px">
+            <button type="button" class="btn btn--primary" style="width:100%" data-go="submit">进入</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </section>
+  </div>
+
+  <!-- 工作台：单壳 + 四 Tab -->
+  <div class="app" id="app" data-view="app" hidden>
+    <div class="app-shell frame">
+      <header class="masthead">
+        <button type="button" class="brand brand--btn" id="back-home" title="回首页">
+          <span class="brand-mark" aria-hidden="true">π</span>
+          智批π
+        </button>
+        <span class="stamp stamp--quiet">LLM 批改</span>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn--ghost btn--sm" id="reset-btn">重置</button>
+      </header>
+      <nav class="tabs" id="tabs" aria-label="主流程">
+        <button type="button" class="tab is-on" data-tab="submit"><span class="n">01</span>拍照提交</button>
+        <button type="button" class="tab" data-tab="result"><span class="n">02</span>批改结果</button>
+        <button type="button" class="tab" data-tab="teacher"><span class="n">03</span>教师工作台</button>
+        <button type="button" class="tab" data-tab="board"><span class="n">04</span>班级看板</button>
+      </nav>
+      <div class="trail" id="trail">
+        <strong id="trail-title">01 提交</strong>
+        <span id="trail-desc">选择文件夹并上传作业</span>
+        <span class="trail-sep">·</span>
+        <span>当前目标：<strong id="active-folder">初二·代数周练</strong></span>
+      </div>
+
+      <div class="screen is-on" id="screen-submit" data-screen="submit">
+<!-- 文件夹 -->
+        <div class="sheet">
+          <div class="toolbar">
+            <h3 style="margin:0">作业文件夹</h3>
+            <span class="spacer"></span>
+            <span class="hint-inline">选中后可整夹批改</span>
+          </div>
+          <div class="folder-create">
+            <input class="input" type="text" maxlength="24" placeholder="新文件夹名称，如：周一数学作业" aria-label="新文件夹名称" />
+            <button type="button" class="btn btn--sm btn--primary">新建文件夹</button>
+          </div>
+          <div class="folder-grid">
+            <div class="folder is-on" role="button" tabindex="0">
+              <div class="name">初二·代数周练</div>
+              <div class="meta">8 份</div>
+            </div>
+            <div class="folder" role="button" tabindex="0">
+              <div class="name">物理·力学</div>
+              <div class="meta">3 份</div>
+            </div>
+            <div class="folder folder--empty" role="button" tabindex="0">
+              <div class="name">英语·阅读</div>
+              <div class="meta">空</div>
+            </div>
+            <div class="folder" role="button" tabindex="0">
+              <div class="name">九年级总复习</div>
+              <div class="meta">12 份</div>
+            </div>
+          </div>
+          <div class="folder-actions">
+            <button type="button" class="btn btn--accent">整夹一键批改</button>
+            <button type="button" class="btn btn--ghost btn--sm">重命名</button>
+            <button type="button" class="btn btn--ghost btn--sm">删除</button>
+            <button type="button" class="btn btn--ghost btn--sm">查看夹内文件</button>
+          </div>
+        </div>
+
+        <!-- 夹内 -->
+        <div class="sheet">
+          <div class="toolbar">
+            <h3 style="margin:0">夹内文件</h3>
+            <span class="hint-inline">初二·代数周练</span>
+          </div>
+          <div class="file-list">
+            <div class="file-row">
+              <span class="mono">01</span>
+              <div><strong>王同学_方程.jpg</strong><div class="meta-line">已上传 · 待审</div></div>
+              <button type="button" class="btn btn--ghost btn--sm">打开</button>
+            </div>
+            <div class="file-row">
+              <span class="mono">02</span>
+              <div><strong>赵同学_应用.jpg</strong><div class="meta-line">已上传 · 已批</div></div>
+              <button type="button" class="btn btn--ghost btn--sm">打开</button>
+            </div>
+            <div class="file-row">
+              <span class="mono">03</span>
+              <div><strong>李同学_检验.png</strong><div class="meta-line">已上传 · 已批</div></div>
+              <button type="button" class="btn btn--ghost btn--sm">打开</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 上传 -->
+        <div class="sheet">
+          <div class="toolbar">
+            <h3 style="margin:0">上传到当前文件夹</h3>
+          </div>
+          <p class="sub">目标：<strong>初二·代数周练</strong> · 单张先确认转写，多张进入批量流水线</p>
+          <div class="dropzone">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path d="M12 16V7M12 7l-3.5 3.5M12 7l3.5 3.5" />
+              <path d="M4 16.5V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5" />
+            </svg>
+            <h4>上传作业照片</h4>
+            <p>PNG / JPG / WebP，支持多选</p>
+            <button type="button" class="btn btn--ghost btn--sm">选择照片</button>
+          </div>
+        </div>
+
+        <!-- 批量 -->
+        <div class="sheet">
+          <div class="toolbar">
+            <h3 style="margin:0">批量识别与批改</h3>
+            <span class="tag tag--blue">3 / 5</span>
+          </div>
+          <div class="bar" aria-hidden="true"><i style="width:60%"></i></div>
+          <div class="batch-list">
+            <div class="batch-item is-done"><span class="mono">1</span>王同学_方程.jpg<span class="stamp stamp--g">完成</span></div>
+            <div class="batch-item is-done"><span class="mono">2</span>赵同学_应用.jpg<span class="stamp stamp--y">完成</span></div>
+            <div class="batch-item is-busy"><span class="mono">3</span>陈同学_03.png<span class="tag">批改中</span></div>
+            <div class="batch-item"><span class="mono">4</span>周同学_04.jpg<span class="tag">排队</span></div>
+            <div class="batch-item"><span class="mono">5</span>吴同学_05.jpg<span class="tag">排队</span></div>
+          </div>
+          <div class="toolbar" style="margin-top:14px;margin-bottom:0">
+            <button type="button" class="btn btn--primary btn--sm" data-go="teacher">去工作台审核</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-go="result">查看结果</button>
+          </div>
+        </div>
+
+        <!-- 识别 -->
+        <div class="sheet" style="margin-bottom:0">
+          <div class="toolbar">
+            <h3 style="margin:0">手写识别</h3>
+            <span class="tag">转写置信 0.91</span>
+          </div>
+          <div class="recog-split">
+            <div class="photo-ph" aria-hidden="true">
+              <span>原卷</span>
+            </div>
+            <div>
+              <label class="field-label" for="ocr-text">转写文本 · 可修正后再批改</label>
+              <textarea id="ocr-text" class="textarea" rows="7">设甲为 x kg，乙为 (20−x) kg。
+由题意得 3x + 2(20−x) = 46
+解得 x = 6
+答：甲 6 kg，乙 14 kg。</textarea>
+              <div class="toolbar" style="margin:12px 0 0">
+                <button type="button" class="btn btn--accent" data-go="result">提交批改</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="screen" id="screen-result" data-screen="result" hidden>
+<div class="batch-picker">
+          <label for="batch-sel">本批结果</label>
+          <select id="batch-sel" class="select">
+            <option>王同学 · 方程应用 · 72 分 · 教师确认</option>
+            <option>赵同学 · 方程应用 · 88 分 · 自动通过</option>
+            <option>李同学 · 力学 · 41 分 · 转人工</option>
+          </select>
+        </div>
+
+        <div class="sheet">
+          <div class="toolbar">
+            <div>
+              <h3 style="margin:0">王同学 · 数学 · 方程应用</h3>
+              <p class="sub" style="margin:4px 0 0">代数周练 #03</p>
+            </div>
+            <span class="spacer"></span>
+            <span class="stamp stamp--y">教师确认</span>
+          </div>
+          <div class="score-row">
+            <div class="score-card">
+              <div class="lab">总分</div>
+              <div class="val mono">72<small> / 100</small></div>
+            </div>
+            <div class="score-card">
+              <div class="lab">综合置信</div>
+              <div class="val mono" style="font-size:1.35rem;color:var(--st-yellow)">68.0</div>
+              <div class="meter"><span style="width:68%;background:var(--st-yellow)"></span></div>
+            </div>
+            <div class="score-card">
+              <div class="lab">分流</div>
+              <div style="margin-top:10px"><span class="stamp stamp--y">教师确认</span></div>
+            </div>
+            <div class="score-card">
+              <div class="lab">链路</div>
+              <div class="factor-wrap" style="margin-top:8px">
+                <span class="factor">识别 <b>多模态</b></span>
+                <span class="factor">批改 <b>LLM</b></span>
+              </div>
+            </div>
+          </div>
+          <h3 class="block-title">置信度因子</h3>
+          <div class="factor-wrap">
+            <span class="factor">转写质量 <b>0.91</b></span>
+            <span class="factor">步骤完整 <b>0.72</b></span>
+            <span class="factor">知识匹配 <b>0.80</b></span>
+            <span class="factor">历史通过 <b>0.55</b></span>
+            <span class="factor">书写清晰 <b>0.88</b></span>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <h3 class="block-title" style="margin-top:0">题目与作答</h3>
+          <div class="kv">
+            <div class="kv__k">题目</div>
+            <div class="kv__v">甲乙共 20 kg，甲价 3 元/kg、乙价 2 元/kg，总价 46 元。求甲、乙各多少 kg？</div>
+            <div class="kv__k">标准答案</div>
+            <div class="kv__v muted">甲 6 kg，乙 14 kg</div>
+            <div class="kv__k">学生作答</div>
+            <div class="kv__v pre">设甲为 x kg… 3x+2(20−x)=46 …</div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <h3 class="block-title" style="margin-top:0">逐步证据</h3>
+          <div class="evidence">
+            <div class="step is-ok">
+              <span class="idx">1</span>
+              <div>
+                <div class="t">设未知数 <span class="tag tag--kp">方程建模</span></div>
+                <div class="d">「设甲为 x kg」表述完整 · 8 / 8</div>
+              </div>
+              <span class="stamp stamp--g">对</span>
+            </div>
+            <div class="step is-warn">
+              <span class="idx">2</span>
+              <div>
+                <div class="t">列方程 <span class="tag">系数笔误</span></div>
+                <div class="d">系数疑似抄错，建议教师核对 · 18 / 30</div>
+              </div>
+              <span class="stamp stamp--y">待核</span>
+            </div>
+            <div class="step is-bad">
+              <span class="idx">3</span>
+              <div>
+                <div class="t">求解与检验 <span class="tag">检验缺失</span></div>
+                <div class="d">未回代检验 · 10 / 30</div>
+              </div>
+              <span class="stamp stamp--r">错</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet" style="margin-bottom:0">
+          <h3 class="block-title" style="margin-top:0">评语</h3>
+          <p class="quote">列式思路正确，第 2 步系数可能抄错，第 3 步缺少检验。建议固定「解后回代」模板再练两题。</p>
+          <div class="toolbar" style="margin-top:14px;margin-bottom:0">
+            <span class="tag">方程检验</span>
+            <span class="tag">系数抄写</span>
+            <span class="spacer"></span>
+            <button type="button" class="btn btn--ghost btn--sm" data-go="teacher">去教师台</button>
+          </div>
+        </div>
+      </div>
+      <div class="screen" id="screen-teacher" data-screen="teacher" hidden>
+        <div class="sheet" style="margin-bottom:0">
+          <div class="toolbar">
+            <div>
+              <h3 style="margin:0">教师终审 · 红黄绿审核列表</h3>
+              <p class="sub" style="margin:4px 0 0">绿色可抽查通过；黄/红可确认或终审修改</p>
+            </div>
+          </div>
+
+          <div id="teacher-note" class="teacher-note" hidden></div>
+
+          <div class="filters teacher-filters">
+            <span class="hint-inline">筛选</span>
+            <select class="select select--sm" data-f="status" aria-label="分流">
+              <option value="all">全部</option>
+              <option value="pending" selected>待审</option>
+              <option value="green">绿桶</option>
+              <option value="yellow">黄桶</option>
+              <option value="red">红桶</option>
+              <option value="reviewed">已审</option>
+            </select>
+            <select class="select select--sm" data-f="subject" aria-label="学科">
+              <option value="all">全部学科</option>
+              <option value="数学" selected>数学</option>
+              <option value="物理">物理</option>
+              <option value="英语">英语</option>
+            </select>
+            <select class="select select--sm" data-f="tag" aria-label="错因">
+              <option value="all">全部错因</option>
+              <option value="检验缺失">检验缺失</option>
+              <option value="系数抄写">系数抄写</option>
+              <option value="公式前提">公式前提</option>
+            </select>
+            <span class="hint-inline">共 <b id="teacher-count">4</b> 份</span>
+          </div>
+
+          <div class="table-wrap teacher-table-wrap">
+            <table class="teacher-table">
+              <thead>
+                <tr>
+                  <th>学生</th>
+                  <th>题目</th>
+                  <th>AI 分</th>
+                  <th>置信度</th>
+                  <th>分流</th>
+                  <th>错因</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="teacher-tbody">
+                <tr data-status="yellow" data-subject="数学" data-tag="检验缺失" data-reviewed="0">
+                  <td><b>王同学</b></td>
+                  <td>数学 · 方程应用</td>
+                  <td class="mono"><b>72</b> / 100</td>
+                  <td class="mono">68.0</td>
+                  <td><span class="stamp stamp--y">教师确认</span></td>
+                  <td><span class="tag">检验缺失</span> <span class="tag">系数抄写</span></td>
+                  <td>
+                    <div class="row-actions">
+                      <button type="button" class="btn btn--sm btn--primary" data-confirm="wang">确认</button>
+                      <button type="button" class="btn btn--sm btn--ghost" data-review="wang">终审修改</button>
+                      <button type="button" class="btn btn--sm btn--ghost" data-go="result">查看批改</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr data-status="red" data-subject="物理" data-tag="公式前提" data-reviewed="0">
+                  <td><b>李同学</b></td>
+                  <td>物理 · 力学</td>
+                  <td class="mono"><b>41</b> / 100</td>
+                  <td class="mono">41.0</td>
+                  <td><span class="stamp stamp--r">转人工</span></td>
+                  <td><span class="tag">公式前提</span></td>
+                  <td>
+                    <div class="row-actions">
+                      <button type="button" class="btn btn--sm btn--primary" data-confirm="li">确认</button>
+                      <button type="button" class="btn btn--sm btn--ghost" data-review="li">终审修改</button>
+                      <button type="button" class="btn btn--sm btn--ghost" data-go="result">查看批改</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr data-status="yellow" data-subject="数学" data-tag="系数抄写" data-reviewed="0">
+                  <td><b>赵同学</b></td>
+                  <td>数学 · 代数</td>
+                  <td class="mono"><b>74</b> / 100</td>
+                  <td class="mono">74.0</td>
+                  <td><span class="stamp stamp--y">教师确认</span></td>
+                  <td><span class="tag">系数抄写</span></td>
+                  <td>
+                    <div class="row-actions">
+                      <button type="button" class="btn btn--sm btn--primary" data-confirm="zhao">确认</button>
+                      <button type="button" class="btn btn--sm btn--ghost" data-review="zhao">终审修改</button>
+                      <button type="button" class="btn btn--sm btn--ghost" data-go="result">查看批改</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr data-status="green" data-subject="英语" data-tag="" data-reviewed="0">
+                  <td><b>陈同学</b></td>
+                  <td>英语 · 阅读</td>
+                  <td class="mono"><b>93</b> / 100</td>
+                  <td class="mono">93.0</td>
+                  <td><span class="stamp stamp--g">自动通过</span></td>
+                  <td><span class="muted">—</span></td>
+                  <td>
+                    <div class="row-actions">
+                      <button type="button" class="btn btn--sm btn--ghost" data-confirm="chen">抽查通过</button>
+                      <button type="button" class="btn btn--sm btn--ghost" data-review="chen">终审修改</button>
+                      <button type="button" class="btn btn--sm btn--ghost" data-go="result">查看批改</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr data-status="green" data-subject="数学" data-tag="" data-reviewed="1" hidden>
+                  <td><b>周同学</b></td>
+                  <td>数学 · 方程应用</td>
+                  <td class="mono"><b>88</b> / 100</td>
+                  <td class="mono">91.0</td>
+                  <td><span class="stamp stamp--g">自动通过</span></td>
+                  <td><span class="muted">—</span></td>
+                  <td>
+                    <span class="reviewed-label">已确认 88 / 100</span>
+                    <div class="row-actions">
+                      <button type="button" class="btn btn--sm btn--ghost" data-review="zhou">查看/改判</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="screen" id="screen-board" data-screen="board" hidden>
+<div class="sheet">
+          <div class="toolbar">
+            <h3 style="margin:0">班级学情 · 初二 (3) 班</h3>
+            <span class="spacer"></span>
+            <span class="hint-inline mono">14:32 更新</span>
+          </div>
+          <div class="kpi-row">
+            <div class="kpi"><div class="lab">参与作答</div><div class="val">22</div></div>
+            <div class="kpi"><div class="lab">平均得分率</div><div class="val">78%</div></div>
+            <div class="kpi"><div class="lab">薄弱知识点</div><div class="val">3</div></div>
+            <div class="kpi"><div class="lab">待教师处理</div><div class="val" style="color:#8A5A08">10</div></div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <h3 class="block-title" style="margin-top:0">红黄绿分流</h3>
+          <div class="dist">
+            <span class="dist__seg dist__g" style="flex:12">12</span>
+            <span class="dist__seg dist__y" style="flex:7">7</span>
+            <span class="dist__seg dist__r" style="flex:3">3</span>
+          </div>
+          <div class="legend">
+            <span><i class="swatch-i" style="background:var(--st-green)"></i>自动通过 12（55%）</span>
+            <span><i class="swatch-i" style="background:var(--st-yellow)"></i>教师确认 7（32%）</span>
+            <span><i class="swatch-i" style="background:var(--st-red)"></i>转人工 3（14%）</span>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="sheet">
+            <h3 class="block-title" style="margin-top:0">知识点错误率</h3>
+            <div class="bars">
+              <div class="bar-row"><span>方程检验</span><div class="bar-track"><i style="width:72%;background:var(--st-red)"></i></div><b class="mono">72%</b></div>
+              <div class="bar-row"><span>系数抄写</span><div class="bar-track"><i style="width:48%;background:var(--st-yellow)"></i></div><b class="mono">48%</b></div>
+              <div class="bar-row"><span>单位换算</span><div class="bar-track"><i style="width:31%;background:var(--st-green)"></i></div><b class="mono">31%</b></div>
+            </div>
+          </div>
+          <div class="sheet">
+            <h3 class="block-title" style="margin-top:0">错因分布</h3>
+            <div class="bars">
+              <div class="bar-row"><span>检验缺失</span><div class="bar-track"><i style="width:64%;background:var(--ink-mid)"></i></div><b class="mono">9</b></div>
+              <div class="bar-row"><span>系数笔误</span><div class="bar-track"><i style="width:40%;background:var(--ink-mid)"></i></div><b class="mono">5</b></div>
+              <div class="bar-row"><span>公式前提</span><div class="bar-track"><i style="width:28%;background:var(--ink-mid)"></i></div><b class="mono">3</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <h3 class="block-title" style="margin-top:0">讲评建议</h3>
+          <ul class="sugg">
+            <li>用 10 分钟板书「解后回代」模板，针对方程检验高频错误</li>
+            <li>优先终审黄区 7 份与红区 3 份</li>
+            <li>布置 2 道含检验步骤的巩固题</li>
+          </ul>
+        </div>
+
+        <div class="sheet">
+          <div class="toolbar">
+            <h3 style="margin:0">讲评课件大纲</h3>
+            <span class="spacer"></span>
+            <button type="button" class="btn btn--primary btn--sm" id="gen-outline">生成讲评大纲</button>
+            <button type="button" class="btn btn--ghost btn--sm" id="copy-outline">复制</button>
+          </div>
+          <div class="outline pre-sm">
+## 初二 (3) 班 · 代数周练讲评
+1. 共性错因：方程检验缺失（9 次）
+2. 典型错例：匿名展示列式对、检验缺
+3. 分层任务：基础回代 / 变式应用
+4. 复测：5 分钟两小题
+          </div>
+        </div>
+
+        <div class="sheet">
+          <div class="toolbar">
+            <h3 style="margin:0">学生错因画像</h3>
+            <select class="select select--sm" style="max-width:180px" aria-label="选择学生">
+              <option>王同学</option>
+              <option>李同学</option>
+              <option>赵同学</option>
+            </select>
+          </div>
+          <div class="profile-grid">
+            <div class="panel">
+              <h4>本次聚合</h4>
+              <p style="margin:0;font-size:13px;color:var(--ink-mid)">错因以「检验缺失」「系数抄写」为主；两题落入教师确认区。</p>
+            </div>
+            <div class="panel">
+              <h4>趋势</h4>
+              <p style="margin:0;font-size:13px;color:var(--ink-mid)">近 3 次作业：计算类下降，检验类仍偏高，建议专项跟进。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet" style="margin-bottom:0">
+          <div class="toolbar">
+            <div>
+              <h3 style="margin:0">飞书协同</h3>
+              <p class="sub" style="margin:4px 0 0">审核提醒推送到群；学情写入多维表格，表内 AI 字段生成摘要与建议</p>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button type="button" class="btn btn--primary" id="feishu-push">推送审核提醒卡片</button>
+            <button type="button" class="btn btn--ghost" id="feishu-sync">同步学情台账</button>
+          </div>
+
+          <div class="feishu-grid" style="margin-top:8px">
+            <div class="larkcard" aria-label="审核提醒卡片">
+              <div class="larkcard__head">作业批改完成 · 待审核提醒</div>
+              <div class="larkcard__body">
+                <p><strong>作业：</strong>初二 (3) 班 · 代数周练</p>
+                <p><strong>参与作答：</strong>22 人 · <strong>平均得分率：</strong>78%</p>
+                <hr />
+                <p><strong>分流</strong></p>
+                <p>自动通过 <strong>12</strong> · 教师确认 <strong>7</strong> · 转人工 <strong>3</strong></p>
+                <p><strong>待处理：</strong>10 人</p>
+                <p><strong>主要错因：</strong>方程检验、系数抄写、单位换算</p>
+                <hr />
+                <a class="larkcard__cta" href="#" data-go="teacher">前往审核工作台</a>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="base-table">
+                <thead>
+                  <tr>
+                    <th>学生</th>
+                    <th>题号</th>
+                    <th>得分</th>
+                    <th>错因</th>
+                    <th>分流</th>
+                    <th>终审</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>王同学</td>
+                    <td class="mono">Q03</td>
+                    <td class="mono">72</td>
+                    <td>检验缺失</td>
+                    <td><span class="stamp stamp--y">教师确认</span></td>
+                    <td>待终审</td>
+                  </tr>
+                  <tr>
+                    <td>李同学</td>
+                    <td class="mono">Q07</td>
+                    <td class="mono">41</td>
+                    <td>公式前提</td>
+                    <td><span class="stamp stamp--r">转人工</span></td>
+                    <td>待终审</td>
+                  </tr>
+                  <tr>
+                    <td>陈同学</td>
+                    <td class="mono">Q01</td>
+                    <td class="mono">93</td>
+                    <td>—</td>
+                    <td><span class="stamp stamp--g">自动通过</span></td>
+                    <td>未审</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage" id="states-view" data-view="states" hidden>
+    <section class="section" id="states">
+<div class="states-grid">
+      <div class="sheet">
+        <h3 style="margin-top:0">处理中</h3>
+        <div class="sk sk-block" style="margin-bottom:12px"></div>
+        <div class="sk sk-line w80"></div>
+        <div class="sk sk-line w60"></div>
+        <div class="bar" style="margin-top:14px" aria-hidden="true"><i style="width:55%"></i></div>
+      </div>
+      <div class="sheet">
+        <div class="empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M4 7h16v12H4z" /><path d="M8 7V5h8v2" />
+          </svg>
+          <h3>还没有批改结果</h3>
+          <p>请先上传作业并完成识别批改。</p>
+          <button type="button" class="btn btn--accent btn--sm" data-go="submit">去提交</button>
+        </div>
+      </div>
+      <div class="sheet">
+        <h3 style="margin-top:0">无法加载</h3>
+        <p class="sub">网络超时，班级看板暂不可用。</p>
+        <button type="button" class="btn btn--primary btn--sm">重试</button>
+      </div>
+    </div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" hidden><b>已终审</b><span>王同学 #03 已更新</span></div>
+
+  <!-- 终审弹层（对齐现网 openReview） -->
+  <div class="mask" id="review-mask" hidden>
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="rv-title">
+      <div class="dialog__head">
+        <div>
+          <div class="kicker">Final Review</div>
+          <h2 class="dialog__title" id="rv-title">教师终审 · 王同学</h2>
+        </div>
+        <button type="button" class="dialog__close" data-close-review aria-label="关闭">×</button>
+      </div>
+      <p class="sub" id="rv-summary">数学 · 方程应用 ｜ AI 判分 <b class="mono">72 / 100</b>，置信度 <b class="mono">68.0</b></p>
+      <div class="review-body">
+        <div>
+          <h3 class="block-title" style="margin-top:0">题目与标准答案</h3>
+          <p class="sub">甲乙共 20 kg，总价 46 元。求甲、乙各多少 kg？</p>
+          <p class="sub" style="color:var(--st-green);font-weight:600">标准答案：甲 6 kg，乙 14 kg</p>
+          <h3 class="block-title">识别转写</h3>
+          <p class="pre-sm" id="rv-ocr">设甲为 x kg，乙为 (20−x) kg。列得 3x+2(20−x)=46 …</p>
+          <h3 class="block-title">置信度因子</h3>
+          <div class="factor-wrap">
+            <span class="factor">转写质量 <b>0.91</b></span>
+            <span class="factor">步骤完整 <b>0.72</b></span>
+            <span class="factor">历史通过 <b>0.55</b></span>
+          </div>
+        </div>
+        <div>
+          <h3 class="block-title" style="margin-top:0">AI 逐步证据</h3>
+          <div class="evidence">
+            <div class="step is-ok">
+              <span class="idx">1</span>
+              <div><div class="t">设未知数</div><div class="d">8 / 8</div></div>
+            </div>
+            <div class="step is-warn">
+              <span class="idx">2</span>
+              <div><div class="t">列方程</div><div class="d">18 / 30 · 建议核对</div></div>
+            </div>
+            <div class="step is-bad">
+              <span class="idx">3</span>
+              <div><div class="t">求解与检验</div><div class="d">10 / 30 · 检验缺失</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="review-foot">
+        <div class="review-form-grid">
+          <div class="field">
+            <label for="rv-score">终审分数</label>
+            <input id="rv-score" class="input" type="number" min="0" max="100" step="0.5" value="72" />
+          </div>
+          <div class="field">
+            <label>错因改判</label>
+            <div class="tagpick" id="rv-tags">
+              <label class="is-on"><input type="checkbox" checked /> 方程检验缺失</label>
+              <label class="is-on"><input type="checkbox" checked /> 系数抄写</label>
+              <label><input type="checkbox" /> 审题不清</label>
+              <label><input type="checkbox" /> 计算错误</label>
+            </div>
+          </div>
+        </div>
+        <div class="field" style="margin-top:12px">
+          <label for="rv-comment">评语修订</label>
+          <textarea id="rv-comment" class="textarea" rows="2" placeholder="留空则沿用原评语">第 2 步系数请再核；其余可保留。</textarea>
+        </div>
+        <div class="detail-actions" style="border-top:0;padding-top:12px">
+          <button type="button" class="btn btn--ghost" data-close-review>取消</button>
+          <button type="button" class="btn btn--primary" id="rv-submit">提交终审</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -5,6 +5,11 @@ __pycache__/
 venv/
 .env
 .env.local
+# 兜底：.env.bak / .env.save / .env.20260806 这类顺手备份最容易漏。
+# 本轮真实踩过——改配置前 cp 了一份 .env.bak，它不在任何规则里，
+# 差一步就把密钥提交上去。.env.example 需要入库，单独放行。
+.env.*
+!.env.example
 .DS_Store
 Thumbs.db
 *.log
@@ -13,3 +18,15 @@ Thumbs.db
 node_modules/
 .claude/
 eval_set/images/
+# 公开评测原始数据较大；精选小图样本可按需保留
+eval_data/latex_ocr/
+eval_data/**/.cache/
+# 程序生成的边界条件 / 人工走查数据集：由 tools/gen_edge_cases.py 与
+# tools/gen_manual_set.py 随时可重建，不入库（含较大图片与答案 key）
+.edge/
+.manual/
+.pcheck/
+.shots/
+# tools/probe.mjs 每次运行的临时 Chrome profile。正常会自删，
+# 但 Chrome 被强杀时文件仍被占用，会残留在这儿。
+.probe-profile/

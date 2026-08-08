@@ -1,0 +1,870 @@
+{
+  "SUB001": {
+    "mode": "llm",
+    "total_score": 10,
+    "max_score": 10,
+    "confidence": 96.5,
+    "status": "green",
+    "confidence_factors": {
+      "ocr_clarity": 96,
+      "answer_match": 95,
+      "rubric_coverage": 100,
+      "llm_self_consistency": 100.0,
+      "teacher_pass_rate": 88
+    },
+    "step_analysis": [
+      {
+        "step": "选择合适解法",
+        "is_correct": true,
+        "score": 2,
+        "max_score": 2,
+        "error_tag": null,
+        "knowledge_point": "一元二次方程",
+        "reason": "学生正确识别方程形式并选择因式分解法进行求解。",
+        "evidence": "x²-5x+6=0",
+        "legible": true
+      },
+      {
+        "step": "因式分解正确",
+        "is_correct": true,
+        "score": 3,
+        "max_score": 3,
+        "error_tag": null,
+        "knowledge_point": "因式分解",
+        "reason": "因式分解过程正确，将二次三项式转化为两个一次因式的乘积。",
+        "evidence": "(x-2)(x-3)=0",
+        "legible": true
+      },
+      {
+        "step": "求出两个根",
+        "is_correct": true,
+        "score": 3,
+        "max_score": 3,
+        "error_tag": null,
+        "knowledge_point": "一元二次方程",
+        "reason": "根据因式分解结果正确求出方程的两个根。",
+        "evidence": "x₁=2, x₂=3",
+        "legible": true
+      },
+      {
+        "step": "结论表达完整",
+        "is_correct": true,
+        "score": 2,
+        "max_score": 2,
+        "error_tag": null,
+        "knowledge_point": "一元二次方程",
+        "reason": "结论表达清晰完整，符合题目要求。",
+        "evidence": "x₁=2, x₂=3",
+        "legible": true
+      }
+    ],
+    "knowledge_points": [
+      "一元二次方程",
+      "因式分解"
+    ],
+    "error_tags": [],
+    "student_feedback": "解题过程非常规范，因式分解准确，计算结果正确，继续保持！",
+    "teacher_note": "学生掌握了利用十字相乘法解一元二次方程的方法，步骤逻辑清晰。",
+    "ocr_text": "x²-5x+6=0\n(x-2)(x-3)=0\nx₁=2, x₂=3",
+    "ocr_clarity": 96.0,
+    "submission_id": "SUB001",
+    "student_name": "张明",
+    "question_id": "Q001",
+    "question_title": "一元二次方程求解",
+    "subject": "数学",
+    "question_text": "解方程：x² - 5x + 6 = 0",
+    "standard_answer": "x² - 5x + 6 = 0 → (x - 2)(x - 3) = 0 → x₁ = 2，x₂ = 3"
+  },
+  "SUB002": {
+    "mode": "llm",
+    "total_score": 7,
+    "max_score": 10,
+    "confidence": 84.5,
+    "status": "yellow",
+    "confidence_factors": {
+      "ocr_clarity": 88,
+      "answer_match": 70,
+      "rubric_coverage": 85,
+      "llm_self_consistency": 100.0,
+      "teacher_pass_rate": 80
+    },
+    "step_analysis": [
+      {
+        "step": "选择合适解法",
+        "is_correct": true,
+        "score": 2,
+        "max_score": 2,
+        "error_tag": null,
+        "knowledge_point": "一元二次方程",
+        "reason": "学生正确识别并使用了因式分解法。",
+        "evidence": "(x-2)(x-3)=0",
+        "legible": true
+      },
+      {
+        "step": "因式分解正确",
+        "is_correct": true,
+        "score": 3,
+        "max_score": 3,
+        "error_tag": null,
+        "knowledge_point": "因式分解",
+        "reason": "因式分解结果正确。",
+        "evidence": "(x-2)(x-3)=0",
+        "legible": true
+      },
+      {
+        "step": "求出两个根",
+        "is_correct": false,
+        "score": 1,
+        "max_score": 3,
+        "error_tag": "步骤缺失",
+        "knowledge_point": "一元二次方程",
+        "reason": "学生仅求出了一个根，漏掉了另一个根 x=3。",
+        "evidence": "x=2",
+        "legible": true
+      },
+      {
+        "step": "结论表达完整",
+        "is_correct": false,
+        "score": 1,
+        "max_score": 2,
+        "error_tag": "表达不完整",
+        "knowledge_point": "一元二次方程",
+        "reason": "由于漏解，结论表达不完整。",
+        "evidence": "x=2",
+        "legible": true
+      }
+    ],
+    "knowledge_points": [
+      "一元二次方程",
+      "因式分解"
+    ],
+    "error_tags": [
+      "步骤缺失",
+      "表达不完整"
+    ],
+    "student_feedback": "你的因式分解过程非常准确，但要注意一元二次方程通常有两个解，你漏掉了 x=3 这个根，请在解方程时检查是否找全了所有根。",
+    "teacher_note": "学生掌握了因式分解法，但在求解过程中存在漏解现象，需提醒学生注意方程的根的数量。",
+    "ocr_text": "x²-5x+6=0\n(x-2)(x-3)=0\nx=2",
+    "ocr_clarity": 88.0,
+    "submission_id": "SUB002",
+    "student_name": "李华",
+    "question_id": "Q001",
+    "question_title": "一元二次方程求解",
+    "subject": "数学",
+    "question_text": "解方程：x² - 5x + 6 = 0",
+    "standard_answer": "x² - 5x + 6 = 0 → (x - 2)(x - 3) = 0 → x₁ = 2，x₂ = 3"
+  },
+  "SUB003": {
+    "mode": "llm",
+    "total_score": 2,
+    "max_score": 10,
+    "confidence": 64.0,
+    "status": "yellow",
+    "confidence_factors": {
+      "ocr_clarity": 55,
+      "answer_match": 45,
+      "rubric_coverage": 60,
+      "llm_self_consistency": 100.0,
+      "teacher_pass_rate": 70
+    },
+    "step_analysis": [
+      {
+        "step": "选择合适解法",
+        "is_correct": true,
+        "score": 2,
+        "max_score": 2,
+        "error_tag": null,
+        "knowledge_point": "一元二次方程",
+        "reason": "学生选择了因式分解法，方法选择正确。",
+        "evidence": "(x-2)(x+3)=0",
+        "legible": true
+      },
+      {
+        "step": "因式分解正确",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 3,
+        "error_tag": "计算错误",
+        "knowledge_point": "因式分解",
+        "reason": "因式分解错误，常数项分解不匹配，(x-2)(x+3)展开后为x²+x-6，与原方程不符。",
+        "evidence": "(x-2)(x+3)=0",
+        "legible": true
+      },
+      {
+        "step": "求出两个根",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 3,
+        "error_tag": "计算错误",
+        "knowledge_point": "一元二次方程",
+        "reason": "由于因式分解错误，导致后续求出的根不正确。",
+        "evidence": "x=-2, x=-3",
+        "legible": true
+      },
+      {
+        "step": "结论表达完整",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 2,
+        "error_tag": "表达不完整",
+        "knowledge_point": "一元二次方程",
+        "reason": "结论书写不规范，且结果错误。",
+        "evidence": "x=-2, x=-3",
+        "legible": true
+      }
+    ],
+    "knowledge_points": [
+      "一元二次方程",
+      "因式分解"
+    ],
+    "error_tags": [
+      "计算错误",
+      "表达不完整"
+    ],
+    "student_feedback": "你的解题思路选择了因式分解法，这是正确的。但在分解过程中，(x-2)(x+3)展开后是x²+x-6，与原方程不符。请注意常数项的符号，应寻找积为6、和为-5的两个数，即-2和-3。请重新检查计算过程。",
+    "teacher_note": "学生在十字相乘法上存在明显的符号计算错误，导致后续解方程逻辑链条断裂，需加强对因式分解常数项与一次项系数关系的练习。",
+    "ocr_text": "x²-5x+6=0\n(x-2)(x+3)=0\nx=-2, x=-3",
+    "ocr_clarity": 55.0,
+    "submission_id": "SUB003",
+    "student_name": "王芳",
+    "question_id": "Q001",
+    "question_title": "一元二次方程求解",
+    "subject": "数学",
+    "question_text": "解方程：x² - 5x + 6 = 0",
+    "standard_answer": "x² - 5x + 6 = 0 → (x - 2)(x - 3) = 0 → x₁ = 2，x₂ = 3"
+  },
+  "SUB004": {
+    "mode": "llm",
+    "total_score": 6,
+    "max_score": 6,
+    "confidence": 97.2,
+    "status": "green",
+    "confidence_factors": {
+      "ocr_clarity": 97,
+      "answer_match": 96,
+      "rubric_coverage": 100,
+      "llm_self_consistency": 100.0,
+      "teacher_pass_rate": 90
+    },
+    "step_analysis": [
+      {
+        "step": "写出正确公式",
+        "is_correct": true,
+        "score": 2,
+        "max_score": 2,
+        "error_tag": null,
+        "knowledge_point": "速度公式",
+        "reason": "学生正确写出了速度计算公式 v = s/t。",
+        "evidence": "v = s/t",
+        "legible": true
+      },
+      {
+        "step": "正确代入数值",
+        "is_correct": true,
+        "score": 2,
+        "max_score": 2,
+        "error_tag": null,
+        "knowledge_point": "速度公式",
+        "reason": "学生正确将路程 200m 和时间 20s 代入公式。",
+        "evidence": "200/20",
+        "legible": true
+      },
+      {
+        "step": "计算结果正确",
+        "is_correct": true,
+        "score": 1,
+        "max_score": 1,
+        "error_tag": null,
+        "knowledge_point": "速度公式",
+        "reason": "计算 200 除以 20 结果为 10，数值正确。",
+        "evidence": "10",
+        "legible": true
+      },
+      {
+        "step": "单位正确",
+        "is_correct": true,
+        "score": 1,
+        "max_score": 1,
+        "error_tag": null,
+        "knowledge_point": "单位换算",
+        "reason": "最终结果单位标注为 m/s，符合物理量单位要求。",
+        "evidence": "m/s",
+        "legible": true
+      }
+    ],
+    "knowledge_points": [
+      "速度公式",
+      "单位换算"
+    ],
+    "error_tags": [],
+    "student_feedback": "解题过程非常规范，公式运用准确，计算结果及单位均正确，继续保持！",
+    "teacher_note": "学生完整掌握了速度计算公式及其应用，过程简洁明了。",
+    "ocr_text": "v = s/t = 200/20 = 10 m/s",
+    "ocr_clarity": 97.0,
+    "submission_id": "SUB004",
+    "student_name": "赵磊",
+    "question_id": "Q002",
+    "question_title": "速度与单位换算",
+    "subject": "物理",
+    "question_text": "一辆汽车沿平直公路匀速行驶，通过的路程 s = 200 m，所用时间 t = 20 s。求汽车行驶的速度 v。",
+    "standard_answer": "v = s / t = 200 m ÷ 20 s = 10 m/s"
+  },
+  "SUB005": {
+    "mode": "llm",
+    "total_score": 5,
+    "max_score": 6,
+    "confidence": 94.5,
+    "status": "green",
+    "confidence_factors": {
+      "ocr_clarity": 94,
+      "answer_match": 90,
+      "rubric_coverage": 100,
+      "llm_self_consistency": 100.0,
+      "teacher_pass_rate": 85
+    },
+    "step_analysis": [
+      {
+        "step": "写出正确公式",
+        "is_correct": true,
+        "score": 2,
+        "max_score": 2,
+        "error_tag": null,
+        "knowledge_point": "速度公式",
+        "reason": "学生正确写出了速度计算公式 v = s/t。",
+        "evidence": "v = s/t",
+        "legible": true
+      },
+      {
+        "step": "正确代入数值",
+        "is_correct": true,
+        "score": 2,
+        "max_score": 2,
+        "error_tag": null,
+        "knowledge_point": "速度公式",
+        "reason": "学生正确将路程 200m 和时间 20s 代入公式。",
+        "evidence": "200/20",
+        "legible": true
+      },
+      {
+        "step": "计算结果正确",
+        "is_correct": true,
+        "score": 1,
+        "max_score": 1,
+        "error_tag": null,
+        "knowledge_point": "速度公式",
+        "reason": "数值计算结果 10 正确。",
+        "evidence": "10",
+        "legible": true
+      },
+      {
+        "step": "单位正确",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 1,
+        "error_tag": "单位错误",
+        "knowledge_point": "单位换算",
+        "reason": "学生将速度单位误写为 km/s，应为 m/s。",
+        "evidence": "km/s",
+        "legible": true
+      }
+    ],
+    "knowledge_points": [
+      "速度公式",
+      "单位换算"
+    ],
+    "error_tags": [
+      "单位错误"
+    ],
+    "student_feedback": "你的解题思路和计算过程非常清晰，公式运用正确。但在最终结果的单位上出现了失误，题目中路程单位是米(m)，时间单位是秒(s)，所以速度单位应该是米每秒(m/s)，请注意单位的规范性。",
+    "teacher_note": "学生掌握了速度公式及代入计算，但在单位书写上存在明显错误，需提醒学生注意物理量单位的一致性。",
+    "ocr_text": "v = s/t = 200/20 = 10 km/s",
+    "ocr_clarity": 94.0,
+    "submission_id": "SUB005",
+    "student_name": "陈伟",
+    "question_id": "Q002",
+    "question_title": "速度与单位换算",
+    "subject": "物理",
+    "question_text": "一辆汽车沿平直公路匀速行驶，通过的路程 s = 200 m，所用时间 t = 20 s。求汽车行驶的速度 v。",
+    "standard_answer": "v = s / t = 200 m ÷ 20 s = 10 m/s"
+  },
+  "SUB006": {
+    "mode": "llm",
+    "total_score": 0,
+    "max_score": 6,
+    "confidence": 77.5,
+    "status": "yellow",
+    "confidence_factors": {
+      "ocr_clarity": 82,
+      "answer_match": 55,
+      "rubric_coverage": 80,
+      "llm_self_consistency": 100.0,
+      "teacher_pass_rate": 72
+    },
+    "step_analysis": [
+      {
+        "step": "写出正确公式",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 2,
+        "error_tag": "公式选择错误",
+        "knowledge_point": "速度公式",
+        "reason": "学生将速度公式写成了 v = t/s，与标准公式 v = s/t 不符，属于公式选择错误。",
+        "evidence": "v = t/s",
+        "legible": true
+      },
+      {
+        "step": "正确代入数值",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 2,
+        "error_tag": "计算错误",
+        "knowledge_point": "速度公式",
+        "reason": "由于公式错误，导致代入的数值位置颠倒，计算逻辑错误。",
+        "evidence": "20/200",
+        "legible": true
+      },
+      {
+        "step": "计算结果正确",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 1,
+        "error_tag": "计算错误",
+        "knowledge_point": "速度公式",
+        "reason": "因公式错误导致计算结果错误。",
+        "evidence": "0.1",
+        "legible": true
+      },
+      {
+        "step": "单位正确",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 1,
+        "error_tag": "单位错误",
+        "knowledge_point": "单位换算",
+        "reason": "虽然写了单位，但由于计算结果错误，整体结论错误。",
+        "evidence": "m/s",
+        "legible": true
+      }
+    ],
+    "knowledge_points": [
+      "速度公式",
+      "单位换算"
+    ],
+    "error_tags": [
+      "公式选择错误",
+      "计算错误",
+      "单位错误"
+    ],
+    "student_feedback": "同学你好，你对速度公式的记忆出现了偏差。速度的定义是路程除以时间（v=s/t），而不是时间除以路程。请重新复习速度的物理意义并订正计算过程。",
+    "teacher_note": "学生混淆了速度公式，将路程与时间的位置颠倒，导致后续计算及结果均错误。",
+    "ocr_text": "v = t/s = 20/200 = 0.1 m/s",
+    "ocr_clarity": 82.0,
+    "submission_id": "SUB006",
+    "student_name": "孙涛",
+    "question_id": "Q002",
+    "question_title": "速度与单位换算",
+    "subject": "物理",
+    "question_text": "一辆汽车沿平直公路匀速行驶，通过的路程 s = 200 m，所用时间 t = 20 s。求汽车行驶的速度 v。",
+    "standard_answer": "v = s / t = 200 m ÷ 20 s = 10 m/s"
+  },
+  "SUB007": {
+    "mode": "llm",
+    "total_score": 13,
+    "max_score": 15,
+    "confidence": 92.4,
+    "status": "green",
+    "confidence_factors": {
+      "ocr_clarity": 92,
+      "answer_match": 88,
+      "rubric_coverage": 95,
+      "llm_self_consistency": 100.0,
+      "teacher_pass_rate": 84
+    },
+    "step_analysis": [
+      {
+        "step": "内容切题且要点完整",
+        "is_correct": true,
+        "score": 4,
+        "max_score": 4,
+        "error_tag": null,
+        "knowledge_point": "英语写作",
+        "reason": "文章涵盖了时间（Last weekend, Saturday, Sunday）、活动（homework, basketball, visited grandparents, dinner）及感受（happy），要点完整且切题。",
+        "evidence": "Last weekend I had a great time. On Saturday morning I did my homework. In the afternoon I played basketball with my friends. On Sunday I visited my grandparents and helped them clean the house. We had a big dinner together. I felt very happy and relaxd.",
+        "legible": true
+      },
+      {
+        "step": "语法与时态正确",
+        "is_correct": true,
+        "score": 4,
+        "max_score": 4,
+        "error_tag": null,
+        "knowledge_point": "英语时态",
+        "reason": "全文叙述上周末发生的事，统一使用了一般过去时（had, did, played, visited, helped, felt），语法结构正确。",
+        "evidence": "I had a great time. I did my homework. I played basketball... I visited... I felt...",
+        "legible": true
+      },
+      {
+        "step": "词汇拼写正确",
+        "is_correct": false,
+        "score": 2,
+        "max_score": 3,
+        "error_tag": "符号书写错误",
+        "knowledge_point": "英语词汇",
+        "reason": "单词 'relaxed' 拼写错误，写成了 'relaxd'。",
+        "evidence": "I felt very happy and relaxd.",
+        "legible": true
+      },
+      {
+        "step": "句式结构与连贯",
+        "is_correct": true,
+        "score": 3,
+        "max_score": 4,
+        "error_tag": null,
+        "knowledge_point": "英语句法",
+        "reason": "文章使用了时间状语（On Saturday morning, In the afternoon, On Sunday）进行衔接，逻辑清晰，句式基本连贯，但缺乏更丰富的连接词（如 First, Then 等）。",
+        "evidence": "On Saturday morning I did my homework. In the afternoon I played basketball with my friends. On Sunday I visited my grandparents...",
+        "legible": true
+      }
+    ],
+    "knowledge_points": [
+      "英语写作",
+      "英语时态",
+      "英语词汇",
+      "英语句法"
+    ],
+    "error_tags": [
+      "符号书写错误"
+    ],
+    "student_feedback": "你的文章内容充实，时态运用准确，很好地描述了周末活动。注意 'relaxed' 的拼写，另外如果能适当加入 First, Then, After that 等连接词，文章会更加连贯流畅。继续加油！",
+    "teacher_note": "学生作文整体质量较好，仅存在一处拼写错误。字数约 65 词，符合题目要求。",
+    "ocr_text": "Last weekend I had a great time. On Saturday morning I did my homework. In the afternoon I played basketball with my friends. On Sunday I visited my grandparents and helped them clean the house. We had a big dinner together. I felt very happy and relaxd.",
+    "ocr_clarity": 92.0,
+    "submission_id": "SUB007",
+    "student_name": "周琳",
+    "question_id": "Q003",
+    "question_title": "短文写作 My Weekend",
+    "subject": "英语",
+    "question_text": "请以 “My Weekend” 为题写一篇不少于 60 词的短文，描述你上个周末的活动。",
+    "standard_answer": "要点完整（时间 / 活动 / 感受），全文使用一般过去时，语法与拼写正确，句式连贯，不少于 60 词。"
+  },
+  "SUB008": {
+    "mode": "llm",
+    "total_score": 6,
+    "max_score": 15,
+    "confidence": 81.8,
+    "status": "yellow",
+    "confidence_factors": {
+      "ocr_clarity": 85,
+      "answer_match": 68,
+      "rubric_coverage": 85,
+      "llm_self_consistency": 95.0,
+      "teacher_pass_rate": 76
+    },
+    "step_analysis": [
+      {
+        "step": "内容切题且要点完整",
+        "is_correct": true,
+        "score": 3,
+        "max_score": 4,
+        "error_tag": null,
+        "knowledge_point": "英语写作",
+        "reason": "文章涵盖了时间（Last weekend）、活动（go to the park, play games, eat lunch, stay at home, watch TV）和感受（have a good time, happy），但字数未达到60词的要求。",
+        "evidence": "Last weekend I have a good time. On Saturday I go to the park with my family. We play games and eat lunch there. On Sunday I stay at home and watch TV. It is a happy weekend for me.",
+        "legible": true
+      },
+      {
+        "step": "语法与时态正确",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 4,
+        "error_tag": "概念理解错误",
+        "knowledge_point": "英语时态",
+        "reason": "全文描述上个周末的活动，应使用一般过去时，但学生通篇使用了现在时（have, go, play, eat, stay, watch, is）。",
+        "evidence": "I have a good time. On Saturday I go to the park... We play games and eat lunch... I stay at home and watch TV. It is a happy weekend",
+        "legible": true
+      },
+      {
+        "step": "词汇拼写正确",
+        "is_correct": true,
+        "score": 3,
+        "max_score": 3,
+        "error_tag": null,
+        "knowledge_point": "英语词汇",
+        "reason": "文中所有单词拼写均正确。",
+        "evidence": "Last weekend I have a good time. On Saturday I go to the park with my family. We play games and eat lunch there. On Sunday I stay at home and watch TV. It is a happy weekend for me.",
+        "legible": true
+      },
+      {
+        "step": "句式结构与连贯",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 4,
+        "error_tag": "表达不完整",
+        "knowledge_point": "英语句法",
+        "reason": "句子结构过于简单，缺乏连接词（如First, Then, After that），篇章连贯性较差，且字数不足60词。",
+        "evidence": "Last weekend I have a good time. On Saturday I go to the park with my family. We play games and eat lunch there. On Sunday I stay at home and watch TV. It is a happy weekend for me.",
+        "legible": true
+      }
+    ],
+    "knowledge_points": [
+      "英语写作",
+      "英语时态",
+      "英语词汇",
+      "英语句法"
+    ],
+    "error_tags": [
+      "概念理解错误",
+      "表达不完整"
+    ],
+    "student_feedback": "你的文章内容完整，表达清晰，但要注意以下两点：1. 描述过去发生的事情，必须使用一般过去时（如have改为had, go改为went）；2. 文章字数未达到60词的要求，建议增加一些细节描写，并使用First, Then等连接词使文章更连贯。",
+    "teacher_note": "学生未能掌握一般过去时的基本用法，且写作字数未达标，需加强时态练习及篇章结构训练。",
+    "ocr_text": "Last weekend I have a good time. On Saturday I go to the park with my family. We play games and eat lunch there. On Sunday I stay at home and watch TV. It is a happy weekend for me.",
+    "ocr_clarity": 85.0,
+    "submission_id": "SUB008",
+    "student_name": "吴敏",
+    "question_id": "Q003",
+    "question_title": "短文写作 My Weekend",
+    "subject": "英语",
+    "question_text": "请以 “My Weekend” 为题写一篇不少于 60 词的短文，描述你上个周末的活动。",
+    "standard_answer": "要点完整（时间 / 活动 / 感受），全文使用一般过去时，语法与拼写正确，句式连贯，不少于 60 词。"
+  },
+  "SUB009": {
+    "mode": "llm",
+    "total_score": 2,
+    "max_score": 15,
+    "confidence": 62.0,
+    "status": "yellow",
+    "confidence_factors": {
+      "ocr_clarity": 58,
+      "answer_match": 40,
+      "rubric_coverage": 55,
+      "llm_self_consistency": 100.0,
+      "teacher_pass_rate": 65
+    },
+    "step_analysis": [
+      {
+        "step": "内容切题且要点完整",
+        "is_correct": false,
+        "score": 1,
+        "max_score": 4,
+        "error_tag": "表达不完整",
+        "knowledge_point": "英语写作",
+        "reason": "文章未描述具体的周末活动，仅表达了对周末的喜爱，未覆盖时间、活动、感受三要素，且字数远少于60词。",
+        "evidence": "My weekend is good. I like weekend. Weekend is fun. I want play.",
+        "legible": true
+      },
+      {
+        "step": "语法与时态正确",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 4,
+        "error_tag": "概念理解错误",
+        "knowledge_point": "英语时态",
+        "reason": "题目要求描述上个周末，应使用一般过去时，但学生全文使用了现在时。",
+        "evidence": "My weekend is good. I like weekend. Weekend is fun. I want play.",
+        "legible": true
+      },
+      {
+        "step": "词汇拼写正确",
+        "is_correct": true,
+        "score": 1,
+        "max_score": 3,
+        "error_tag": null,
+        "knowledge_point": "英语词汇",
+        "reason": "所用词汇拼写正确，但词汇量过于匮乏。",
+        "evidence": "My weekend is good. I like weekend. Weekend is fun. I want play.",
+        "legible": true
+      },
+      {
+        "step": "句式结构与连贯",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 4,
+        "error_tag": "表达不完整",
+        "knowledge_point": "英语句法",
+        "reason": "句子结构单一，缺乏连接词，逻辑不连贯。",
+        "evidence": "My weekend is good. I like weekend. Weekend is fun. I want play.",
+        "legible": true
+      }
+    ],
+    "knowledge_points": [
+      "英语写作",
+      "英语时态",
+      "英语词汇",
+      "英语句法"
+    ],
+    "error_tags": [
+      "表达不完整",
+      "概念理解错误"
+    ],
+    "student_feedback": "你的作文未能达到题目要求。首先，请注意时态，描述过去发生的事情要用一般过去时；其次，文章需要包含具体的活动内容，且字数需达到60词以上。请尝试使用First, Then等连接词来丰富你的文章。",
+    "teacher_note": "学生完全未理解题目要求，时态使用错误，内容空洞，字数严重不足，建议进行基础写作训练。",
+    "ocr_text": "My weekend is good. I like weekend. Weekend is fun. I want play.",
+    "ocr_clarity": 58.0,
+    "submission_id": "SUB009",
+    "student_name": "郑浩",
+    "question_id": "Q003",
+    "question_title": "短文写作 My Weekend",
+    "subject": "英语",
+    "question_text": "请以 “My Weekend” 为题写一篇不少于 60 词的短文，描述你上个周末的活动。",
+    "standard_answer": "要点完整（时间 / 活动 / 感受），全文使用一般过去时，语法与拼写正确，句式连贯，不少于 60 词。"
+  },
+  "SUB010": {
+    "mode": "llm",
+    "total_score": 4,
+    "max_score": 6,
+    "confidence": 87.5,
+    "status": "green",
+    "confidence_factors": {
+      "ocr_clarity": 90,
+      "answer_match": 88,
+      "rubric_coverage": 75,
+      "llm_self_consistency": 100.0,
+      "teacher_pass_rate": 80
+    },
+    "step_analysis": [
+      {
+        "step": "写出正确公式",
+        "is_correct": false,
+        "score": 0,
+        "max_score": 2,
+        "error_tag": "步骤缺失",
+        "knowledge_point": "速度公式",
+        "reason": "学生直接给出了代入数值后的算式，未写出物理公式 v = s/t。",
+        "evidence": "",
+        "legible": true
+      },
+      {
+        "step": "正确代入数值",
+        "is_correct": true,
+        "score": 2,
+        "max_score": 2,
+        "error_tag": null,
+        "knowledge_point": "速度公式",
+        "reason": "学生正确代入了路程 200 和时间 20。",
+        "evidence": "200/20",
+        "legible": true
+      },
+      {
+        "step": "计算结果正确",
+        "is_correct": true,
+        "score": 1,
+        "max_score": 1,
+        "error_tag": null,
+        "knowledge_point": "速度公式",
+        "reason": "计算结果 10 正确。",
+        "evidence": "10",
+        "legible": true
+      },
+      {
+        "step": "单位正确",
+        "is_correct": true,
+        "score": 1,
+        "max_score": 1,
+        "error_tag": null,
+        "knowledge_point": "单位换算",
+        "reason": "最终结果单位标注正确。",
+        "evidence": "m/s",
+        "legible": true
+      }
+    ],
+    "knowledge_points": [
+      "速度公式",
+      "单位换算"
+    ],
+    "error_tags": [
+      "步骤缺失"
+    ],
+    "student_feedback": "你的计算结果和单位完全正确，但解题过程不够规范。在物理计算题中，请务必先写出原始公式（v=s/t），再代入数值进行计算，这样能让你的解题逻辑更清晰。",
+    "teacher_note": "学生直接跳过了公式书写步骤，虽然结果正确，但未达到规范化解题要求，扣除公式分。",
+    "ocr_text": "v = 200/20 = 10 m/s",
+    "ocr_clarity": 90.0,
+    "submission_id": "SUB010",
+    "student_name": "张明",
+    "question_id": "Q002",
+    "question_title": "速度与单位换算",
+    "subject": "物理",
+    "question_text": "一辆汽车沿平直公路匀速行驶，通过的路程 s = 200 m，所用时间 t = 20 s。求汽车行驶的速度 v。",
+    "standard_answer": "v = s / t = 200 m ÷ 20 s = 10 m/s"
+  },
+  "SUB011": {
+    "mode": "llm",
+    "total_score": 14,
+    "max_score": 15,
+    "confidence": 93.2,
+    "status": "green",
+    "confidence_factors": {
+      "ocr_clarity": 93,
+      "answer_match": 90,
+      "rubric_coverage": 95,
+      "llm_self_consistency": 100.0,
+      "teacher_pass_rate": 84
+    },
+    "step_analysis": [
+      {
+        "step": "内容切题且要点完整",
+        "is_correct": true,
+        "score": 4,
+        "max_score": 4,
+        "error_tag": null,
+        "knowledge_point": "英语写作",
+        "reason": "文章涵盖了时间（Last weekend, Saturday, Sunday）、活动（finished homework, went to library, played football, ate ice cream）及感受（busy but happy, enjoyed my weekend），且字数符合要求。",
+        "evidence": "Last weekend I was very busy but happy. On Saturday morning I finished my homework... On Sunday I played football... I really enjoyed my weekend",
+        "legible": true
+      },
+      {
+        "step": "语法与时态正确",
+        "is_correct": true,
+        "score": 4,
+        "max_score": 4,
+        "error_tag": null,
+        "knowledge_point": "英语时态",
+        "reason": "全文统一使用一般过去时（was, finished, went, read, played, ate, enjoyed），语法结构准确。",
+        "evidence": "I was very busy... I finished my homework... I went to the library... I played football... we ate ice cream",
+        "legible": true
+      },
+      {
+        "step": "词汇拼写正确",
+        "is_correct": false,
+        "score": 2,
+        "max_score": 3,
+        "error_tag": "符号书写错误",
+        "knowledge_point": "英语词汇",
+        "reason": "单词 'interesting' 拼写错误，写成了 'intresting'。",
+        "evidence": "read an intresting book",
+        "legible": true
+      },
+      {
+        "step": "句式结构与连贯",
+        "is_correct": true,
+        "score": 4,
+        "max_score": 4,
+        "error_tag": null,
+        "knowledge_point": "英语句法",
+        "reason": "使用了连接词（then, After that）使文章逻辑连贯，句式表达自然。",
+        "evidence": "On Saturday morning I finished my homework, then I went to the library... After that we ate ice cream together.",
+        "legible": true
+      }
+    ],
+    "knowledge_points": [
+      "英语写作",
+      "英语时态",
+      "英语词汇",
+      "英语句法"
+    ],
+    "error_tags": [
+      "符号书写错误"
+    ],
+    "student_feedback": "你的作文内容充实，时态运用准确，逻辑连贯，非常棒！只是要注意 'interesting' 这个单词的拼写，多检查一遍会更好。",
+    "teacher_note": "学生整体写作水平良好，仅存在一处拼写错误，已扣除相应分数。",
+    "ocr_text": "Last weekend I was very busy but happy. On Saturday morning I finished my homework, then I went to the library and read an intresting book about space. On Sunday I played football with my classmates in the park. After that we ate ice cream together. I really enjoyed my weekend very much and hope the next one comes soon.",
+    "ocr_clarity": 93.0,
+    "submission_id": "SUB011",
+    "student_name": "张明",
+    "question_id": "Q003",
+    "question_title": "短文写作 My Weekend",
+    "subject": "英语",
+    "question_text": "请以 “My Weekend” 为题写一篇不少于 60 词的短文，描述你上个周末的活动。",
+    "standard_answer": "要点完整（时间 / 活动 / 感受），全文使用一般过去时，语法与拼写正确，句式连贯，不少于 60 词。"
+  }
+}

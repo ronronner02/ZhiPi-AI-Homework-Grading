@@ -1,0 +1,62 @@
+# 智批π Demo 公网部署
+#
+#   cp .env.example .env && vi .env      # 至少填 ZHIPI_ACCESS_CODE
+#   docker compose up -d --build
+#   docker compose logs -f
+#
+# 只有一个 worker，这是刻意的：会话隔离（session_store）、限流窗口与日配额
+# 都是**进程内内存态**。多 worker 会让同一个体验者在不同请求落到不同进程，
+# 表现为「终审记录时有时无」、限流与配额被放大成 N 倍。要横向扩容必须先把
+# 这三处状态外置到 Redis，不是改一个数字的事。
+
+services:
+  zhipi-demo:
+    build:
+      context: ..                     # 构建上下文是仓库根，Dockerfile 要 COPY demo/
+      dockerfile: deploy/Dockerfile
+    image: zhipi-demo:latest
+    container_name: zhipi-demo
+    restart: unless-stopped
+
+    # 只把端口暴露给宿主。若前面还有 Nginx，建议改成 "127.0.0.1:8010:8010"，
+    # 让容器端口不直接对公网开放。
+    ports:
+      - "${ZHIPI_BIND:-0.0.0.0}:${ZHIPI_PUBLIC_PORT:-8010}:8010"
+
+    env_file:
+      - .env
+
+    environment:
+      TZ: Asia/Shanghai
+      ZHIPI_HOST: 0.0.0.0
+      ZHIPI_PORT: "8010"
+
+    # 这是个接受任意上传的公网服务，给足边界
+    read_only: true                   # 代码与样例都只读；下面单独挂可写的临时目录
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    deploy:
+      resources:
+        limits:
+          # Pillow 解码大图是内存尖峰的主要来源，已有 40MP 像素上限兜底；
+          # 这里再给一道硬限制，避免单次异常请求把整机拖垮。
+          memory: 768M
+          cpus: "1.0"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8010/healthz"]
+      interval: 30s
+      timeout: 4s
+      start_period: 10s
+      retries: 3

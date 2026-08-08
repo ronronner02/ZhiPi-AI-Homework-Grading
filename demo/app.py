@@ -208,6 +208,22 @@ async def _lifespan(_app):
     if mode == "llm":
         print("[智批π] 单次批改超时 %d 秒（跑批量评测请调大 ZHIPI_LLM_TIMEOUT）"
               % grader._llm_timeout(), flush=True)
+        # 这两条必须打出来。二次复批与交叉验证都按设计静默降级——配错了界面上
+        # 完全看不出来，只是置信度因子悄悄退回模型自报值、或黄红件白等一场超时。
+        # 启动横幅是唯一能在"跑之前"就发现配置没生效的地方。
+        chain = _chain_snapshot()
+        print("[智批π] 二次复批一致性：%s" % (
+            "启用（每份多调一次，置信度因子取两次吻合度）" if chain["double_check"]
+            else "关闭  ← llm_self_consistency 因子退回模型自报值"), flush=True)
+        if not chain["cross_check"]:
+            print("[智批π] 双模型交叉验证：未启用（第二模型三件套留空）"
+                  "  ← 填上 ZHIPI_LLM_API_KEY_2 / BASE_URL_2 / MODEL_2 即自动启用",
+                  flush=True)
+        else:
+            warn = ("  ← 预算偏小，实测第二模型多需 25-90 秒，可能每次超时"
+                    if chain["cross_budget_tight"] else "")
+            print("[智批π] 双模型交叉验证：%s，仅黄/红触发，预算 %d 秒%s" % (
+                chain["cross_model"], chain["cross_timeout"], warn), flush=True)
     yield
 
 
@@ -493,6 +509,28 @@ def index(session: dict = Depends(demo_session)):
     return _index_html()
 
 
+def _chain_snapshot() -> dict:
+    """批改链路构成：几个模型参与、各自是否启用。
+
+    启动横幅与 /api/demo/config 共用这一份，避免"日志说启用、界面说未启用"
+    这种两处各算一遍导致的口径分裂。
+
+    cross_budget_tight 的阈值取 25 秒：实测各候选第二模型最快一次成功是
+    25.1 秒（minimax-m3），预算低于此值意味着**每次必然超时**——那不是
+    "偶尔拿不到结论"，而是功能等于没开，且完全静默。
+    """
+    creds2 = grader.llm_credentials_2()
+    budget = grader._cross_timeout()
+    return {
+        "double_check": (str(os.environ.get("ZHIPI_DOUBLE_CHECK", "1")).strip()
+                         != "0"),
+        "cross_check": bool(creds2),
+        "cross_model": creds2["model"] if creds2 else None,
+        "cross_timeout": budget,
+        "cross_budget_tight": bool(creds2) and budget < 25,
+    }
+
+
 @app.get("/api/demo/config")
 def demo_config(session: dict = Depends(demo_session)):
     """前端启动参数：当前模式、识别引擎可用性、风控开关与本会话状态。"""
@@ -503,6 +541,10 @@ def demo_config(session: dict = Depends(demo_session)):
         "adhoc_grading_available": bool(grader.llm_credentials()),
         "feishu_webhook_configured": bool(
             os.environ.get("ZHIPI_FEISHU_WEBHOOK", "").strip()),
+        # 批改链路构成。前端据此如实说明「这次批改由几个模型参与」——
+        # 两级复核都按设计静默降级，不透出来的话，界面在「配齐并生效」与
+        # 「配了但每次超时」两种状态下长得一模一样。
+        "chain": _chain_snapshot(),
         "guard": guard.config_snapshot(),
         "session": {
             "reviews": len(session["reviews"]),
@@ -511,6 +553,7 @@ def demo_config(session: dict = Depends(demo_session)):
             "active_folder_id": session.get("active_folder_id",
                                             folders.DEMO_FOLDER_ID),
             "folders": len(session.get("folders") or {}),
+            "folder_max": folders.MAX_FOLDERS,
         },
     }
 
@@ -1061,9 +1104,15 @@ def api_folders_list(session: dict = Depends(demo_session)):
 
 
 @app.post("/api/folders")
-def api_folders_create(req: FolderCreateReq,
+def api_folders_create(req: FolderCreateReq, request: Request,
                        session: dict = Depends(demo_session)):
-    """自建文件夹。"""
+    """自建文件夹。
+
+    限流：夹子数量本身有 MAX_FOLDERS 兜底，但没有限流的话，脚本可以贴着上限
+    反复建了删、删了建，每次都要重算摘要。改写类接口一律过 _rate_guard，
+    与上传 / 批改口径一致。
+    """
+    _rate_guard(request, "folder")
     try:
         meta = folders.create(session, req.name)
     except ValueError as exc:
@@ -1076,9 +1125,10 @@ def api_folders_create(req: FolderCreateReq,
 
 
 @app.patch("/api/folders/{folder_id}")
-def api_folders_rename(folder_id: str, req: FolderRenameReq,
+def api_folders_rename(folder_id: str, req: FolderRenameReq, request: Request,
                        session: dict = Depends(demo_session)):
     """重命名自建文件夹（Demo 样例夹拒绝）。"""
+    _rate_guard(request, "folder")
     try:
         meta = folders.rename(session, folder_id, req.name)
     except KeyError as exc:
@@ -1092,8 +1142,10 @@ def api_folders_rename(folder_id: str, req: FolderRenameReq,
 
 
 @app.delete("/api/folders/{folder_id}")
-def api_folders_delete(folder_id: str, session: dict = Depends(demo_session)):
+def api_folders_delete(folder_id: str, request: Request,
+                       session: dict = Depends(demo_session)):
     """删除自建文件夹（Demo 样例夹拒绝）。"""
+    _rate_guard(request, "folder")
     try:
         folders.delete(session, folder_id)
     except KeyError as exc:
@@ -1110,7 +1162,14 @@ def api_folders_delete(folder_id: str, session: dict = Depends(demo_session)):
 @app.post("/api/folders/active")
 def api_folders_active(req: FolderActiveReq,
                        session: dict = Depends(demo_session)):
-    """切换当前活动文件夹（上传默认落到此夹）。"""
+    """切换当前活动文件夹（上传默认落到此夹）。
+
+    刻意**不限流**：切夹只改一个字符串指针，不分配任何东西，没有可增长面；
+    而前端每点一次夹子就调一次本接口。默认限流是 30 次 / 600 秒，
+    评委在演示里来回点十几个夹就能撞上，届时界面开始回 429——
+    为一个零风险的操作换来"演示中途像坏了"，这笔交易不成立。
+    建 / 改名 / 删这三个会分配或重算的操作才需要限流。
+    """
     try:
         fid = folders.set_active(session, req.folder_id)
     except KeyError as exc:

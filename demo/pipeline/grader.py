@@ -21,6 +21,7 @@ import hashlib
 import os
 import json
 import re
+import time
 
 import requests
 
@@ -113,10 +114,12 @@ PROMPT_TEMPLATE = """你是一名严谨的初中学科教师，请根据题目�
 【批改要求】
 1. 必须按照评分规则（Rubric）逐项评分，不允许只根据最终答案判断；
 2. step_analysis 逐项对应 Rubric，且每步 step 名称必须与 Rubric 步骤同名；
-3. 必须指出具体错误步骤及错误位置；
-4. 错因标签必须从【可选错因标签】中选择，不得自造标签；
-5. 每一步都必须给出 evidence：引用学生作答中的原文片段作为判断依据；
-   学生未写出对应内容时 evidence 置为空字符串 ""。
+3. 必须指出具体错误步骤及错误位置；正确步骤也要写清给分理由，不得省略；
+4. 错因标签必须从【可选错因标签】中选择，不得自造标签；正确步骤 error_tag 为 null；
+5. 每一步都必须同时给出 reason 与 evidence：
+   - reason：该步判定理由（正确写「为何给分」，错误写「错误位置与原因」）；
+   - evidence：引用学生作答中的原文片段作为判断依据；
+     学生未写出对应内容时 evidence 置为空字符串 ""。
 
 【防幻觉与降级约束】
 6. 只能依据学生实际写出的内容评判，不得臆造、补全学生未写出的步骤或结论；
@@ -151,7 +154,7 @@ PROMPT_TEMPLATE = """你是一名严谨的初中学科教师，请根据题目�
   "max_score": 满分,
   "step_analysis": [
     {{"step": "与 Rubric 同名的步骤名称", "is_correct": true/false, "score": 该步得分,
-      "error_tag": "错因标签或null", "reason": "错误位置与原因",
+      "error_tag": "错因标签或null", "reason": "该步判定理由（正确/错误均须填写）",
       "evidence": "引用学生作答原文片段，无则为空字符串", "legible": true/false}}
   ],
   "knowledge_points": [],
@@ -401,7 +404,76 @@ def llm_credentials_2():
     return {"api_key": api_key, "base_url": base_url.rstrip("/"), "model": model}
 
 
-def _call_llm(creds: dict, prompt: str, temperature: float = 0) -> dict:
+def _llm_timeout() -> int:
+    """单次批改调用的超时秒数，可用 ZHIPI_LLM_TIMEOUT 覆盖（默认 30）。
+
+    为什么必须可调：30 秒是按「课堂演示不能久等」定的，但实测中转网关
+    与免费通道上，同一模型同一 prompt 的耗时会从 20 秒漂到 60 秒以上。
+    批量评测时若仍用 30 秒，会把「网关慢」记成「批改失败」并静默降级
+    mock —— 评测报告里的准确率就成了规则引擎的成绩，而不是大模型的。
+    故：演示保持 30，跑评测时显式调到 120 以上。
+    """
+    try:
+        return max(5, min(600, int(str(os.environ.get("ZHIPI_LLM_TIMEOUT", "")).strip())))
+    except (TypeError, ValueError):
+        return 30
+
+
+def _cross_timeout() -> int:
+    """双模型交叉验证的超时秒数，可用 ZHIPI_CROSS_TIMEOUT 覆盖（默认 90）。
+
+    默认值为什么是 90 而不是更短：交叉验证只在配齐第二模型时启用，而
+    「配齐了就该真的跑起来」。实测同一中转网关上的候选第二模型单次耗时
+    minimax-m3 25-90 秒（中位 62）、glm-5.2 45-65、glm-4.5-flash 49-72、
+    grok-4.5 77-91——预算低于最快一次成功（25 秒）时，这个功能不是「偶尔
+    拿不到结论」，而是**每次必然 ReadTimeout**，且被 _maybe_cross_check 的
+    except 静默吞掉：界面无任何异样，日志无任何报错，配置看起来完全正确。
+    早先的缺省 12 秒就是这种状态，白等 12 秒再丢弃结果，比不开还差。
+    宁可默认偏慢让人抱怨「黄/红件等得久」（看得见、可调小），也不要默认偏快
+    让功能静默失效（看不见）。
+
+    上限 300 而不是 120：调大是使用者对「我愿意等」的明确表达，被静默截断
+    会重现同一类问题——设了 180 却仍在 120 秒超时，且无处得知。
+    """
+    try:
+        return max(3, min(300, int(str(os.environ.get("ZHIPI_CROSS_TIMEOUT", "")).strip())))
+    except (TypeError, ValueError):
+        return 90
+
+
+# 中转网关的「瞬时上游故障」特征。这些错误与请求本身无关，重试就能过。
+#
+# 最反直觉的一条是 400 + "API key not valid"：按 HTTP 语义 4xx 不该重试，
+# 但实测中转网关会在多个上游 key 之间轮询，轮到失效的那个就把上游的 400
+# 原样透出来。同一 payload 连打 10 次全成功、走完整链路 6 次里挂 2 次，
+# 说明它取决于轮到哪个上游，而不是我们发了什么。
+# 不重试的话，体验者会随机看到「批改失败」，还以为是自己的照片有问题。
+_TRANSIENT_UPSTREAM = (
+    "api key not valid",        # 网关轮到失效上游 key
+    "upstream",                 # 网关自报上游故障
+    "no available channel",     # 该模型当前无可用通道
+    "rate limit", "too many requests",
+    "bad gateway", "service unavailable", "gateway timeout",
+)
+_GATEWAY_RETRY_MAX = 3          # 首次 + 最多 2 次重试
+_GATEWAY_RETRY_SLEEP = 1.2      # 退避基数（秒）：1.2、2.4
+
+
+def _is_transient_gateway_error(status: int, body: str) -> bool:
+    """判断是否为「重试一次就可能过」的网关瞬时故障。
+
+    刻意收窄：只认带上述特征的正文，或 429/502/503/504 这类状态码。
+    模型名写错（404 model_not_found）、鉴权彻底失败这类**请求本身有问题**
+    的情况不在其中——那种重试只是重复烧钱和时间。
+    """
+    if status in (429, 502, 503, 504):
+        return True
+    low = (body or "").lower()
+    return any(sig in low for sig in _TRANSIENT_UPSTREAM)
+
+
+def _call_llm(creds: dict, prompt: str, temperature: float = 0,
+              timeout: int = None) -> dict:
     """OpenAI 兼容 chat/completions 调用，返回解析后的 JSON 结果。
 
     - response_format 强制 JSON 输出（DeepSeek / Qwen 均支持），降低解析失败率；
@@ -417,15 +489,45 @@ def _call_llm(creds: dict, prompt: str, temperature: float = 0) -> dict:
         "stream": False,
         "response_format": {"type": "json_object"},
     }
-    resp = requests.post(
-        creds["base_url"] + "/chat/completions",
-        json=payload,
-        headers={"Authorization": "Bearer " + creds["api_key"],
-                 "Content-Type": "application/json"},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return _extract_json(resp.json()["choices"][0]["message"]["content"])
+    tmo = _llm_timeout() if timeout is None else timeout
+    last_err = None
+    for attempt in range(1, _GATEWAY_RETRY_MAX + 1):
+        try:
+            resp = requests.post(
+                creds["base_url"] + "/chat/completions",
+                json=payload,
+                headers={"Authorization": "Bearer " + creds["api_key"],
+                         "Content-Type": "application/json"},
+                timeout=tmo,
+            )
+        except (requests.exceptions.SSLError,
+                requests.exceptions.ConnectionError) as exc:
+            # 连接层失败也要重试。原先 requests.post 裸在循环里，重试只覆盖了
+            # 「拿到了 HTTP 错误响应」这一种，而连接根本没建起来时异常直接穿出去。
+            # 实测这个网关在连续几发长请求（第二模型单次 60–90 秒）之后会拒连，
+            # 报 SSL UNEXPECTED_EOF_WHILE_READING，0.3 秒就失败——典型的瞬时限连，
+            # 隔几秒重试就能过。而交叉验证外层是 except: return None，
+            # 不在这里重试的话，它会被无声记成「第二模型没结论」。
+            last_err = exc
+            if attempt >= _GATEWAY_RETRY_MAX:
+                raise
+            time.sleep(_GATEWAY_RETRY_SLEEP * (2 ** (attempt - 1)))
+            continue
+        if resp.status_code < 400:
+            return _extract_json(resp.json()["choices"][0]["message"]["content"])
+
+        # 网关的 4xx/5xx 正文里通常写着真正的原因（模型名错、参数不支持、
+        # 上游 key 失效……），而 raise_for_status() 只抛一行「400 Bad Request」，
+        # 不带正文就完全没法查。
+        body = (resp.text or "").strip()
+        last_err = requests.HTTPError(
+            "%s %s ← %s" % (resp.status_code, resp.reason, body[:400]),
+            response=resp)
+        if (attempt >= _GATEWAY_RETRY_MAX
+                or not _is_transient_gateway_error(resp.status_code, body)):
+            raise last_err
+        time.sleep(_GATEWAY_RETRY_SLEEP * (2 ** (attempt - 1)))
+    raise last_err
 
 
 def _align_llm_steps(rubric: list, steps_in: list) -> list:
@@ -496,10 +598,22 @@ def _parse_llm_steps(question: dict, data: dict):
         tag = si.get("error_tag")
         if tag not in ERROR_TAGS:
             tag = None
-        reason = si.get("reason", "") or ""
+        reason = str(si.get("reason", "") or "").strip()
+        evidence = str(si.get("evidence") or "").strip()
         legible = bool(si.get("legible", True))
-        if not legible:
-            reason = "〔字迹难辨〕" + reason
+        # 全对时模型常只给 evidence、省略 reason（旧 Prompt 把 reason 写成
+        # 「错误位置与原因」）。有原文证据却无理由时，补一条最小判定说明，
+        # 避免 UI 空白，也避免 rubric_coverage 被误打成 0。
+        if not reason and evidence:
+            if score >= step["max_score"]:
+                reason = "该步正确，依据作答原文判定"
+            elif score > 0:
+                reason = "该步部分正确，依据作答原文判定"
+            else:
+                reason = "该步未得分，依据作答原文判定"
+        # 注意：这里不拼「字迹难辨」前缀——前端已用 s.legible 单独渲染
+        # 复核提示（见 app.js step 渲染），前缀只会让无判定依据的步骤
+        # 平白多出非空 reason，把 rubric_coverage 虚高。
         step_analysis.append({
             "step": step["step"],
             "is_correct": bool(si.get("is_correct", score >= step["max_score"])),
@@ -508,7 +622,7 @@ def _parse_llm_steps(question: dict, data: dict):
             "error_tag": tag,
             "knowledge_point": step["knowledge_point"],
             "reason": reason,
-            "evidence": str(si.get("evidence") or ""),
+            "evidence": evidence,
             "legible": legible,
         })
         if tag and tag not in error_tags:
@@ -556,17 +670,19 @@ def _maybe_consistency(question: dict, student_text: str, first_result: dict, cr
         return None
 
 
-def cross_check(question: dict, student_text: str, first_total, creds2: dict = None):
+def cross_check(question: dict, student_text: str, first_total, creds2: dict = None,
+                timeout: int = None):
     """双模型交叉验证（P2）：用第二模型独立批改一次并与首轮总分比对。
 
     分差超过满分 15% 视为分歧显著（escalated），上层据此把分流强制转红
     交人工，避免单一模型的系统性误判。第二模型凭据未配齐时返回 None。
+    timeout 缺省走主批改超时；由 _maybe_cross_check 传入更短的值。
     """
     if creds2 is None:
         creds2 = llm_credentials_2()
     if not creds2:
         return None
-    data = _call_llm(creds2, _build_prompt(question, student_text))
+    data = _call_llm(creds2, _build_prompt(question, student_text), timeout=timeout)
     _, second_total, _ = _parse_llm_steps(question, data)
     gap = abs(float(first_total) - second_total)
     return {
@@ -578,14 +694,24 @@ def cross_check(question: dict, student_text: str, first_total, creds2: dict = N
 
 
 def _maybe_cross_check(question: dict, student_text: str, first_total, status: str):
-    """黄 / 红结果才触发交叉验证（绿区无需复核，省调用）；异常静默跳过。"""
+    """黄 / 红结果才触发交叉验证（绿区无需复核，省调用）；异常静默跳过。
+
+    超时单独收紧（ZHIPI_CROSS_TIMEOUT，默认 12 秒）：交叉验证是**增强项**，
+    拿不到结论只是少一份佐证，主批改结果照样可用。而它用的第二模型往往是
+    另一家、稳定性未知——实测 grok-4.5 会静默挂 30 秒才失败，把一次
+    5 秒的批改拖成 35 秒。让可选环节按主流程的超时等待，是把增强项的
+    不确定性转嫁给了核心链路。
+    """
     if status not in ("yellow", "red"):
         return None
     creds2 = llm_credentials_2()
     if not creds2:
         return None
     try:
-        return cross_check(question, student_text, first_total, creds2)
+        # 超时按参数传，不改环境变量：uvicorn 的同步端点跑在线程池里，
+        # 改 os.environ 会被并发请求互相覆盖。
+        return cross_check(question, student_text, first_total, creds2,
+                           timeout=_cross_timeout())
     except Exception:
         return None
 
@@ -688,10 +814,46 @@ _NUM_UNIT_RE = re.compile(
 )
 
 
+# ASCII 与 Unicode 上下标的等价映射。
+# 为什么必须有这一层：标准答案由人手写成 `x² - 5x + 6 = 0 → x₁ = 2，x₂ = 3`
+# （Unicode 上下标），而多模态识别按 Prompt 要求输出线性写法
+# `x^2-5x+6=0 / x1=2, x2=3`（ASCII）。两者数学含义相同，但抽数值时
+# ASCII 的 `x1` 会被读成「数字 1」，凭空多出一个标准答案里没有的数，
+# 于是 s_nums ⊆ a_nums 判定失败 —— 一份完全正确的作答，
+# answer_match 从 100 掉到 25.8，总置信度从 93 掉到 78，绿桶（自动通过）
+# 因此几乎永不触发。实测确认过这条链路。
+_SUB_DIGITS = "₀₁₂₃₄₅₆₇₈₉"
+_SUP_DIGITS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+# 紧跟在字母后的数字 = 变量下标（x1 → x₁）。Unicode 下标不是 ASCII 数字，
+# 抽取正则自然就不会把它当成数值。
+_VAR_INDEX_RE = re.compile(r"([A-Za-z])(\d)(?![\d.])")
+# 幂：x^2 → x²
+_POWER_RE = re.compile(r"\^\s*(\d)")
+
+
+def _norm_notation(text: str) -> str:
+    """把 ASCII 线性写法收敛到标准答案使用的 Unicode 上下标写法。
+
+    只处理「同义不同形」，不碰任何会改变数学含义的字符：
+        x^2  → x²      （幂，避免指数被当成数值）
+        x1=  → x₁=     （变量下标，避免下标被当成数值）
+    刻意不动独立的数字、运算符与单位。
+    """
+    if not text:
+        return ""
+    out = _POWER_RE.sub(lambda m: _SUP_DIGITS[int(m.group(1))], str(text))
+    out = _VAR_INDEX_RE.sub(
+        lambda m: m.group(1) + _SUB_DIGITS[int(m.group(2))], out)
+    return out
+
+
 def _extract_nums_units(text: str):
-    """从文本抽取（数值集合, 紧跟数值的单位集合），用于归一化比对。"""
+    """从文本抽取（数值集合, 紧跟数值的单位集合），用于归一化比对。
+
+    先做记号归一：否则 `x1=2` 里的下标 1 会被当成一个真实数值。
+    """
     nums, units = set(), set()
-    for num, unit in _NUM_UNIT_RE.findall(text or ""):
+    for num, unit in _NUM_UNIT_RE.findall(_norm_notation(text)):
         nums.add(float(num))
         if unit:
             units.add(unit)
@@ -716,13 +878,18 @@ def _answer_match_score(student_text: str, standard_answer: str) -> float:
     tail = lines[-1] if lines else ""
     std = standard_answer or ""
 
+    # 相似度兜底也走归一化后的文本比：标准答案用 `x₁ = 2`、识别输出 `x1=2`，
+    # 不归一的话连「写法相同」的正确答案都拿不到高相似度。
+    tail_cmp = _norm_notation(tail)
+    std_cmp = _norm_notation(std)
+
     s_nums, s_units = _extract_nums_units(tail)
     a_matches = _NUM_UNIT_RE.findall(std)
     a_nums = {float(n) for n, _ in a_matches}
     a_units = {u for _, u in a_matches if u}
     final_num = float(a_matches[-1][0]) if a_matches else None
 
-    ratio = difflib.SequenceMatcher(None, tail, std).ratio()
+    ratio = difflib.SequenceMatcher(None, tail_cmp, std_cmp).ratio()
 
     if s_nums and a_nums:
         nums_consistent = final_num in s_nums and s_nums.issubset(a_nums)
@@ -734,18 +901,31 @@ def _answer_match_score(student_text: str, standard_answer: str) -> float:
     return round(ratio * 100, 1)
 
 
+def _step_has_judgment(step: dict) -> bool:
+    """一步是否具备可解释的判定依据。
+
+    Rubric 覆盖度度量的是「评分点有没有被真正判到」，不是「有没有写出错因」。
+    全对步骤常被模型省略 reason（Prompt 旧口径把 reason 写成错误说明），
+    但仍可能给出 evidence。因此 reason 或 evidence 任一非空即视为已覆盖；
+    二者皆空才算该评分点没覆盖全。
+    """
+    reason = str(step.get("reason") or "").strip()
+    evidence = str(step.get("evidence") or "").strip()
+    return bool(reason or evidence)
+
+
 def derive_factors(question: dict, student_text: str, clarity: float,
                    step_analysis: list, llm_conf) -> dict:
     """为无预置标注的上传作答推导 §9.7 五个置信度因子。
 
     - ocr_clarity        识别引擎给出的卷面清晰度；
     - answer_match       最终答案与标准答案的数值 + 单位归一匹配度；
-    - rubric_coverage    批改模型给出判定理由的步骤占比；
+    - rubric_coverage    具备判定依据（reason 或 evidence）的步骤占比；
     - llm_self_consistency  批改模型自评置信度（冷启动回退值；启用二次
       批改时会被两次批改的一致性分覆盖）；
     - teacher_pass_rate  冷启动默认 80（无历史数据）。
     """
-    covered = sum(1 for s in step_analysis if s.get("reason"))
+    covered = sum(1 for s in step_analysis if _step_has_judgment(s))
     coverage = round(covered / len(step_analysis) * 100, 1) if step_analysis else 0.0
     if isinstance(llm_conf, (int, float)):
         self_consistency = float(llm_conf) * 100 if llm_conf <= 1 else float(llm_conf)

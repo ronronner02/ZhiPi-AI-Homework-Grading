@@ -16,16 +16,65 @@
     {"engine": "vlm" | "sample-match",
      "text": 转写文本, "clarity": 清晰度 0-100,
      "matched_submission_id": 命中的内置作答 ID（仅 sample-match）}
-识别失败时返回 {"engine": "none", "error": 提示}。
+识别失败时返回 {"engine": "none", "reason": 原因码, "error": 提示}，
+原因码用于让前端给出对症的引导（no_match 引导改用内置样例图库、
+vlm_failed 提示稍后重试、vlm_unavailable 说明配额或限流已触发）。
 """
 import base64
 import hashlib
 import io
 import json
 import os
+import time
 from pathlib import Path
 
 import requests
+
+# ---------- 多模态调用的瞬时故障重试 ----------
+#
+# 中转网关会在多个上游 key 之间轮询，轮到失效的那个就把上游的
+# 400 "API key not valid" 原样透出来。实测：同一张图连打 10 次全成功，
+# 走完整链路 14 张里有 3 张失败——取决于轮到哪个上游，与图片无关。
+#
+# 不重试的后果很具体：体验者上传一张正常照片，随机看到「识别失败」，
+# 会以为是自己的照片有问题，而这恰恰是我们最想证明能处理好的环节。
+_TRANSIENT = (
+    "api key not valid",       # 网关轮到失效上游 key
+    "upstream",                # 网关自报上游故障
+    "no available channel",    # 该模型当前无可用通道
+    "rate limit", "too many requests",
+    "bad gateway", "service unavailable", "gateway timeout",
+)
+_RETRY_MAX = 3          # 首次 + 最多 2 次重试
+_RETRY_SLEEP = 1.2      # 退避基数（秒）：1.2、2.4
+
+
+def _is_transient(status: int, body: str) -> bool:
+    """是否为「重试一次就可能过」的瞬时故障。
+
+    只认上述特征或 429/5xx。模型名写错（404）、本地 key 配错（401）
+    属于请求本身有问题，重试只是重复烧钱。
+    """
+    if status in (429, 502, 503, 504):
+        return True
+    low = (body or "").lower()
+    return any(sig in low for sig in _TRANSIENT)
+
+
+def _post_with_retry(url: str, payload: dict, headers: dict, timeout: int = 90):
+    """POST + 瞬时故障重试。失败时把网关正文带进异常，否则完全无法定位。"""
+    last = None
+    for attempt in range(1, _RETRY_MAX + 1):
+        resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        if resp.status_code < 400:
+            return resp
+        body = (resp.text or "").strip()
+        last = requests.HTTPError(
+            "%s %s ← %s" % (resp.status_code, resp.reason, body[:400]), response=resp)
+        if attempt >= _RETRY_MAX or not _is_transient(resp.status_code, body):
+            raise last
+        time.sleep(_RETRY_SLEEP * (2 ** (attempt - 1)))
+    raise last
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 SAMPLE_DIR = DATA_DIR / "sample_images"
@@ -36,6 +85,62 @@ SAMPLE_DIR = DATA_DIR / "sample_images"
 DHASH_THRESHOLD = 50
 # 最优命中与次优命中的最小汉明间隔，防止近似样例间误配
 DHASH_MARGIN = 8
+
+# 允许的上传图片格式与像素上限。像素上限用于挡「解压炸弹」——几十 KB 的
+# PNG 可以解出上亿像素，直接把内存吃满；公开部署时这是必须的一道校验。
+ALLOWED_FORMATS = {"PNG", "JPEG", "WEBP", "BMP"}
+MAX_IMAGE_PIXELS = 40_000_000
+
+
+def validate_image(image_bytes: bytes) -> str | None:
+    """校验上传内容确实是一张可解码的常见格式图片。
+
+    返回错误提示字符串；校验通过返回 None。除了挡解压炸弹，也避免把
+    「伪装成图片的垃圾文件」原样发给多模态大模型白烧额度。
+    Pillow 未安装时跳过校验（不影响纯文本链路可用）。
+    """
+    try:
+        from PIL import Image
+        try:
+            from PIL.Image import DecompressionBombError
+        except ImportError:                      # 老版本 Pillow 没有这个类
+            class DecompressionBombError(Exception):
+                pass
+    except ImportError:
+        return None
+    # 校验顺序是刻意安排的，从最便宜的检查到最贵的：
+    #   读文件头 → 格式白名单 → 像素上限 → 结构完整性
+    # 关键在于「像素上限」必须早于任何解码动作。反过来的话，一个声明
+    # 30000×30000 的解压炸弹会先让解码器去分配 9 亿像素，校验本身就成了
+    # 拒绝服务的入口。
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            fmt, (width, height) = img.format, img.size    # 只读文件头，不解码
+    except DecompressionBombError:
+        # Pillow 自带的炸弹护栏（默认 89478485 像素）先于我们触发
+        return "图片分辨率过大，疑似异常文件，请压缩后重试。"
+    except Exception:
+        return "无法解析为图片，请上传 PNG / JPG / WebP 格式的作业照片。"
+
+    if fmt not in ALLOWED_FORMATS:
+        return "暂不支持 %s 格式，请上传 PNG / JPG / WebP 作业照片。" % (fmt or "该")
+    if width * height > MAX_IMAGE_PIXELS:
+        return ("图片分辨率过大（%d×%d），请压缩后重试。" % (width, height))
+
+    # 到这里尺寸已确认在安全范围内，才做结构校验。
+    # verify() 只查 CRC / 结构而不解码像素，能抓住「文件头正常但数据被截断」
+    # ——上传中断、网络断流都会产出这种文件。不查的话它会一路走到多模态
+    # 接口那里才失败，白烧一次额度，还把底层报错甩给体验者。
+    # 注意：verify() 后 img 对象即失效，故必须重新 open 一次。
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            img.verify()
+    except DecompressionBombError:
+        return "图片分辨率过大，疑似异常文件，请压缩后重试。"
+    except Exception:
+        return "图片文件不完整或已损坏（可能上传中断），请重新拍照上传。"
+    return None
+
 
 # 多模态识别的转写 Prompt：只转写、不批改，公式用线性写法
 VLM_PROMPT = """你是一个手写作业识别引擎。请把图片中「学生手写的作答内容」逐字转写出来：
@@ -161,13 +266,9 @@ def recognize_vlm(image_bytes: bytes, mime: str = "image/png") -> dict:
         "temperature": 0,
         "stream": False,
     }
-    resp = requests.post(
-        base_url + "/chat/completions",
-        json=payload,
-        headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
-        timeout=90,
-    )
-    resp.raise_for_status()
+    resp = _post_with_retry(
+        base_url + "/chat/completions", payload,
+        {"Authorization": "Bearer " + api_key, "Content-Type": "application/json"})
     content = resp.json()["choices"][0]["message"]["content"]
     data = _extract_json(content)
     clarity = data.get("clarity", 75)
@@ -199,22 +300,28 @@ def _extract_json(content: str) -> dict:
 # ---------- 统一识别入口 ----------
 
 def recognize_image(image_bytes: bytes, mime: str = "image/png",
-                    submissions: dict = None) -> dict:
+                    submissions: dict = None, allow_vlm: bool = True,
+                    unavailable_note: str = "") -> dict:
     """作业照片统一识别入口。
 
     优先级：
-    1. 配置了 ZHIPI_VLM_API_KEY → 真实多模态识别（失败时若能匹配样例则降级）；
-    2. 未配置 → 感知哈希匹配内置样例，命中返回该样例标准转写；
-    3. 都不行 → engine="none" + 引导提示。
+    1. 配置了 ZHIPI_VLM_API_KEY 且本次允许调用 → 真实多模态识别
+       （失败时若能匹配样例则降级）；
+    2. 否则 → 感知哈希匹配内置样例，命中返回该样例标准转写；
+    3. 都不行 → engine="none" + 原因码 + 引导提示。
 
     参数：
-        image_bytes: 图片原始字节。
-        mime:        图片 MIME 类型。
-        submissions: submission_id -> 作答记录，用于取匹配样例的预置转写。
+        image_bytes:       图片原始字节。
+        mime:              图片 MIME 类型。
+        submissions:       submission_id -> 作答记录，用于取匹配样例的预置转写。
+        allow_vlm:         本次是否允许发起真实多模态调用。公开部署时由调用方
+                           按日配额 / 限流结果传入 False，此时静默回落样例匹配，
+                           而不是把「配额用尽」当成识别失败甩给体验者。
+        unavailable_note:  allow_vlm=False 且无法回落时附加的说明（如配额已用尽）。
     """
     matched = match_sample(image_bytes)
 
-    if vlm_configured():
+    if vlm_configured() and allow_vlm:
         try:
             result = recognize_vlm(image_bytes, mime)
             if matched:
@@ -224,6 +331,7 @@ def recognize_image(image_bytes: bytes, mime: str = "image/png",
             if not matched:
                 return {
                     "engine": "none",
+                    "reason": "vlm_failed",
                     "error": "多模态识别调用失败：%s" % exc,
                 }
             # 失败但命中样例 → 降级为演示识别
@@ -237,11 +345,20 @@ def recognize_image(image_bytes: bytes, mime: str = "image/png",
             "matched_submission_id": matched,
         }
 
+    if vlm_configured() and not allow_vlm:
+        return {
+            "engine": "none",
+            "reason": "vlm_unavailable",
+            "error": unavailable_note or "真实识别暂不可用，可先用内置样例作业照片体验完整链路。",
+        }
+
     return {
         "engine": "none",
-        "error": ("未能识别该图片：离线演示模式仅支持内置样例作业照片。"
-                  "配置 ZHIPI_VLM_API_KEY 后可识别任意手写作业照片。"),
+        "reason": "no_match",
+        "error": ("这张照片不在内置样例库中：当前为离线演示模式，"
+                  "只能识别内置的手写样例作业照片。"),
     }
+
 
 
 # ---------- 兼容旧接口（文本流水线仍在使用） ----------

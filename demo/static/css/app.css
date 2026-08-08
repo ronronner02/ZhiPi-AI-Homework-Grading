@@ -662,6 +662,54 @@ a { color: var(--riso-blue); text-underline-offset: 3px; }
 .trail__t { font-size: var(--fs-small); font-weight: 500; letter-spacing: .02em; }
 
 /* --------------------------------------------------------------------------
+   8a. 批改链路清单
+   启用/停用不靠颜色单独承担——停用项同时降透明度、墨点改空心、并有
+   隐藏文本给读屏。色弱用户与读屏用户都能分辨。
+   -------------------------------------------------------------------------- */
+.chain {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 2px solid var(--rule);
+  background: var(--paper-warm);
+  display: grid;
+  gap: 6px;
+}
+.chain__item {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+.chain__dot {
+  width: 7px; height: 7px;
+  margin-top: .45em;               /* 对齐首行基线而不是盒子顶端 */
+  background: var(--riso-blue);
+  border-radius: 50%;
+}
+.chain__k {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: .08em;
+  color: var(--ink-mid);
+  white-space: nowrap;
+}
+.chain__v { color: var(--ink-mid); min-width: 0; }
+.chain__item--off { opacity: .62; }
+.chain__item--off .chain__dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ink-faint);
+}
+.chain__item--off .chain__v { color: var(--ink-soft); }
+@media (max-width: 560px) {
+  /* 窄屏把「标签 + 说明」拆成两行，否则 mono 标签会把说明挤成一列窄条 */
+  .chain__item { grid-template-columns: auto 1fr; }
+  .chain__v { grid-column: 2; }
+}
+
+/* --------------------------------------------------------------------------
    8b. 作业文件夹（堆叠卡片）
    -------------------------------------------------------------------------- */
 .folder-toolbar {
