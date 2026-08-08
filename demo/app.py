@@ -407,21 +407,45 @@ _PUBLIC_PATHS = {"/healthz"}
 
 _CODE_PAGE = """<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
 <title>智批π · 需要访问口令</title><style>
-body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-  background:#f5f7fa;color:#1f2937;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;}
-.box{background:#fff;border:1px solid #e5e9f0;border-radius:14px;padding:28px 26px;width:min(92vw,360px);
-  box-shadow:0 2px 12px rgba(0,0,0,.05);text-align:center;}
-h1{font-size:18px;margin:0 0 6px;}p{color:#6b7280;font-size:13px;margin:0 0 18px;}
-input{width:100%;padding:10px 12px;border:1px solid #e5e9f0;border-radius:9px;font-size:15px;}
-button{width:100%;margin-top:12px;padding:10px;border:0;border-radius:9px;background:#2563eb;
-  color:#fff;font-size:15px;cursor:pointer;}
-.err{color:#ef4444;font-size:13px;margin-top:10px;}
-</style></head><body><div class="box">
-<h1>智批π · AI 智能作业批改</h1>
-<p>体验链接受口令保护，请输入主办方 / 团队提供的访问口令。</p>
+/* 与 static/css 同一套令牌，但刻意内联：口令页要在前端资源被拦住时也长得对。 */
+:root{--paper:#F4F1EA;--paper-white:#FBF9F5;--paper-warm:#EFEADF;--ink:#16130E;
+  --ink-mid:#4A4237;--ink-soft:#857B6C;--rule:#D6CFBE;--rule-soft:#E6E0D2;
+  --riso-blue:#2B41C8;--err:#B42318;--err-lt:#FEF3F2;}
+*,*::before,*::after{box-sizing:border-box;}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;
+  background:var(--paper);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",
+    "Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif;
+  font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;}
+.gate{width:min(400px,100%);background:var(--paper-white);border:1px solid var(--rule);
+  border-radius:12px;padding:28px 24px;
+  box-shadow:2px 3px 0 #E4DDCD,6px 10px 28px -14px rgba(22,19,14,.42);}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.02em;}
+.brand-mark{width:28px;height:28px;border-radius:8px;background:var(--riso-blue);color:#fff;
+  display:grid;place-items:center;font-family:"Songti SC","Times New Roman",serif;font-size:16px;}
+h1{margin:14px 0 6px;font-size:1.25rem;font-family:"Songti SC","STSong","Noto Serif SC",
+  "Times New Roman",serif;font-weight:700;}
+p{margin:0 0 18px;color:var(--ink-soft);font-size:13px;}
+label{display:block;font-size:13px;font-weight:600;color:var(--ink-mid);margin-bottom:6px;}
+input{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--rule);border-radius:4px;
+  background:var(--paper-white);color:var(--ink);font:inherit;}
+input:focus{outline:2px solid var(--riso-blue);outline-offset:1px;border-color:var(--riso-blue);}
+button{width:100%;margin-top:16px;min-height:44px;padding:10px 16px;border:1px solid transparent;
+  border-radius:8px;background:var(--ink);color:var(--paper-white);
+  font:inherit;font-weight:600;cursor:pointer;}
+button:hover{background:#2a241c;}
+button:focus-visible{outline:2px solid var(--riso-blue);outline-offset:2px;}
+.err{margin:12px 0 0;padding:8px 12px;border-radius:8px;background:var(--err-lt);
+  border:1px solid #E8A9A5;color:var(--err);font-size:13px;}
+</style></head><body><div class="gate">
+<div class="brand"><span class="brand-mark" aria-hidden="true">&#960;</span>&#26234;&#25209;&#960;</div>
+<h1>输入访问口令</h1>
+<p>体验链接受口令保护，仅授权教师与评委进入批改工作台。</p>
 <form onsubmit="location.search='?code='+encodeURIComponent(document.getElementById('c').value);return false;">
-<input id="c" autofocus placeholder="访问口令" autocomplete="off">
+<label for="c">访问口令</label>
+<input id="c" type="password" autofocus placeholder="请输入主办方 / 团队提供的口令" autocomplete="off">
 <button type="submit">进入体验</button></form>
 __ERROR__</div></body></html>"""
 
@@ -429,7 +453,7 @@ __ERROR__</div></body></html>"""
 def _code_prompt(error: bool = False) -> HTMLResponse:
     """口令输入页。错误提示不回显任何口令内容。"""
     html = _CODE_PAGE.replace(
-        "__ERROR__", '<div class="err">口令不正确，请重新输入。</div>' if error else "")
+        "__ERROR__", '<p class="err">口令不正确，请重新输入。</p>' if error else "")
     return HTMLResponse(html, status_code=401 if error else 200)
 
 
