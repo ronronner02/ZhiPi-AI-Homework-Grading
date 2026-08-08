@@ -57,10 +57,26 @@
   function emptyBox(text, iconName, actionHtml) {
     /* DESIGN §7.2 composed empty：图标 + 说明；可选 CTA HTML */
     return '<div class="empty">' +
-      '<div class="empty__ico">' + I(iconName || 'info', { size: 36 }) + '</div>' +
+      '<div class="empty__ico">' + I(iconName || 'info', { size: 40 }) + '</div>' +
       '<p class="empty__desc">' + esc(text) + '</p>' +
       (actionHtml ? '<div class="empty__actions">' + actionHtml + '</div>' : '') +
       '</div>';
+  }
+
+  /* 轻提示。用在「做完了但页面没明显变化」的动作上：终审提交、抽查通过、
+     飞书推送、复制大纲。教师终审那条绿色回灌说明另有 #teacher-note，
+     两者不重复——一个说「收到了」，一个说「置信度因此变了多少」。 */
+  var TOAST_TIMER = 0;
+
+  function toast(title, body, isErr) {
+    var el = $('#toast');
+    if (!el) return;
+    el.className = 'toast' + (isErr ? ' toast--err' : '');
+    el.querySelector('b').textContent = title || '';
+    el.querySelector('span').textContent = body || '';
+    el.hidden = false;
+    clearTimeout(TOAST_TIMER);
+    TOAST_TIMER = setTimeout(function () { el.hidden = true; }, 2600);
   }
 
   /* ======================================================================
@@ -68,7 +84,10 @@
      ====================================================================== */
 
   var STATUS_TEXT = { green: '自动通过', yellow: '教师确认', red: '转人工' };
-  var STATUS_VAR = { green: 'var(--riso-green)', yellow: 'var(--riso-amber)', red: 'var(--riso-red)' };
+  var STATUS_VAR = { green: 'var(--st-green)', yellow: 'var(--st-yellow)', red: 'var(--st-red)' };
+  /* 分流章的类名后缀。视觉层用 --g/--y/--r，业务层仍只认 green/yellow/red，
+     两边靠这张表对上，换设计不用改业务判断。 */
+  var STATUS_STAMP = { green: 'g', yellow: 'y', red: 'r' };
   var ENGINE_TEXT = { vlm: '多模态大模型识别', 'sample-match': '离线演示识别 · 样例匹配' };
 
   var FACTOR_LABEL = {
@@ -120,10 +139,12 @@
       if (picked.length < 3 && !seen[im.subject]) { seen[im.subject] = 1; picked.push(im); }
     });
     while (picked.length < 3 && images.length >= 3) picked.push(images[picked.length]);
+    // 位置由 --1/--2/--3 三个类定死（错落压叠），视差在其上叠加 transform
     var speeds = [-0.045, 0.03, -0.015];
     var rots = [-5.5, 4, -1.5];
     box.innerHTML = picked.map(function (im, i) {
-      return '<figure data-parallax="' + speeds[i] + '" data-parallax-rotate="' + rots[i] + '">' +
+      return '<figure class="collage__f collage__f--' + (i + 1) + '"' +
+        ' data-parallax="' + speeds[i] + '" data-parallax-rotate="' + rots[i] + '">' +
         '<img src="' + esc(im.url) + '" alt="" loading="lazy"></figure>';
     }).join('');
     M.parallax(box);
@@ -289,8 +310,9 @@
   function updateUploadTargetHint() {
     var meta = activeFolderMeta();
     var name = meta ? meta.name : 'Demo 样例';
+    // 动线条上那句「当前上传目标：___」只填夹名，前缀写死在 index.html 里
     var el = $('#folder-active-hint');
-    if (el) el.textContent = '当前上传目标：' + name;
+    if (el) el.textContent = name;
     var t = $('#upload-target-hint');
     if (t) t.innerHTML = '上传目标：<b>' + esc(name) + '</b>（点上方文件夹可切换）';
     var actions = $('#folder-actions');
@@ -311,36 +333,23 @@
     }
     grid.innerHTML = FOLDERS.map(function (f) {
       var count = f.count || 0;
-      // 夹内纸张最多画 3 张：再多也看不出差别，份数由角标给准数
-      var papers = '';
-      var paperN = Math.max(0, Math.min(3, f.stack || count));
-      for (var i = 1; i <= paperN; i++) {
-        papers += '<span class="folder-card__paper folder-card__paper--' + i + '"></span>';
-      }
+      var on = (f.folder_id === ACTIVE_FOLDER);
 
-      var cls = 'folder-card';
-      if (f.kind === 'demo') cls += ' folder-card--demo';
-      if (!count) cls += ' folder-card--empty';
-      if (f.folder_id === ACTIVE_FOLDER) cls += ' is-on';
+      var cls = 'folder';
+      if (!count) cls += ' folder--empty';
+      if (on) cls += ' is-on';
 
       var meta = f.kind === 'demo' ? '系统夹 · ' + count + ' 份' : count + ' 份作业';
-      // 无障碍：夹体纯装饰，语义全部交给这一句，读屏不会听到一串空 span
-      var label = f.name + '，' + meta +
-        (f.folder_id === ACTIVE_FOLDER ? '，当前上传目标' : '');
+      // 无障碍：夹面的角标与描边都是视觉信号，语义全部压进这一句
+      var label = f.name + '，' + meta + (on ? '，当前上传目标' : '');
 
       return '<button type="button" class="' + cls +
         '" data-folder="' + esc(f.folder_id) + '"' +
-        ' aria-pressed="' + (f.folder_id === ACTIVE_FOLDER) + '"' +
+        ' aria-pressed="' + on + '"' +
         ' aria-label="' + esc(label) + '" title="' + esc(f.name) + '">' +
-        '<span class="folder-card__vis" aria-hidden="true">' +
-          '<span class="folder-card__back"></span>' +
-          papers +
-          '<span class="folder-card__front"></span>' +
-          (count ? '<span class="folder-card__badge">' + count + '</span>' : '') +
-          '<span class="folder-card__now">当前</span>' +
-        '</span>' +
-        '<span class="folder-card__name">' + esc(f.name) + '</span>' +
-        '<span class="folder-card__meta">' + esc(meta) + '</span>' +
+        (on ? '<span class="now" aria-hidden="true">当前</span>' : '') +
+        '<span class="name">' + esc(f.name) + '</span>' +
+        '<span class="meta">' + esc(meta) + '</span>' +
         '</button>';
     }).join('');
     updateUploadTargetHint();
@@ -445,11 +454,10 @@
         Icons.hydrate(body);
         return;
       }
-      body.innerHTML = '<div style="display:grid;gap:8px;">' + items.map(function (it) {
+      body.innerHTML = '<div class="file-list">' + items.map(function (it) {
         var thumb = it.url
-          ? '<span class="folder-item__thumb"><img src="' + esc(it.url) + '" alt=""></span>'
-          : '<span class="folder-item__thumb" style="display:flex;align-items:center;justify-content:center;color:var(--ink-soft);">' +
-            I('fileText', { size: 18 }) + '</span>';
+          ? '<span class="file-row__thumb"><img src="' + esc(it.url) + '" alt=""></span>'
+          : '<span class="file-row__thumb">' + I('fileText', { size: 18 }) + '</span>';
         var st = it.status ? (STATUS_TEXT[it.status] || it.status) : (it.graded ? '已批改' : '未批改');
         var score = (it.score != null && it.max_score != null)
           ? (it.score + '/' + it.max_score + ' · ') : '';
@@ -458,10 +466,9 @@
             esc(it.item_id) + '" data-url="' + esc(it.url) + '">批改</button>'
           : (it.kind === 'upload'
             ? '<span class="tag tag--mine">已入工作台</span>' : '');
-        return '<div class="folder-item">' + thumb +
-          '<div class="folder-item__body">' +
-          '<div class="folder-item__name">' + esc(it.student_name || it.item_id) + '</div>' +
-          '<div class="folder-item__meta">' + esc((it.subject || '') +
+        return '<div class="file-row">' + thumb +
+          '<div><div class="file-row__name">' + esc(it.student_name || it.item_id) + '</div>' +
+          '<div class="meta-line">' + esc((it.subject || '') +
             (it.question_title ? ' · ' + it.question_title : '') +
             ' · ' + score + st) + '</div></div>' + action + '</div>';
       }).join('') + '</div>';
@@ -520,7 +527,7 @@
         }
         note.innerHTML = modeBanner +
           '<p class="hint">接口消息：' + esc(fs.message || '') + '</p>' + cardHtml +
-          '<div class="inline mt-4">' +
+          '<div class="toolbar" style="margin:14px 0 0;">' +
           '<button class="btn" type="button" data-goto="teacher">' +
           I('table', { size: 15 }) + '<span>去工作台审核</span></button>' +
           '<button class="btn btn--ghost" type="button" data-goto="board">' +
@@ -635,7 +642,7 @@
      所以标记打在它所属的那一行上，而不再找 .plate。 */
   function markPlate(sid) {
     $$('[data-sample]').forEach(function (b) {
-      var row = (b.closest && b.closest('.folder-item')) || b;
+      var row = (b.closest && b.closest('.file-row')) || b;
       row.classList.toggle('is-on', !!sid && b.dataset.sample === sid);
     });
   }
@@ -767,19 +774,19 @@
     var done = list.filter(function (it) { return it.status === 'ok' || it.status === 'fail'; }).length;
     var pct = Math.round(done / list.length * 100);
     $('#batch-progress').innerHTML =
-      '已处理 <b>' + done + ' / ' + list.length + '</b> 张';
+      '已处理 <b class="mono">' + done + ' / ' + list.length + '</b> 张';
     $('#batch-bar-fill').style.width = pct + '%';
-    $('#batch-list').innerHTML = list.map(function (it) {
-      var cls = 'factor';
-      if (it.status === 'ok') cls = 'factor factor--ok';
-      if (it.status === 'fail') cls = 'factor factor--bad';
+    $('#batch-list').innerHTML = list.map(function (it, i) {
+      var cls = 'batch-item';
+      if (it.status === 'ok') cls += ' is-done';
+      if (it.status === 'fail') cls += ' is-fail';
+      if (it.status === 'working') cls += ' is-busy';
       var detail = it.html
-        ? '<span class="hint" style="flex:1;">' + it.html + '</span>'
-        : '<span class="hint">' + esc(it.text) + '</span>';
-      return '<div style="display:flex;align-items:center;gap:10px;' +
-        'padding:8px 10px;border:1px solid var(--rule);border-radius:10px;">' +
-        '<span class="' + cls + '" style="min-width:170px;"><b>' +
-        esc(it.name) + '</b></span>' +
+        ? '<span class="batch-item__detail">' + it.html + '</span>'
+        : '<span class="batch-item__detail">' + esc(it.text) + '</span>';
+      return '<div class="' + cls + '">' +
+        '<span class="mono">' + (i + 1) + '</span>' +
+        '<span class="batch-item__name">' + esc(it.name) + '</span>' +
         detail +
         (it.status === 'ok' ? '<span class="tag tag--mine">已入工作台</span>' : '') +
         '</div>';
@@ -800,7 +807,7 @@
       (fail ? '，失败 ' + fail + ' 张' : '') +
       '。已进入当前文件夹与教师工作台，按红黄绿置信度分流——<b>优先审红、黄桶</b>。</div>' +
       '</div>' +
-      '<div class="inline mt-4">' +
+      '<div class="toolbar" style="margin:14px 0 0;">' +
       '<button class="btn" type="button" data-goto="teacher">' +
       I('table', { size: 16 }) + '<span>去工作台审核</span></button>' +
       '<button class="btn btn--ghost" type="button" data-goto="result">' +
@@ -868,16 +875,10 @@
     // 若沿用「查看这批的第 / [下拉] / 份」的句式，最后会剩一个孤零零的「份」。
     var html =
       '<div class="batch-picker">' +
-        '<label class="batch-picker__label" for="batch-result-select">' +
-          '切换查看' +
-        '</label>' +
-        '<span class="batch-picker__wrap">' +
-          '<select id="batch-result-select" class="batch-picker__select"' +
-            ' aria-label="切换查看本批次的批改结果">' + opts + '</select>' +
-          '<span class="batch-picker__caret" aria-hidden="true">' +
-            I('chevronRight', { size: 15 }) + '</span>' +
-        '</span>' +
-        '<span class="hint">本批共 ' + okItems.length + ' 份</span>' +
+        '<label for="batch-result-select">切换查看</label>' +
+        '<select id="batch-result-select" class="select"' +
+          ' aria-label="切换查看本批次的批改结果">' + opts + '</select>' +
+        '<span class="hint-inline">本批共 ' + okItems.length + ' 份</span>' +
       '</div>';
     var picker = document.getElementById('batch-result-picker');
     if (!picker) {
@@ -1117,10 +1118,14 @@
      ====================================================================== */
 
   function stepState(score, max) {
-    if (score >= max) return ['correct', 'is-correct', '全部得分'];
-    if (score <= 0) return ['wrong', 'is-wrong', '未得分'];
-    return ['partial', 'is-partial', '部分得分'];
+    if (score >= max) return ['correct', 'is-ok', '全部得分'];
+    if (score <= 0) return ['wrong', 'is-bad', '未得分'];
+    return ['partial', 'is-warn', '部分得分'];
   }
+
+  // 步骤状态 → 分流章的色位。语义不同（这是「这一步对不对」，不是「这份要不要人审」），
+  // 但三色阶一致，复用同一套 stamp 类。
+  var STEP_STAMP = { 'is-ok': 'g', 'is-warn': 'y', 'is-bad': 'r' };
 
   function renderResult() {
     var r = CURRENT;
@@ -1128,12 +1133,7 @@
 
     var steps = stepChainHtml(r.step_analysis);
 
-    var factors = Object.keys(r.confidence_factors).map(function (k) {
-      var w = FACTOR_WEIGHT[k];
-      return '<span class="factor">' + esc(FACTOR_LABEL[k] || k) +
-        (w ? ' <em style="font-style:normal;color:var(--ink-faint);font-family:var(--font-mono);">&#215;' + w.toFixed(2) + '</em>' : '') +
-        ' <b>' + r.confidence_factors[k] + '</b></span>';
-    }).join('');
+    var factors = factorChipsHtml(r);
     if (r.consistency_check) {
       factors += '<span class="factor factor--ok">二次批改一致性 <b>' +
         r.consistency_check.agreement + '</b>（复核分 ' + r.consistency_check.second_score + '）</span>';
@@ -1153,61 +1153,80 @@
         '</span><div>这份是<b>你刚上传的作业</b>，已编号 <b>' + esc(r.submission_id || '') +
         '</b> 并进入「03 教师工作台」与「04 班级看板」，可以继续走完终审动线。</div></div>' : '';
 
+    var sk = STATUS_STAMP[r.status] || 'y';
+
     $('#result-body').innerHTML =
       mine +
       '<div class="sheet">' +
-        '<div class="sheet__head"><div>' +
-          '<span class="kicker">Step 02 · Grade</span>' +
-          '<h2 class="sheet__title">' + esc(r.student_name) + ' · ' + esc(r.subject) + ' · ' + esc(r.question_title) + '</h2>' +
-        '</div><span class="folio">02</span></div>' +
+        '<div class="toolbar">' +
+          '<div>' +
+            '<h3>' + esc(r.student_name) + ' · ' + esc(r.subject) + ' · ' + esc(r.question_title) + '</h3>' +
+            '<p class="sub" style="margin:4px 0 0;">Step 02 · 过程级批改与证据链</p>' +
+          '</div>' +
+          '<span class="spacer"></span>' +
+          '<span class="stamp stamp--' + sk + '">' + I(r.status, { size: 13 }) + ' ' +
+            STATUS_TEXT[r.status] + '</span>' +
+        '</div>' +
 
-        '<div class="readout">' +
-          '<div><div class="readout__k">总分 Score</div>' +
-            '<div class="readout__v"><span id="ro-score">0</span><small> / ' + r.max_score + '</small></div></div>' +
-          '<div><div class="readout__k">置信度 Confidence</div>' +
-            '<div class="readout__v" style="color:' + STATUS_VAR[r.status] + '"><span id="ro-conf">0</span></div>' +
-            '<div class="meter"><div class="meter__track"><div class="meter__fill" id="ro-meter" style="background:' + STATUS_VAR[r.status] + '"></div></div>' +
-            '<div class="meter__ticks"><span>0</span><span>60</span><span>85</span><span>100</span></div></div></div>' +
-          '<div><div class="readout__k">分流 Triage</div>' +
-            '<div style="padding-top:8px;"><span class="stamp stamp--' + r.status + '">' +
-            I(r.status, { size: 13 }) + ' ' + STATUS_TEXT[r.status] + '</span></div></div>' +
-          '<div><div class="readout__k">链路 Pipeline</div>' +
-            '<div style="padding-top:8px;">' +
+        '<div class="score-row">' +
+          '<div class="score-card">' +
+            '<div class="lab">总分 Score</div>' +
+            '<div class="val"><span id="ro-score">0</span><small> / ' + r.max_score + '</small></div>' +
+          '</div>' +
+          '<div class="score-card">' +
+            '<div class="lab">综合置信 Confidence</div>' +
+            '<div class="val" style="font-size:1.45rem;color:' + STATUS_VAR[r.status] + '">' +
+              '<span id="ro-conf">0</span></div>' +
+            '<div class="meter"><span id="ro-meter" style="background:' + STATUS_VAR[r.status] + '"></span></div>' +
+            '<div class="meter__ticks"><span>0</span><span>60</span><span>85</span><span>100</span></div>' +
+          '</div>' +
+          '<div class="score-card">' +
+            '<div class="lab">分流 Triage</div>' +
+            '<div style="margin-top:10px;"><span class="stamp stamp--' + sk + '">' +
+              I(r.status, { size: 13 }) + ' ' + STATUS_TEXT[r.status] + '</span></div>' +
+          '</div>' +
+          '<div class="score-card">' +
+            '<div class="lab">链路 Pipeline</div>' +
+            '<div class="factor-wrap" style="margin-top:8px;">' +
             (r.recognition_engine ? '<span class="factor">识别 <b>' +
               esc(ENGINE_TEXT[r.recognition_engine] || r.recognition_engine) + '</b></span>' : '') +
             '<span class="factor">批改 <b>' + (r.mode === 'llm' ? '真实 LLM' : 'Mock 规则引擎') + '</b></span>' +
-            '</div></div>' +
+            '</div>' +
+          '</div>' +
         '</div>' +
 
-        (r.note ? '<p class="hint mt-4">' + esc(r.note) + '</p>' : '') +
-        '<h3>置信度五因子 &#183; 设计方案 &#167;9.7</h3>' +
-        '<div>' + factors + '</div>' +
+        (r.note ? '<p class="hint">' + esc(r.note) + '</p>' : '') +
+        '<h3 class="block-title">置信度五因子 &#183; 设计方案 &#167;9.7</h3>' +
+        '<div class="factor-wrap">' + factors + '</div>' +
       '</div>' +
 
       '<div class="sheet">' +
-        '<div class="sheet__head"><div><span class="kicker">Context</span>' +
-        '<h2 class="sheet__title">题目与作答</h2></div></div>' +
-        '<h3>题目</h3><div>' + esc(r.question_text) + '</div>' +
-        '<h3>标准答案</h3><div class="muted">' + esc(r.standard_answer) + '</div>' +
-        '<h3>学生作答 · OCR 转写</h3><div class="pre">' + esc(r.ocr_text) + '</div>' +
+        '<div class="toolbar"><h3>题目与作答</h3></div>' +
+        '<div class="kv">' +
+          '<div class="kv__k">题目</div><div class="kv__v">' + esc(r.question_text) + '</div>' +
+          '<div class="kv__k">标准答案</div><div class="kv__v muted">' + esc(r.standard_answer) + '</div>' +
+          '<div class="kv__k">学生作答</div><div class="kv__v pre">' + esc(r.ocr_text) + '</div>' +
+        '</div>' +
       '</div>' +
 
       '<div class="sheet">' +
-        '<div class="sheet__head"><div><span class="kicker">Evidence Chain</span>' +
-        '<h2 class="sheet__title">逐批改节点与证据链</h2></div>' +
-        '<span class="hint" style="max-width:280px;text-align:right;">每一步判分都引用学生作答原文作为依据，老师是在「审」而不是在「信」。</span></div>' +
-        '<div class="steps">' + steps + '</div>' +
-        '<h3>知识点</h3><div>' +
+        '<div class="toolbar">' +
+          '<h3>逐批改节点与证据链</h3>' +
+          '<span class="spacer"></span>' +
+          '<span class="hint-inline" style="max-width:300px;text-align:right;">' +
+            '每一步判分都引用学生作答原文作为依据，老师是在「审」而不是在「信」。</span>' +
+        '</div>' +
+        steps +
+        '<h3 class="block-title">知识点</h3><div class="factor-wrap">' +
           r.knowledge_points.map(function (k) { return '<span class="tag tag--kp">' + esc(k) + '</span>'; }).join('') +
         '</div>' +
-        '<h3>错因标签 &#183; &#167;6.11 十类枚举</h3><div>' + tags + '</div>' +
+        '<h3 class="block-title">错因标签 &#183; &#167;6.11 十类枚举</h3><div class="factor-wrap">' + tags + '</div>' +
       '</div>' +
 
       '<div class="sheet">' +
-        '<div class="sheet__head"><div><span class="kicker">Feedback</span>' +
-        '<h2 class="sheet__title">个性化评语</h2></div></div>' +
-        '<div class="quoteblock">' + esc(r.student_feedback) + '</div>' +
-        '<h3>教师备注</h3><div class="muted">' + esc(r.teacher_note) + '</div>' +
+        '<div class="toolbar"><h3>个性化评语</h3></div>' +
+        '<p class="quote">' + esc(r.student_feedback) + '</p>' +
+        '<h3 class="block-title">教师备注</h3><div class="muted">' + esc(r.teacher_note) + '</div>' +
       '</div>';
 
     Icons.hydrate();
@@ -1282,13 +1301,12 @@
           (TEACHER_FILTER.tag === t ? ' selected' : '') + '>' + esc(t) + '</option>';
       })).join('');
     var filterBar =
-      '<div class="filters" style="display:flex;gap:10px;flex-wrap:wrap;' +
-      'align-items:center;margin-bottom:var(--sp-4);">' +
-      '<span class="hint" style="margin:0;">筛选：</span>' +
-      '<select class="select" data-f="status">' + statusOpts + '</select>' +
-      '<select class="select" data-f="subject">' + subjOpts + '</select>' +
-      '<select class="select" data-f="tag">' + tagOpts + '</select>' +
-      '<span class="hint" style="margin:0;">共 <b>' + rows.length + '</b> 份</span>' +
+      '<div class="filters teacher-filters">' +
+      '<span class="hint-inline">筛选</span>' +
+      '<select class="select select--sm" data-f="status" aria-label="分流状态">' + statusOpts + '</select>' +
+      '<select class="select select--sm" data-f="subject" aria-label="题目">' + subjOpts + '</select>' +
+      '<select class="select select--sm" data-f="tag" aria-label="错因">' + tagOpts + '</select>' +
+      '<span class="hint-inline">共 <b class="mono">' + rows.length + '</b> 份</span>' +
       '</div>';
 
     var trs = rows.map(function (r) {
@@ -1296,15 +1314,15 @@
       if (r.reviewed) {
         var label = r.teacher_action === 'modified' ? '已修改' : '已确认';
         var revTags = (r.final_error_tags && r.final_error_tags.length)
-          ? '<div class="hint">错因修订：' + r.final_error_tags.map(esc).join('、') + '</div>' : '';
-        actions = '<span style="color:var(--riso-green);font-weight:600;display:inline-flex;gap:5px;align-items:center;">' +
+          ? '<div class="meta-line">错因修订：' + r.final_error_tags.map(esc).join('、') + '</div>' : '';
+        actions = '<span class="reviewed-label">' +
           I('check', { size: 14, stroke: 2.4 }) + label + ' ' + r.final_score + ' / ' + r.max_score +
           '</span>' + revTags +
-          '<div class="actions"><button class="btn btn--sm btn--ghost" type="button" data-review="' +
+          '<div class="row-actions"><button class="btn btn--sm btn--ghost" type="button" data-review="' +
           esc(r.submission_id) + '">' + I('eye', { size: 13 }) + '查看/改判</button></div>';
       } else {
-        actions = '<div class="actions">' +
-          '<button class="btn btn--sm ' + (r.status === 'green' ? 'btn--ghost' : '') +
+        actions = '<div class="row-actions">' +
+          '<button class="btn btn--sm ' + (r.status === 'green' ? 'btn--ghost' : 'btn--primary') +
           '" type="button" data-confirm="' + esc(r.submission_id) + '">' +
           (r.status === 'green' ? '抽查通过' : '确认') + '</button>' +
           '<button class="btn btn--sm btn--ghost" type="button" data-review="' + esc(r.submission_id) + '">' +
@@ -1314,20 +1332,21 @@
       }
       var tags = r.error_tags.length
         ? r.error_tags.map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('')
-        : '<span class="muted">—</span>';
-      var mine = (r.source === 'upload') ? '<span class="tag tag--mine">我的上传</span>' : '';
+        : '<span class="muted">&#8212;</span>';
+      var mine = (r.source === 'upload') ? ' <span class="tag tag--mine">我的上传</span>' : '';
       return '<tr>' +
         '<td><b>' + esc(r.student_name) + '</b>' + mine + '</td>' +
         '<td>' + esc(r.subject) + ' · ' + esc(r.question_title) + '</td>' +
         '<td class="num"><b>' + r.ai_score + '</b> / ' + r.max_score + '</td>' +
         '<td class="num">' + r.confidence.toFixed(1) + '</td>' +
-        '<td><span class="stamp stamp--' + r.status + '">' + I(r.status, { size: 12 }) + ' ' +
-          STATUS_TEXT[r.status] + '</span></td>' +
+        '<td><span class="stamp stamp--' + (STATUS_STAMP[r.status] || 'y') + '">' +
+          I(r.status, { size: 12 }) + ' ' + STATUS_TEXT[r.status] + '</span></td>' +
         '<td>' + tags + '</td>' +
         '<td>' + actions + '</td></tr>';
     }).join('');
 
-    body.innerHTML = filterBar + '<div class="tablewrap"><table>' +
+    body.innerHTML = filterBar +
+      '<div class="table-wrap teacher-table-wrap"><table class="teacher-table">' +
       '<thead><tr><th>学生</th><th>题目</th><th>AI 分</th><th>置信度</th>' +
       '<th>分流</th><th>错因</th><th>操作</th></tr></thead>' +
       '<tbody>' + trs + '</tbody></table></div>';
@@ -1347,7 +1366,7 @@
     var el = $('#teacher-note');
     if (!el || !resp || resp.question_pass_rate == null) return;
     el.innerHTML = '<div class="note note--green"><span class="note__ico">' +
-      I('shieldCheck', { size: 18 }) + '</span><div>终审已记录。该题教师通过率因子回灌为 <b class="num">' +
+      I('shieldCheck', { size: 18 }) + '</span><div>终审已记录。该题教师通过率因子回灌为 <b class="mono">' +
       resp.question_pass_rate + '</b>，同题未终审作答的置信度已按新因子重新计算。</div></div>';
     Icons.hydrate(el);
     setTimeout(function () { el.innerHTML = ''; }, 6000);
@@ -1358,6 +1377,7 @@
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ submission_id: id, teacher_action: 'confirmed' })
     }).then(function (resp) {
+      toast('已确认', '已记入终审，通过率因子已回灌');
       showTeacherNote(resp);
       loadTeacher();
     }).catch(function (e) { alert('提交失败：' + e.message); });
@@ -1366,33 +1386,40 @@
   // 逐步证据链 HTML（结果页 / 审卷面板共用）
   function stepChainHtml(step_analysis) {
     if (!step_analysis || !step_analysis.length) return '';
-    return '<div class="steps">' + step_analysis.map(function (s, i) {
+    return '<div class="evidence">' + step_analysis.map(function (s, i) {
       var st = stepState(s.score, s.max_score);
       var tag = s.error_tag ? '<span class="tag">' + esc(s.error_tag) + '</span>' : '';
       var evid = s.evidence
-        ? '<div class="evidence">' + I('quote', { size: 14 }) +
+        ? '<div class="step__quote">' + I('quote', { size: 14 }) +
           '<span>' + esc(s.evidence) + '</span></div>' : '';
       var illegible = (s.legible === false)
-        ? '<div class="evidence evidence--warn">' + I('alert', { size: 14 }) +
+        ? '<div class="step__quote step__quote--warn">' + I('alert', { size: 14 }) +
           '<span>该步字迹难以辨认，建议教师人工复核</span></div>' : '';
-      return '<div class="step" data-reveal="' + (i * 45) + '">' +
-        '<span class="step__mark ' + st[1] + '" title="' + st[2] + '">' +
-        I(st[0], { size: 15, stroke: 2.2 }) + '</span>' +
-        '<div class="step__head"><span class="step__name">' + esc(s.step) + '</span>' +
-        '<span class="step__score num">' + s.score + ' / ' + s.max_score + '</span></div>' +
-        '<p class="step__reason">' + esc(s.reason) + ' ' + tag +
-        '<span class="tag tag--kp">' + esc(s.knowledge_point) + '</span></p>' +
-        evid + illegible + '</div>';
+      // 右侧那枚章：颜色 + 图标 + 读屏文本三重编码，色弱与读屏都能分辨得分状态
+      return '<div class="step ' + st[1] + '" data-reveal="' + (i * 45) + '">' +
+        '<span class="idx">' + (i + 1) + '</span>' +
+        '<div>' +
+          '<div class="t">' + esc(s.step) + ' ' + tag +
+            '<span class="tag tag--kp">' + esc(s.knowledge_point) + '</span></div>' +
+          '<div class="d">' + esc(s.reason) + '</div>' +
+          evid + illegible +
+        '</div>' +
+        '<span class="stamp stamp--' + STEP_STAMP[st[1]] + '" title="' + st[2] + '">' +
+          I(st[0], { size: 13, stroke: 2.2 }) +
+          '<span class="mono">' + s.score + ' / ' + s.max_score + '</span>' +
+          '<span class="sr-only">（' + st[2] + '）</span>' +
+        '</span>' +
+        '</div>';
     }).join('') + '</div>';
   }
 
-  // 置信度五因子 HTML（审卷面板用）
+  // 置信度五因子 HTML（结果页 / 审卷面板共用）
   function factorChipsHtml(r) {
     if (!r.confidence_factors) return '';
     return Object.keys(r.confidence_factors).map(function (k) {
       var w = FACTOR_WEIGHT[k];
       return '<span class="factor">' + esc(FACTOR_LABEL[k] || k) +
-        (w ? ' <em style="font-style:normal;color:var(--ink-faint);font-family:var(--font-mono);">&#215;' + w.toFixed(2) + '</em>' : '') +
+        (w ? ' <em class="factor__w">&#215;' + w.toFixed(2) + '</em>' : '') +
         ' <b>' + r.confidence_factors[k] + '</b></span>';
     }).join('');
   }
@@ -1413,52 +1440,54 @@
     }).join('');
 
     var ocrBlock = r.ocr_text
-      ? '<div class="hint" style="white-space:pre-wrap;font-family:var(--font-mono);font-size:12px;' +
-        'background:var(--paper-warm);border:1px solid var(--rule);border-radius:10px;padding:10px;' +
-        'margin-top:var(--sp-2);">' + esc(r.ocr_text) + '</div>'
-      : '<div class="hint">（内置样例 · 转写见结果页）</div>';
+      ? '<p class="pre-sm">' + esc(r.ocr_text) + '</p>'
+      : '<p class="hint">（内置样例 · 转写见结果页）</p>';
 
     $('#modal-root').innerHTML =
-      '<div class="mask" id="mask"><div class="dialog dialog--wide" role="dialog" aria-modal="true">' +
-      '<div class="sheet__head" style="margin-bottom:var(--sp-4);">' +
-        '<div><span class="kicker">Final Review</span>' +
-        '<h2 class="sheet__title">教师终审 · ' + esc(r.student_name) + '</h2></div>' +
-        '<button class="note__close" type="button" data-close="1">' + I('x', { size: 18 }) + '</button>' +
+      '<div class="mask" id="mask"><div class="dialog dialog--wide" role="dialog" aria-modal="true"' +
+      ' aria-labelledby="rv-title">' +
+      '<div class="dialog__head">' +
+        '<div><div class="kicker">Final Review</div>' +
+        '<h2 class="dialog__title" id="rv-title">教师终审 · ' + esc(r.student_name) + '</h2></div>' +
+        '<button class="dialog__close" type="button" data-close="1" aria-label="关闭">' +
+        I('x', { size: 18 }) + '</button>' +
       '</div>' +
-      '<p class="hint review-summary" style="margin:0;">' + esc(r.subject) + ' · ' + esc(r.question_title) +
-        ' ｜ AI 判分 <b class="num">' + r.ai_score + ' / ' + r.max_score +
-        '</b>，置信度 <b class="num">' + r.confidence.toFixed(1) + '</b>' +
-        (r.reviewed ? ' ｜ <span style="color:var(--riso-green);font-weight:600;">已终审</span>' : '') +
+      '<p class="sub" style="margin:0;">' + esc(r.subject) + ' · ' + esc(r.question_title) +
+        ' ｜ AI 判分 <b class="mono">' + r.ai_score + ' / ' + r.max_score +
+        '</b>，置信度 <b class="mono">' + r.confidence.toFixed(1) + '</b>' +
+        (r.reviewed ? ' ｜ <span class="reviewed-label">已终审</span>' : '') +
         '</p>' +
       '<div class="review-body">' +
         '<div>' +
-          '<h3>题目与标准答案</h3>' +
+          '<h3 class="block-title" style="margin-top:0;">题目与标准答案</h3>' +
           '<p class="hint">' + esc(r.question_text) + '</p>' +
-          '<p class="hint" style="color:var(--riso-green);font-weight:600;">标准答案：' +
+          '<p class="hint" style="color:var(--st-green);font-weight:600;">标准答案：' +
             esc(r.standard_answer) + '</p>' +
-          '<h3 class="mt-4">识别转写</h3>' + ocrBlock +
-          '<h3 class="mt-4">置信度因子</h3>' +
-          '<div class="factorwrap">' + factorChipsHtml(r) + '</div>' +
+          '<h3 class="block-title">识别转写</h3>' + ocrBlock +
+          '<h3 class="block-title">置信度因子</h3>' +
+          '<div class="factor-wrap">' + factorChipsHtml(r) + '</div>' +
         '</div>' +
         '<div>' +
-          '<h3>AI 逐步证据链</h3>' +
+          '<h3 class="block-title" style="margin-top:0;">AI 逐步证据链</h3>' +
           stepChainHtml(r.step_analysis) +
         '</div>' +
       '</div>' +
       '<div class="review-foot">' +
-        '<div style="display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:var(--sp-4);">' +
-          '<div><h3>终审分数</h3>' +
-          '<input type="number" id="rv-score" min="0" max="' + r.max_score + '" step="0.5" value="' +
-            baseScore + '"></div>' +
-          '<div><h3>错因标签改判 &#183; &#167;6.11 十类枚举</h3>' +
+        '<div class="review-form-grid">' +
+          '<div class="field"><label for="rv-score">终审分数</label>' +
+          '<input class="input" type="number" id="rv-score" min="0" max="' + r.max_score +
+            '" step="0.5" value="' + baseScore + '"></div>' +
+          '<div class="field"><label>错因标签改判 &#183; &#167;6.11 十类枚举</label>' +
           '<div class="tagpick" id="rv-tags">' + tags + '</div></div>' +
         '</div>' +
-        '<h3 class="mt-4">评语修订 · 留空则沿用 AI 评语</h3>' +
-        '<textarea id="rv-comment" rows="3" placeholder="' +
-          esc((r.ai_feedback || '').slice(0, 50)) + '…">' + esc(baseComment) + '</textarea>' +
-        '<div class="inline mt-4" style="justify-content:flex-end;">' +
+        '<div class="field" style="margin-top:12px;">' +
+          '<label for="rv-comment">评语修订 · 留空则沿用 AI 评语</label>' +
+          '<textarea class="textarea" id="rv-comment" rows="3" placeholder="' +
+            esc((r.ai_feedback || '').slice(0, 50)) + '…">' + esc(baseComment) + '</textarea>' +
+        '</div>' +
+        '<div class="detail-actions">' +
           '<button class="btn btn--ghost" type="button" data-close="1">取消</button>' +
-          '<button class="btn" type="button" id="rv-submit" data-id="' + esc(id) +
+          '<button class="btn btn--primary" type="button" id="rv-submit" data-id="' + esc(id) +
           '" data-max="' + r.max_score + '">' + I('check', { size: 15 }) + '提交终审</button>' +
         '</div>' +
       '</div></div></div>';
@@ -1495,6 +1524,7 @@
       body: JSON.stringify(payload)
     }).then(function (resp) {
       closeModal();
+      toast('已终审', untouched ? '按「确认」记录' : '分数 / 错因 / 评语已更新');
       showTeacherNote(resp);
       loadTeacher();
     }).catch(function (e) { alert('提交失败：' + e.message); });
@@ -1505,9 +1535,9 @@
      ====================================================================== */
 
   function severity(rate) {
-    if (rate >= 60) return 'var(--riso-red)';
-    if (rate >= 40) return 'var(--riso-amber)';
-    return 'var(--riso-green)';
+    if (rate >= 60) return 'var(--st-red)';
+    if (rate >= 40) return 'var(--st-yellow)';
+    return 'var(--st-green)';
   }
 
   function loadBoard() {
@@ -1516,24 +1546,25 @@
       var dist = d.distribution;
 
       var kpBars = d.weak_knowledge_points.map(function (w, i) {
-        return '<div class="bar"><span class="bar__l">' + esc(w.name) + '</span>' +
-          '<span class="bar__track"><span class="bar__fill" data-grow="' + w.error_rate +
-          '" data-delay="' + (i * 60) + '" style="background:' + severity(w.error_rate) + '"></span></span>' +
-          '<span class="bar__v">' + w.wrong + '/' + w.total + ' · ' + w.error_rate + '%</span></div>';
+        return '<div class="bar-row"><span>' + esc(w.name) + '</span>' +
+          '<span class="bar-track"><i data-grow="' + w.error_rate +
+          '" data-delay="' + (i * 60) + '" style="background:' + severity(w.error_rate) + '"></i></span>' +
+          '<b>' + w.wrong + '/' + w.total + ' · ' + w.error_rate + '%</b></div>';
       }).join('');
 
       var maxCount = Math.max.apply(null, [1].concat(d.error_tag_distribution.map(function (t) { return t.count; })));
       var tagBars = d.error_tag_distribution.map(function (t, i) {
-        return '<div class="bar"><span class="bar__l">' + esc(t.name) + '</span>' +
-          '<span class="bar__track"><span class="bar__fill" data-grow="' +
-          Math.round(t.count / maxCount * 100) + '" data-delay="' + (i * 55) + '"></span></span>' +
-          '<span class="bar__v">' + t.count + ' 次</span></div>';
+        return '<div class="bar-row"><span>' + esc(t.name) + '</span>' +
+          '<span class="bar-track"><i data-grow="' +
+          Math.round(t.count / maxCount * 100) + '" data-delay="' + (i * 55) + '"></i></span>' +
+          '<b>' + t.count + ' 次</b></div>';
       }).join('');
 
+      var SEG_CLS = { green: 'dist__g', yellow: 'dist__y', red: 'dist__r' };
       var seg = function (k) {
         if (!dist[k]) return '';
-        return '<span class="dist__seg" data-grow="' + dist[k + '_pct'] +
-          '" style="background:' + STATUS_VAR[k] + '">' + STATUS_TEXT[k] + ' ' + dist[k] + '</span>';
+        return '<span class="dist__seg ' + SEG_CLS[k] + '" data-grow="' + dist[k + '_pct'] +
+          '">' + STATUS_TEXT[k] + ' ' + dist[k] + '</span>';
       };
 
       var uploadNote = d.upload_count
@@ -1543,84 +1574,87 @@
 
       body.innerHTML = uploadNote +
         '<div class="sheet">' +
-          '<div class="sheet__head"><div><span class="kicker">Step 04 · Analytics</span>' +
-          '<h2 class="sheet__title">班级学情看板 · ' + esc(d.class_name) + '</h2></div>' +
-          '<span class="folio">04</span></div>' +
-          '<div class="kpis">' +
-            '<div class="kpi"><div class="kpi__k">参与作答</div><div class="kpi__v num" data-count="' + d.student_count + '">0</div></div>' +
-            '<div class="kpi"><div class="kpi__k">平均得分率</div><div class="kpi__v num" data-count="' + d.average_score_pct + '" data-digits="1" data-suffix="%">0</div></div>' +
-            '<div class="kpi"><div class="kpi__k">薄弱知识点</div><div class="kpi__v num" data-count="' + d.weak_knowledge_points.length + '">0</div></div>' +
-            '<div class="kpi"><div class="kpi__k">批改模式</div><div class="kpi__v is-text">' + (d.mode === 'llm' ? '真实 LLM' : 'Mock 规则引擎') + '</div></div>' +
+          '<div class="toolbar">' +
+            '<h3>班级学情 · ' + esc(d.class_name) + '</h3>' +
+            '<span class="spacer"></span>' +
+            '<span class="hint-inline">Step 04 · 根据本次批改结果实时聚合</span>' +
+          '</div>' +
+          '<div class="kpi-row">' +
+            '<div class="kpi"><div class="lab">参与作答</div><div class="val" data-count="' + d.student_count + '">0</div></div>' +
+            '<div class="kpi"><div class="lab">平均得分率</div><div class="val" data-count="' + d.average_score_pct + '" data-digits="1" data-suffix="%">0</div></div>' +
+            '<div class="kpi"><div class="lab">薄弱知识点</div><div class="val" data-count="' + d.weak_knowledge_points.length + '">0</div></div>' +
+            '<div class="kpi"><div class="lab">批改模式</div><div class="val is-text">' + (d.mode === 'llm' ? '真实 LLM' : 'Mock 规则引擎') + '</div></div>' +
           '</div>' +
         '</div>' +
 
         '<div class="sheet">' +
-          '<div class="sheet__head"><div><span class="kicker">Triage</span>' +
-          '<h2 class="sheet__title">红黄绿分流占比</h2></div></div>' +
+          '<div class="toolbar"><h3>红黄绿分流占比</h3></div>' +
           '<div class="dist">' + seg('green') + seg('yellow') + seg('red') + '</div>' +
           '<div class="legend">' +
-            '<span><i class="swatch" style="background:var(--riso-green)"></i>自动通过 ' + dist.green + ' 人（' + dist.green_pct + '%）</span>' +
-            '<span><i class="swatch" style="background:var(--riso-amber)"></i>教师确认 ' + dist.yellow + ' 人（' + dist.yellow_pct + '%）</span>' +
-            '<span><i class="swatch" style="background:var(--riso-red)"></i>转人工 ' + dist.red + ' 人（' + dist.red_pct + '%）</span>' +
+            '<span><i class="swatch-i" style="background:var(--st-green)"></i>自动通过 ' + dist.green + ' 人（' + dist.green_pct + '%）</span>' +
+            '<span><i class="swatch-i" style="background:var(--st-yellow)"></i>教师确认 ' + dist.yellow + ' 人（' + dist.yellow_pct + '%）</span>' +
+            '<span><i class="swatch-i" style="background:var(--st-red)"></i>转人工 ' + dist.red + ' 人（' + dist.red_pct + '%）</span>' +
+          '</div>' +
+        '</div>' +
+
+        '<div class="two-col">' +
+          '<div class="sheet">' +
+            '<div class="toolbar"><h3>知识点错误率</h3></div>' +
+            '<div class="bars">' + (kpBars || emptyBox('暂无数据')) + '</div>' +
+            '<div class="legend">' +
+              '<span><i class="swatch-i" style="background:var(--st-green)"></i>&lt; 40%</span>' +
+              '<span><i class="swatch-i" style="background:var(--st-yellow)"></i>40% &#8211; 60%</span>' +
+              '<span><i class="swatch-i" style="background:var(--st-red)"></i>&#8805; 60%</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="sheet">' +
+            '<div class="toolbar"><h3>错因分布</h3></div>' +
+            '<div class="bars">' + (tagBars || emptyBox('暂无数据')) + '</div>' +
           '</div>' +
         '</div>' +
 
         '<div class="sheet">' +
-          '<div class="sheet__head"><div><span class="kicker">Knowledge</span>' +
-          '<h2 class="sheet__title">知识点错误率</h2></div></div>' +
-          '<div class="bars">' + (kpBars || emptyBox('暂无数据')) + '</div>' +
-          '<div class="legend">' +
-            '<span><i class="swatch" style="background:var(--riso-green)"></i>&lt; 40%</span>' +
-            '<span><i class="swatch" style="background:var(--riso-amber)"></i>40% – 60%</span>' +
-            '<span><i class="swatch" style="background:var(--riso-red)"></i>&#8805; 60%</span>' +
-          '</div>' +
-        '</div>' +
-
-        '<div class="sheet">' +
-          '<div class="sheet__head"><div><span class="kicker">Error Taxonomy</span>' +
-          '<h2 class="sheet__title">错因分布 · &#167;6.11 错因标签</h2></div></div>' +
-          '<div class="bars">' + (tagBars || emptyBox('暂无数据')) + '</div>' +
-        '</div>' +
-
-        '<div class="sheet">' +
-          '<div class="sheet__head"><div><span class="kicker">Next Lesson</span>' +
-          '<h2 class="sheet__title">下节课讲评建议</h2></div></div>' +
+          '<div class="toolbar"><h3>下节课讲评建议</h3></div>' +
           '<ul class="sugg">' + d.teaching_suggestions.map(function (s) {
             return '<li>' + I('lightbulb', { size: 16 }) + '<span>' + esc(s) + '</span></li>';
           }).join('') + '</ul>' +
         '</div>' +
 
         '<div class="sheet">' +
-          '<div class="sheet__head"><div><span class="kicker">Courseware</span>' +
-          '<h2 class="sheet__title">讲评课件大纲</h2></div></div>' +
-          '<p class="hint">基于本次批改数据自动生成结构化大纲（共性错因 + 典型错例证据 + 分层任务 + 复测建议），' +
-          '可一键复制为讲评课件底稿，粘贴至希沃白板、飞书文档等备课环境。</p>' +
-          '<div class="inline mt-4">' +
-            '<button class="btn" type="button" id="gen-outline">' + I('bookOpen', { size: 15 }) + '生成讲评大纲</button>' +
-            '<button class="btn btn--ghost" type="button" id="copy-outline" style="display:none;">' +
+          '<div class="toolbar">' +
+            '<h3>讲评课件大纲</h3>' +
+            '<span class="spacer"></span>' +
+            '<button class="btn btn--primary btn--sm" type="button" id="gen-outline">' +
+              I('bookOpen', { size: 15 }) + '生成讲评大纲</button>' +
+            '<button class="btn btn--ghost btn--sm" type="button" id="copy-outline" style="display:none;">' +
             I('copy', { size: 15 }) + '<span>复制 Markdown</span></button>' +
           '</div>' +
+          '<p class="hint">基于本次批改数据自动生成结构化大纲（共性错因 + 典型错例证据 + 分层任务 + 复测建议），' +
+          '可一键复制为讲评课件底稿，粘贴至希沃白板、飞书文档等备课环境。</p>' +
           '<div id="outline-body" class="mt-4"></div>' +
         '</div>' +
 
         '<div class="sheet">' +
-          '<div class="sheet__head"><div><span class="kicker">Student Profile</span>' +
-          '<h2 class="sheet__title">学生个人错因画像</h2></div></div>' +
-          '<div class="inline">' +
-            '<select id="stu-select" style="max-width:220px;"></select>' +
-            '<span class="hint" style="flex:1;min-width:220px;">跨题聚合本次批改 + 历史错因时间线' +
-            '（历史为<b>模拟数据</b>，用于演示画像形态）</span>' +
+          '<div class="toolbar">' +
+            '<h3>学生个人错因画像</h3>' +
+            '<span class="spacer"></span>' +
+            '<select class="select select--sm" id="stu-select" style="max-width:200px;" aria-label="选择学生"></select>' +
           '</div>' +
+          '<p class="hint">跨题聚合本次批改 + 历史错因时间线（历史为<b>模拟数据</b>，用于演示画像形态）。</p>' +
           '<div id="profile-body" class="mt-4">' + emptyBox('选择学生查看画像', 'users') + '</div>' +
         '</div>' +
 
         '<div class="sheet">' +
-          '<div class="sheet__head"><div><span class="kicker">Feishu · &#167;13.2</span>' +
-          '<h2 class="sheet__title">飞书协同</h2></div></div>' +
-          '<p class="hint">把本班学情推到飞书第二现场：机器人互动卡片提醒教师审核（集成点二），' +
-          '多维表格沉淀学情台账并由 AI 字段捷径自动生成错因摘要与学习建议（集成点一 · 主用飞书 AI 能力）。</p>' +
-          '<div class="inline mt-4">' +
-            '<button class="btn" type="button" id="feishu-push">' + I('send', { size: 15 }) + '推送审核提醒卡片</button>' +
+          '<div class="toolbar">' +
+            '<div>' +
+              '<h3>飞书协同 · &#167;13.2</h3>' +
+              '<p class="sub" style="margin:4px 0 0;">审核提醒推送到群；学情写入多维表格，表内 AI 字段生成摘要与建议</p>' +
+            '</div>' +
+          '</div>' +
+          '<p class="hint">机器人互动卡片提醒教师审核（集成点二），多维表格沉淀学情台账并由 AI 字段捷径' +
+          '自动生成错因摘要与学习建议（集成点一 · 主用飞书 AI 能力）。</p>' +
+          '<div class="toolbar" style="margin:14px 0 0;">' +
+            '<button class="btn btn--primary" type="button" id="feishu-push">' + I('send', { size: 15 }) + '推送审核提醒卡片</button>' +
             '<button class="btn btn--ghost" type="button" id="feishu-sync">' + I('table', { size: 15 }) + '同步多维表格学情台账</button>' +
           '</div>' +
           '<div id="feishu-result" class="mt-5"></div>' +
@@ -1665,10 +1699,10 @@
       var freq = p.error_tag_freq || [];
       var fmax = Math.max.apply(null, [1].concat(freq.map(function (t) { return t.count; })));
       var freqBars = freq.map(function (t, i) {
-        return '<div class="bar"><span class="bar__l">' + esc(t.name) + '</span>' +
-          '<span class="bar__track"><span class="bar__fill" data-grow="' +
-          Math.round(t.count / fmax * 100) + '" data-delay="' + (i * 55) + '"></span></span>' +
-          '<span class="bar__v">' + t.count + ' 次</span></div>';
+        return '<div class="bar-row"><span>' + esc(t.name) + '</span>' +
+          '<span class="bar-track"><i data-grow="' +
+          Math.round(t.count / fmax * 100) + '" data-delay="' + (i * 55) + '"></i></span>' +
+          '<b>' + t.count + ' 次</b></div>';
       }).join('') || '<div class="muted">本次无错因记录</div>';
 
       var tl = (p.timeline || []).map(function (item) {
@@ -1681,18 +1715,21 @@
         var score = (item.score_pct != null) ? ' · 得分率 ' + item.score_pct + '%' : '';
         return '<li' + (item.simulated ? ' class="is-sim"' : '') + '>' +
           '<b>' + esc(item.assignment) + '</b>' + (item.subject ? ' · ' + esc(item.subject) : '') +
-          score + chip + '<div class="mt-4" style="margin-top:5px;">' + tags + '</div></li>';
+          score + chip + '<div class="factor-wrap" style="margin-top:5px;">' + tags + '</div></li>';
       }).join('');
 
       body.innerHTML =
-        '<div class="kpis">' +
-          '<div class="kpi"><div class="kpi__k">本次作答</div><div class="kpi__v num">' + p.submission_count + '</div></div>' +
-          '<div class="kpi"><div class="kpi__k">平均得分率</div><div class="kpi__v num">' + p.average_score_pct + '%</div></div>' +
-          '<div class="kpi"><div class="kpi__k">薄弱知识点</div><div class="kpi__v num">' + (p.weak_knowledge_points || []).length + '</div></div>' +
+        '<div class="kpi-row" style="grid-template-columns:repeat(3,1fr);">' +
+          '<div class="kpi"><div class="lab">本次作答</div><div class="val">' + p.submission_count + '</div></div>' +
+          '<div class="kpi"><div class="lab">平均得分率</div><div class="val">' + p.average_score_pct + '%</div></div>' +
+          '<div class="kpi"><div class="lab">薄弱知识点</div><div class="val">' + (p.weak_knowledge_points || []).length + '</div></div>' +
         '</div>' +
-        '<h3>错因频次 · 本次作业</h3><div class="bars">' + freqBars + '</div>' +
-        '<h3>错因演变时间线</h3><ul class="timeline">' + tl + '</ul>' +
-        '<h3>趋势判断</h3><div class="quoteblock">' + esc(p.trend_summary || '') + '</div>';
+        '<div class="profile-grid" style="margin-top:14px;">' +
+          '<div class="panel"><h4>错因频次 · 本次作业</h4><div class="bars">' + freqBars + '</div></div>' +
+          '<div class="panel"><h4>趋势判断</h4><p class="quote" style="border:0;background:none;padding:0;">' +
+            esc(p.trend_summary || '') + '</p></div>' +
+        '</div>' +
+        '<h3 class="block-title">错因演变时间线</h3><ul class="timeline">' + tl + '</ul>';
       Icons.hydrate(body);
       $$('[data-grow]', body).forEach(function (el) {
         M.growTo(el, Number(el.dataset.grow), 100 + (Number(el.dataset.delay) || 0));
@@ -1709,8 +1746,9 @@
     Icons.hydrate(body);
     api('/api/lecture-outline').then(function (d) {
       OUTLINE_MD = d.outline_markdown || '';
-      body.innerHTML = '<div class="pre">' + esc(OUTLINE_MD) + '</div>';
+      body.innerHTML = '<div class="outline">' + esc(OUTLINE_MD) + '</div>';
       $('#copy-outline').style.display = '';
+      toast('已生成', '讲评大纲已更新');
     }).catch(function (e) {
       body.innerHTML = emptyBox('生成失败：' + e.message, 'alert');
       Icons.hydrate(body);
@@ -1725,6 +1763,7 @@
     };
     navigator.clipboard.writeText(OUTLINE_MD).then(function () {
       btn.innerHTML = I('check', { size: 15 }) + '<span>已复制</span>';
+      toast('已复制', '可直接粘贴到备课文档');
       setTimeout(restore, 2000);
     }).catch(function () { alert('复制失败，请手动选择文本复制'); });
   }
@@ -1744,8 +1783,30 @@
     return esc(s).replace(/\n/g, '<br>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
   }
 
-  function pushFeishu() {
+  /* 飞书结果区是两栏常驻：左栏机器人卡片（推送产出），右栏多维表格台账（同步产出）。
+     两个按钮各写各的一栏，都点过之后就是设计稿里那张「飞书第二现场」全景图；
+     只点一个时空栏用 :empty 收掉，不会留半幅空白。 */
+  function feishuSlot(which) {
     var box = $('#feishu-result');
+    if (!box) return null;
+    if (!box.classList.contains('feishu-grid')) {
+      box.className = 'feishu-grid';
+      box.innerHTML = '<div class="feishu-col feishu-col--card"></div>' +
+                      '<div class="feishu-col feishu-col--base"></div>';
+    }
+    return box.querySelector(which === 'card' ? '.feishu-col--card' : '.feishu-col--base');
+  }
+
+  /* 接口原文收进折叠块。评委要验「这是真调用不是画的」时一点即开，
+     平时不把一屏 JSON 糊在演示界面上。 */
+  function rawJson(label, d) {
+    return '<details class="raw"><summary>' + esc(label) + '</summary>' +
+      '<div class="pre">' + esc(JSON.stringify(d, null, 2)) + '</div></details>';
+  }
+
+  function pushFeishu() {
+    var box = feishuSlot('card');
+    if (!box) return;
     box.innerHTML = spinner('推送中');
     Icons.hydrate(box);
     var meta = activeFolderMeta();
@@ -1761,27 +1822,27 @@
       if (card) {
         var header = (card.header && card.header.title) ? card.header.title.content : '飞书互动卡片';
         var parts = (card.elements || []).map(function (el) {
-          if (el.tag === 'div' && el.text) return '<div style="margin:6px 0;">' + larkMd(el.text.content) + '</div>';
+          if (el.tag === 'div' && el.text) return '<p>' + larkMd(el.text.content) + '</p>';
           if (el.tag === 'hr') return '<hr>';
           if (el.tag === 'action' && el.actions) {
             var a = el.actions[0];
-            return '<div class="mt-4"><span class="btn btn--sm" style="pointer-events:none;">' +
-              esc(a.text.content) + I('arrowRight', { size: 13 }) + '</span>' +
-              '<p class="hint" style="margin-top:5px;">按钮链接（占位）：' + esc(a.url) + '</p></div>';
+            return '<div class="mt-4"><span class="larkcard__cta" style="pointer-events:none;">' +
+              esc(a.text.content) + '</span></div>';
           }
-          if (el.tag === 'note' && el.elements) return '<p class="hint mt-4">' + esc(el.elements[0].content) + '</p>';
+          if (el.tag === 'note' && el.elements) return '<p class="larkcard__note">' + esc(el.elements[0].content) + '</p>';
           return '';
         }).join('');
         cardHtml = '<div class="larkcard"><div class="larkcard__head">' + esc(header) + '</div>' +
           '<div class="larkcard__body">' + parts + '</div></div>';
       }
       box.innerHTML =
-        banner(d.mode, '演示模式：未配置飞书凭据，以下为将推送的内容', '已真实推送到飞书自定义机器人') +
-        '<p class="hint">接口消息：' + esc(d.message || '') + '</p>' +
-        '<h3>飞书互动卡片预览</h3>' + cardHtml +
-        '<h3>接口返回 JSON · msg_type=interactive</h3>' +
-        '<div class="pre">' + esc(JSON.stringify(d, null, 2)) + '</div>';
+        '<h3 class="block-title" style="margin-top:0;">机器人审核提醒卡片</h3>' +
+        banner(d.mode, '演示模式：未配置飞书凭据，以下为将推送的卡片', '已真实推送到飞书群') +
+        cardHtml +
+        rawJson('接口返回 · msg_type=interactive', d);
       Icons.hydrate(box);
+      toast(d.mode === 'demo' ? '已生成卡片' : '已推送', d.mode === 'demo'
+        ? '未配置飞书凭据，展示的是将推送的内容' : '审核提醒卡片已发送到群');
     }).catch(function (e) {
       box.innerHTML = emptyBox('推送失败：' + e.message, 'alert');
       Icons.hydrate(box);
@@ -1789,7 +1850,8 @@
   }
 
   function syncFeishu() {
-    var box = $('#feishu-result');
+    var box = feishuSlot('base');
+    if (!box) return;
     box.innerHTML = spinner('同步中');
     Icons.hydrate(box);
     api('/api/feishu/sync-base', { method: 'POST' }).then(function (d) {
@@ -1800,18 +1862,37 @@
         var head = cols.map(function (c) { return '<th>' + c + '</th>'; }).join('');
         var rows = records.map(function (r) {
           var f = r.fields || {};
-          return '<tr>' + cols.map(function (c) { return '<td>' + esc(f[c]) + '</td>'; }).join('') + '</tr>';
+          return '<tr>' + cols.map(function (c) {
+            var v = esc(f[c]);
+            // 分流那列在台账里也该是章，不是一个灰字
+            if (c === '分流状态') {
+              var k = { '自动通过': 'g', '教师确认': 'y', '转人工': 'r' }[f[c]];
+              if (k) v = '<span class="stamp stamp--' + k + '">' + v + '</span>';
+            }
+            return '<td>' + v + '</td>';
+          }).join('') + '</tr>';
         }).join('');
-        tableHtml = '<h3>多维表格《学情台账》记录预览 · ' + records.length + ' 条</h3>' +
-          '<div class="tablewrap"><table><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-          '<p class="hint mt-4">写入后可对「错因标签」「得分 / 满分」等列配置飞书 <b>AI 字段捷径</b>，' +
+        tableHtml =
+          '<div class="table-wrap"><table class="base-table"><thead><tr>' + head + '</tr></thead>' +
+          '<tbody>' + rows + '</tbody></table></div>' +
+          '<p class="larkcard__note">写入后可对「错因标签」「得分 / 满分」等列配置飞书 <b>AI 字段捷径</b>，' +
           '逐行自动生成「一句话错因摘要」与「个性化学习建议」（设计方案 &#167;13.2 集成点一）。</p>';
+      } else if (d.record_count) {
+        // 兜底：拿到了条数但没拿到明细（老版本服务端 live 模式不返回 records）。
+        // 不能什么都不显示——那看着像同步失败了。
+        tableHtml = '<p class="hint">已写入 <b class="mono">' + d.record_count +
+          '</b> 条记录（本次未返回明细，可展开下方接口返回核对）。</p>';
+      } else {
+        tableHtml = emptyBox('本次没有可同步的批改记录。先批改几份作业再同步台账。', 'table');
       }
       box.innerHTML =
+        '<h3 class="block-title" style="margin-top:0;">多维表格《学情台账》 · ' + records.length + ' 条</h3>' +
         banner(d.mode, '演示模式：未配置飞书凭据，以下为将写入的记录', '已真实写入飞书多维表格《学情台账》') +
-        '<p class="hint">接口消息：' + esc(d.message || '') + '</p>' + tableHtml +
-        '<h3>接口返回 JSON</h3><div class="pre">' + esc(JSON.stringify(d, null, 2)) + '</div>';
+        tableHtml +
+        rawJson('接口返回 · bitable records', d);
       Icons.hydrate(box);
+      toast(d.mode === 'demo' ? '已生成台账' : '已同步', d.mode === 'demo'
+        ? '未配置飞书凭据，展示的是将写入的记录' : '学情台账已写入多维表格');
     }).catch(function (e) {
       box.innerHTML = emptyBox('同步失败：' + e.message, 'alert');
       Icons.hydrate(box);
@@ -1855,12 +1936,12 @@
     var dz = $('#dropzone');
     ['dragenter', 'dragover'].forEach(function (ev) {
       dz.addEventListener(ev, function (e) {
-        e.preventDefault(); dz.classList.add('is-hover');
+        e.preventDefault(); dz.classList.add('is-over');
       });
     });
     ['dragleave', 'drop'].forEach(function (ev) {
       dz.addEventListener(ev, function (e) {
-        e.preventDefault(); dz.classList.remove('is-hover');
+        e.preventDefault(); dz.classList.remove('is-over');
       });
     });
     dz.addEventListener('drop', function (e) {
@@ -1875,7 +1956,7 @@
     document.addEventListener('click', function (e) {
       var t = e.target;
       var fcard = t.closest && t.closest('[data-folder]');
-      if (fcard && fcard.classList.contains('folder-card')) {
+      if (fcard && fcard.classList.contains('folder')) {
         selectFolder(fcard.dataset.folder);
         return;
       }
