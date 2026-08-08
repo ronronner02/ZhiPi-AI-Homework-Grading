@@ -229,9 +229,30 @@ async def _lifespan(_app):
 
 app = FastAPI(title="智批π · AI 智能作业批改系统 Demo", lifespan=_lifespan)
 
+class _CachedStatic(StaticFiles):
+    """给静态资源补上 Cache-Control。
+
+    StaticFiles 默认只发 ETag / Last-Modified，不发 Cache-Control，浏览器
+    于是自行启发式决定缓存多久——可能压根不回来问。首页引用已带 ?v=<指纹>，
+    内容一变 URL 就变，所以：
+      带 ?v= 的  → 可以长缓存（一年、immutable），换版靠换 URL；
+      不带 ?v= 的 → 只许协商缓存（no-cache），每次回来问一句。
+    后者是给直接手敲 /static/... 的情形留的保险。
+    """
+
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        qs = scope.get("query_string") or b""
+        if b"v=" in qs:
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 # 前端静态资源。目录内不含任何外部引用（图标为内联 SVG、字体走系统字体），
 # 因此挂载后整站仍然断网可用。
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount("/static", _CachedStatic(directory=str(STATIC_DIR)), name="static")
 
 
 def current_mode() -> str:
@@ -507,11 +528,42 @@ def healthz():
     return {"status": "ok", "mode": current_mode()}
 
 
-_index_cache = {"mtime": 0.0, "html": ""}
+_index_cache = {"key": None, "html": ""}
+
+# 需要打版本号的静态资源。顺序无关，按出现位置就地替换。
+_ASSET_PATHS = (
+    "/static/css/tokens.css",
+    "/static/css/app.css",
+    "/static/js/icons.js",
+    "/static/js/motion.js",
+    "/static/js/app.js",
+)
+
+
+def _asset_stamp(rel: str) -> str:
+    """按「mtime + 体积」算一个短指纹。内容一变，URL 就变。
+
+    不算文件内容哈希：首页是每请求都会走这个函数的热路径，读 5 个文件
+    算摘要没必要。mtime 秒级 + 字节数已经足够——同一秒内改动且体积
+    分毫不差才会撞，本地改代码不会这么巧。
+    """
+    p = STATIC_DIR / rel.replace("/static/", "", 1)
+    try:
+        st = p.stat()
+    except OSError:
+        return "0"
+    return "%x%x" % (int(st.st_mtime), st.st_size)
 
 
 def _index_html() -> str:
-    """读取前端入口页，按 mtime 缓存（改完前端刷新即可，不必重启）。
+    """读取前端入口页，给静态资源 URL 打上版本号，按指纹缓存。
+
+    为什么必须打版本号：/static 由 StaticFiles 提供，只发 ETag 与
+    Last-Modified，**没有 Cache-Control**。浏览器于是按启发式规则自行
+    决定缓存多久，可能压根不回来问。而首页 HTML 是按 mtime 每次读盘的，
+    于是出现最坏的组合：**新 HTML + 旧 CSS/JS**。新骨架的类名撞上旧样式表，
+    看起来像「界面变回旧版了」，其实比旧版更糟，是两版错配。
+    手机上尤其明显——桌面硬刷过，手机没有。
 
     刻意不用 FileResponse：FastAPI 只把 Depends 里注入的 Response 头合并进
     「返回数据」的路由，直接返回 Response 对象时那些头会被丢掉——而首页
@@ -520,16 +572,27 @@ def _index_html() -> str:
     path = STATIC_DIR / "index.html"
     if not path.exists():
         raise HTTPException(status_code=500, detail="前端资源缺失：static/index.html")
-    mtime = path.stat().st_mtime
-    if _index_cache["mtime"] != mtime:
-        _index_cache["html"] = path.read_text(encoding="utf-8")
-        _index_cache["mtime"] = mtime
+
+    stamps = {rel: _asset_stamp(rel) for rel in _ASSET_PATHS}
+    key = (path.stat().st_mtime, tuple(sorted(stamps.items())))
+    if _index_cache["key"] != key:
+        html = path.read_text(encoding="utf-8")
+        for rel, stamp in stamps.items():
+            # 只替换裸路径；已带 ?v= 的不重复加
+            html = html.replace('"%s"' % rel, '"%s?v=%s"' % (rel, stamp))
+        _index_cache["html"] = html
+        _index_cache["key"] = key
     return _index_cache["html"]
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(session: dict = Depends(demo_session)):
-    """返回单页前端（顺带下发演示会话 cookie）。"""
+def index(response: Response, session: dict = Depends(demo_session)):
+    """返回单页前端（顺带下发演示会话 cookie）。
+
+    首页必须不缓存：它承载着带指纹的资源 URL，缓存住首页就等于把旧
+    指纹钉死，后面的版本号机制全部失效。
+    """
+    response.headers["Cache-Control"] = "no-cache, must-revalidate"
     return _index_html()
 
 
