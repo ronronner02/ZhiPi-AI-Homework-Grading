@@ -13,6 +13,11 @@
  *            require('child_process').spawnSync('node',['tools/probe.mjs','--eval',e],{stdio:'inherit'})"
  * 或直接把文件内容作为 --eval 传给 probe.mjs。
  *
+ * **要跑两遍**，两个视口各两遍：
+ *   带 --raw  → 停在首屏，验「开始体验」按钮真的点得到
+ *   不带      → 进工作台，验外壳、文件夹、链路清单
+ * probe 默认会自动点进应用，所以不加 --raw 时首屏按钮根本不在视口里，验不到。
+ *
  * bad 数组为空即通过。
  */
 // probe.mjs 会把整段包进 (function(){ ... })()，所以这里直接 return。
@@ -33,6 +38,106 @@ return (function () {
     }
     return info;
   }
+
+  /* ---- 关键按钮必须「点得到」，不只是「在那儿」 --------------------------
+     量盒子查不出遮挡：被压住的按钮尺寸、可见性、位置全都正常。
+     只有拿真实坐标问 elementFromPoint 才知道那个点上到底是谁。
+     b.click() 也测不出来——它按元素派发，直接绕过遮挡层。
+
+     踩过的实例：Hero 单列断点只重置了 grid-column 没重置 grid-row，
+     .hero-side（z-index:3 的不透明卡片）与 .hero-copy 叠在同一网格单元，
+     把「开始体验」按钮整个盖住，移动端由此完全进不去应用。 */
+  function clickable(sel, label) {
+    var el = document.querySelector(sel);
+    if (!el) { out.bad.push(label + ' 找不到 ' + sel); return; }
+    var r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) {
+      out.bad.push(label + ' 盒子塌了，无法点击 ' + sel);
+      return;
+    }
+    // 先滚进视口再问：视口外的点 elementFromPoint 一律返回 null
+    if (r.bottom < 0 || r.top > window.innerHeight) {
+      el.scrollIntoView({ block: 'center' });
+      r = el.getBoundingClientRect();
+    }
+    var hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!(hit === el || el.contains(hit))) {
+      out.bad.push(label + ' 被遮挡：' + sel + ' 中心点上是 ' +
+        (hit ? (hit.tagName + '.' + (typeof hit.className === 'string' ? hit.className : '')) : 'null') +
+        '（盒子本身正常，' + Math.round(r.width) + '×' + Math.round(r.height) + '）');
+    } else {
+      out.ok.push(label + ' 可点击');
+    }
+  }
+
+  /* 分两种运行态。probe 默认会自动点「开始体验」进应用；带 --raw 则停在首屏。
+     两种态下该查的东西完全不同——在 raw 态里工作台是 display:none，
+     所有外壳元素都量成 0×0，若不分流会得到一堆假报警。 */
+  var stage = document.querySelector('#stage');
+  var onHero = stage && getComputedStyle(stage).display !== 'none';
+
+  if (onHero) {
+    out.counts.mode = 'raw · 首屏';
+    clickable('#enter-btn', '首屏进入按钮');
+
+    // 首屏自身的几处易碎点
+    box('.hero', 'hero');
+    box('.hero-copy', 'hero-copy');
+    box('.hero-side', 'hero-side');
+
+    // hero-copy 与 hero-side 不能重叠：重叠就说明单列断点漏了 grid-row，
+    // 上层那张不透明卡片会把进入按钮压住（本项目真实事故）
+    var hc = document.querySelector('.hero-copy');
+    var hs = document.querySelector('.hero-side');
+    if (hc && hs) {
+      var a = hc.getBoundingClientRect(), b2 = hs.getBoundingClientRect();
+      var overlap = !(b2.bottom < a.top || b2.top > a.bottom) &&
+                    !(b2.right < a.left || b2.left > a.right);
+      out.counts.heroOverlap = overlap;
+      if (overlap) {
+        out.bad.push('hero-copy 与 hero-side 重叠 ' +
+          Math.round(Math.min(a.bottom, b2.bottom) - Math.max(a.top, b2.top)) +
+          'px（单列断点是否漏了 grid-row:auto？）');
+      }
+    }
+
+    // 品牌不该被挤到换行
+    var brand = document.querySelector('.hero-top .brand');
+    if (brand) {
+      var brh = Math.round(brand.getBoundingClientRect().height);
+      out.counts.brandH = brh;
+      if (brh > 44) out.bad.push('品牌换行了（高 ' + brh + 'px），被 meta 标签挤的？');
+    }
+
+    // 三色计数应在同一行
+    var stats = document.querySelectorAll('.stat');
+    if (stats.length) {
+      var tops = {};
+      stats.forEach(function (s) { tops[Math.round(s.getBoundingClientRect().top)] = 1; });
+      out.counts.statRows = Object.keys(tops).length;
+      if (Object.keys(tops).length > 1) {
+        out.bad.push('三色计数折成 ' + Object.keys(tops).length + ' 行');
+      }
+      stats.forEach(function (s) {
+        var sp = s.querySelector('span');
+        if (sp && sp.scrollWidth > sp.clientWidth + 1) out.bad.push('计数标签被裁：' + sp.textContent);
+      });
+    }
+
+    var de0 = document.documentElement;
+    out.counts.scrollW = de0.scrollWidth;
+    out.counts.clientW = de0.clientWidth;
+    if (de0.scrollWidth > de0.clientWidth + 2) {
+      out.bad.push('首屏横向溢出 ' + (de0.scrollWidth - de0.clientWidth) + 'px');
+    }
+    return out;      // raw 态到此为止，不碰工作台
+  }
+
+  out.counts.mode = '工作台（首屏按钮未验，需 --raw 单跑一遍）';
+  // 工作台里几个会被遮挡影响的主操作
+  clickable('.tab[data-tab="submit"]', '页签 01');
+  clickable('#reset-btn', '重置按钮');
+  clickable('#folder-create-btn', '新建文件夹');
 
   // ---- 外壳 ----
   box('.app-shell', 'app-shell');
