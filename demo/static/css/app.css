@@ -310,7 +310,14 @@ hr { border: 0; border-top: 1px solid var(--rule-soft); margin: 14px 0; }
   font-size: 0.9rem;
   font-weight: 600;
 }
-.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+/* 并排两栏。栏内的 .sheet 必须清掉自身外边距，改由 gap 统一管间距：
+   .sheet 默认带 margin-bottom:16px，而 .sheet:last-child 又置 0——
+   在这里右栏恰好是 :last-child，于是左栏留 16px、右栏留 0。grid 会把
+   两栏拉到同一行高，结果右栏的盒子比左栏高 16px、下边框多探出 16px，
+   正好压到下一张 sheet 上。两栏等高看着是对齐问题，根因在这条差值。 */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.two-col > .sheet { margin-bottom: 0; }
+.two-col:last-child { margin-bottom: 0; }
 
 /* --------------------------------------------------------------------------
    4. 按钮
