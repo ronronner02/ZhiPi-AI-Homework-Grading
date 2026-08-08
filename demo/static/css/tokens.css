@@ -32,6 +32,15 @@
   --st-green:     var(--riso-green);
   --st-yellow:    var(--riso-amber);
   --st-red:       var(--riso-red);
+  --st-green-lt:  var(--riso-green-lt);
+  --st-yellow-lt: var(--riso-amber-lt);
+  --st-red-lt:    var(--riso-red-lt);
+
+  /* 系统反馈色（DESIGN §2.4）：与分流三色**分离**。
+     表单校验失败用它，不用 --st-red——否则「这道题转人工」和「这个输入框填错了」
+     在界面上同色，读成同一件事。 */
+  --err:          #B42318;
+  --err-lt:       #FEF3F2;
 
   /* 文件夹专色：统一走主强调蓝，系统夹与自建夹同色。
      刻意**不用**红/黄/绿三色——那三色在本系统里是分流语义（人工/确认/通过），
@@ -45,6 +54,9 @@
      纵深关系整个反过来，夹子看着像内外翻了面。 */
   --folder-tint:      #B3BBE4;           /* 空夹前袋 */
   --folder-tint-deep: #9AA3D2;           /* 空夹后板：仍比前袋深 */
+  /* 新 UI 稿用的短名，指回上面的现名（DESIGN §2.6：保持现名，便于回写） */
+  --folder-deep:      var(--folder-ink-deep);
+  --folder-soft:      var(--folder-ink-soft);
 
   /* ---- 字体 -------------------------------------------------------------- */
   /* 拉丁衬线放在 CJK 之前，让中英混排时英文走 Times、中文走宋体 */
@@ -77,6 +89,7 @@
   --gutter: clamp(12px, 1.6vw, 24px);
   --margin: clamp(16px, 4.2vw, 72px);
   --maxw: 1440px;
+  --max: var(--maxw);           /* 新 UI 稿用的短名 */
 
   --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
   --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 72px; --sp-9: 112px;
@@ -93,6 +106,7 @@
   --ease-paper:   cubic-bezier(.16, .84, .28, 1);   /* 纸张滑移：快出慢收 */
   --ease-ink:     cubic-bezier(.62, .02, .2, 1);    /* 油墨渗透 */
   --ease-out-ui:  cubic-bezier(0.23, 1, 0.32, 1);  /* 通用 UI 出场 */
+  --ease-out:     var(--ease-out-ui);               /* 新 UI 稿用的短名 */
   --ease-move:    cubic-bezier(0.77, 0, 0.175, 1);  /* 位移动效 */
   /* dur-2/3 略收：日用反馈更干脆；dur-4 仍留给 Hero 叙事 */
   --dur-1: 160ms;
@@ -109,6 +123,12 @@
 
   --shadow-lift: 0 1px 0 var(--paper-deep), 0 10px 26px -18px rgba(22,19,14,.5);
   --shadow-sheet: 2px 3px 0 var(--paper-deep), 6px 10px 28px -14px rgba(22,19,14,.42);
+  --shadow-pop: 0 16px 48px rgba(22, 19, 14, .12);   /* 弹层：唯一允许的大投影 */
+
+  /* 吸顶栏实测高度，由 app.js 的 syncMastheadHeight() 写入（量的是 .masthead
+     整体：品牌行 + 页签行）。这里给的是兜底值——五处 scrollIntoView 的落点
+     靠它做 scroll-margin-top，JS 还没量到时不能是 0，否则首次跳转会被整条盖住。 */
+  --masthead-h: 96px;
 }
 
 /* 尊重系统的减弱动效设置：把位移与旋转类动画全部关掉，只保留必要的淡入 */
