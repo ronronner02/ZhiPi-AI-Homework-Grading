@@ -1661,11 +1661,26 @@ input:focus, select:focus, textarea:focus {
    14. 窄屏
    -------------------------------------------------------------------------- */
 @media (max-width: 900px) {
-  /* Hero 单列（DESIGN §9.1） */
+  /* Hero 单列（DESIGN §9.1）
+     grid-row 必须一起重置成 auto。桌面把 .hero-copy 与 .hero-side 都钉在
+     grid-row:1（靠 grid-column 分左右），单列布局只改 grid-column 的话，
+     两块仍留在同一个网格单元里叠着——实测重叠 238px，而 .hero-side 是
+     z-index:3 的不透明卡片，正好把 .hero-copy 底部的「开始体验」按钮整个盖住。
+     按钮尺寸、可见性、位置全都正常，只是点不到、也看不见：
+     elementFromPoint 在按钮中心取到的是 .proof-row。
+     这个漏项是从设计稿带过来的——静态稿里按钮不承担导航，没人发现。 */
   .hero { padding: 20px 16px 28px; min-height: 0; }
   .hero-grid { grid-template-columns: 1fr; gap: 20px; min-height: 0; }
-  .hero-copy, .hero-side { grid-column: 1; }
+  .hero-copy, .hero-side {
+    grid-column: 1;
+    grid-row: auto;
+    align-self: auto;
+  }
   .hero-side { max-width: none; justify-self: stretch; }
+
+  /* 品牌不许被 meta 标签挤到换行。900-600 之间横排仍放得下，
+     只需禁止收缩；真正要换轴是 600 以下（见下一段）。 */
+  .hero-top .brand { flex: 0 0 auto; white-space: nowrap; }
   .collage {
     position: relative;
     left: auto; right: auto; top: auto; bottom: auto;
@@ -1737,6 +1752,24 @@ input:focus, select:focus, textarea:focus {
 
   /* 上传区在手机上不需要这么高的留白 */
   .dropzone { padding: 20px 12px; }
+
+  /* ---- Hero 顶栏与三色计数 -------------------------------------------
+     顶栏改纵向：品牌一行、模式标签一行。原先 flex 横排 + space-between，
+     390px 下三个 meta 标签占掉 253px，把品牌挤到 59px——「智批π」于是
+     一字一行竖成三行。只给 flex-shrink:0 不够（挤没了照样竖排），换轴才行。 */
+  .hero-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  /* 三色计数排一行：min-width 108×3 + 间距 20 = 344 > 324 可用宽，
+     于是折成 2+1，看着像少了一格。改成等分且允许收缩。 */
+  .stats { gap: 8px; flex-wrap: nowrap; }
+  .stat { min-width: 0; flex: 1 1 0; padding: 9px 8px; }
+  .stat b { font-size: 1.15rem; }
+  .stat span { font-size: 10px; }
 
   /* ---- 收起态说明块 --------------------------------------------------
      note--thin 在桌面是一行：图标 · 文字 · 展开 · 关闭。390px 下这四块
