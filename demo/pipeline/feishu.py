@@ -358,6 +358,11 @@ def sync_to_base(grading_results: list, reviews: dict = None) -> dict:
             "record_count": len(records),
             "status_code": resp.status_code,
             "response": body,
+            # records 在 live 模式下也要带上：前端用它渲染「写进去的是这些」表格。
+            # 原先只有 demo 模式返回，live 模式界面上就只剩一句「已写入」——
+            # 以前靠恒常展示的接口 JSON 兜住，JSON 收进折叠块后这里就空了。
+            # push 分支两种模式都返回 card，这里与之对齐。
+            "records": records,
         }
     except Exception as exc:  # 鉴权 / 写表异常：降级 demo，保证 Demo 不中断
         return {
