@@ -604,7 +604,7 @@
 
     rows.push(c.double_check
       ? { on: true,  k: '二次复批',
-          v: '同模型再批一遍，两次吻合度作为置信度因子（每份多等约 3 秒）' }
+          v: '同模型再批一遍，两次吻合度作为置信度因子' }
       : { on: false, k: '二次复批',
           v: '未启用 · 置信度里的「自检一致性」退回模型自报值（ZHIPI_DOUBLE_CHECK=1 开启）' });
 
@@ -618,8 +618,7 @@
                      ' 秒，实测第二模型多需 25-90 秒，几乎必然超时后被丢弃（调大 ZHIPI_CROSS_TIMEOUT）' });
     } else {
       rows.push({ on: true, k: '交叉验证',
-                  v: c.cross_model + ' 独立复核，仅黄/红件触发（这类件多等约 ' +
-                     c.cross_timeout + ' 秒内）' });
+                  v: c.cross_model + ' 独立复核，仅黄/红件触发' });
     }
     el.innerHTML = rows.map(chainRow).join('');
     Icons.hydrate(el);
@@ -1661,12 +1660,12 @@
         '<div class="sheet">' +
           '<div class="toolbar">' +
             '<div>' +
-              '<h3>飞书协同 · &#167;13.2</h3>' +
+              '<h3>飞书协同</h3>' +
               '<p class="sub" style="margin:4px 0 0;">审核提醒推送到群；学情写入多维表格，表内 AI 字段生成摘要与建议</p>' +
             '</div>' +
           '</div>' +
-          '<p class="hint">机器人互动卡片提醒教师审核（集成点二），多维表格沉淀学情台账并由 AI 字段捷径' +
-          '自动生成错因摘要与学习建议（集成点一 · 主用飞书 AI 能力）。</p>' +
+          '<p class="hint">机器人互动卡片提醒教师审核，多维表格沉淀学情台账并由 AI 字段捷径' +
+          '自动生成错因摘要与学习建议。</p>' +
           '<div class="toolbar" style="margin:14px 0 0;">' +
             '<button class="btn btn--primary" type="button" id="feishu-push">' + I('send', { size: 15 }) + '推送审核提醒卡片</button>' +
             '<button class="btn btn--ghost" type="button" id="feishu-sync">' + I('table', { size: 15 }) + '同步多维表格学情台账</button>' +
@@ -1890,7 +1889,7 @@
           '<div class="table-wrap"><table class="base-table"><thead><tr>' + head + '</tr></thead>' +
           '<tbody>' + rows + '</tbody></table></div>' +
           '<p class="larkcard__note">写入后可对「错因标签」「得分 / 满分」等列配置飞书 <b>AI 字段捷径</b>，' +
-          '逐行自动生成「一句话错因摘要」与「个性化学习建议」（设计方案 &#167;13.2 集成点一）。</p>';
+          '逐行自动生成「一句话错因摘要」与「个性化学习建议」。</p>';
       } else if (d.record_count) {
         // 兜底：拿到了条数但没拿到明细（老版本服务端 live 模式不返回 records）。
         // 不能什么都不显示——那看着像同步失败了。
