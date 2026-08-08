@@ -1694,7 +1694,74 @@ input:focus, select:focus, textarea:focus {
   /* 窄屏把「标签 + 说明」拆两行，否则 mono 标签会把说明挤成一列窄条 */
   .chain__item { grid-template-columns: auto 1fr; }
   .chain__v { grid-column: 2; }
-  .trail__step { flex: 1 1 50%; }
+
+  /* ---- 固定栏在手机上必须省着用 --------------------------------------
+     实测 390×844 下，masthead + trail + tip 一度占掉 316px，
+     等于 37% 的屏幕在放导航。逐项收到 223px（26%）。
+
+     trail 原先 flex:1 1 50% 会把四步折成 2×2 两行（122px）。改成单行
+     横向滚动：高度回到一行（43px），四步仍可点、is-done 进度仍可见。
+     刻意不整条隐藏——上面的页签只说明「在哪一屏」，没有「走到第几步」。 */
+  .trail {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .trail::-webkit-scrollbar { display: none; }
+  .trail__step {
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 6px;
+    padding: 9px 12px;
+    min-height: 42px;
+  }
+  .trail__t { font-size: 12px; }
+
+  /* tip 原先连着「当前上传目标」一起排，390px 下折成三行（87px）。
+     改成纵向两段：提示一段、目标一段，字号与行距各收一档。 */
+  .trail-tip {
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .trail-tip .trail-sep { display: none; }
+
+  /* ---- 文件夹 ------------------------------------------------------- */
+  .folder-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .folder { min-height: 96px; padding: 12px 10px 10px; }
+  .folder .now { top: 8px; right: 8px; padding: 1px 5px; font-size: 9px; }
+  .folder .name { font-size: 13px; margin-top: 6px; }
+
+  /* 上传区在手机上不需要这么高的留白 */
+  .dropzone { padding: 20px 12px; }
+
+  /* ---- 收起态说明块 --------------------------------------------------
+     note--thin 在桌面是一行：图标 · 文字 · 展开 · 关闭。390px 下这四块
+     挤在一行会把文字压成一条窄柱，出现「合成仿手／写」这种词中折行，
+     「展开说明」还会浮在右侧像悬空。改成：文字整宽占一行（每个短句各占
+     一行），展开键落到第二行左侧，关闭键留在右上。 */
+  .note--thin {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: "ico body close" ".  more  more";
+    align-items: start;
+    gap: 4px 8px;
+  }
+  .note--thin .note__ico   { grid-area: ico; padding-top: 1px; }
+  .note--thin > div        { grid-area: body; min-width: 0; }
+  .note--thin .note__close { grid-area: close; }
+  .note--thin .note__more  { grid-area: more; justify-self: start; }
+  /* 收起态里那几个「·」分隔符在窄屏帮不上忙，只会制造断行点 */
+  .note--thin .note__sep { display: none; }
+  .note--thin .note__bit { display: block; }
+
+  /* 批改链路清单：手机上标签与说明已各占一行，收一档行距与内距 */
+  .chain { padding: 10px 12px; gap: 4px; }
+  .chain__item { font-size: 12px; line-height: 1.45; }
+
   /* iOS 输入字号 < 16px 会触发自动放大，进而把整页横向拽偏 */
   .input, .select, .textarea, input, select, textarea { font-size: 16px; }
 }

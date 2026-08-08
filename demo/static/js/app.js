@@ -198,7 +198,7 @@
     // 只在真的换了屏时滚，避免同屏内重渲染（切下拉）也把页面拽走。
     if (changed) window.scrollTo(0, 0);
     renderTrail();
-    INTRO_OPEN = (name === 'submit');
+    INTRO_OPEN = (name === 'submit') && !narrow();
     renderIntro();
     if (name === 'result' && BATCH_LIST) {
       // 从批量页过来：CURRENT 已在最后一份批改成功时被赋值，但页面上什么都没有——
@@ -235,7 +235,13 @@
 
   // 说明块在 01 屏完整展开（陌生人第一眼落在这里），02–04 屏收成一行。
   // 同一段文字在四屏各占 130px 高，会把真正要看的内容整体压到首屏以下。
-  var INTRO_OPEN = true;
+  //
+  // 手机上一律先收起：那段文字在 390px 宽要占掉约 250px（近三成屏幕），
+  // 而它讲的是背景而非操作，第一眼该看到的是文件夹和上传区。「展开说明」
+  // 仍在，想读随时点开。
+  function narrow() { return window.innerWidth <= 600; }
+
+  var INTRO_OPEN = !narrow();
 
   function renderIntro() {
     if (localStorage.getItem('zhipi_intro_hidden') === '1') {
@@ -245,12 +251,20 @@
     var mock = CONFIG.mode !== 'llm';
 
     if (!INTRO_OPEN) {
+      // 每个短句各自成 span：桌面靠 note__sep 的「·」连成一行，窄屏由 CSS
+      // 把它们改成 block 各占一行。若把句子留成裸文本节点，CSS 就管不到，
+      // 390px 下会折出「合成仿手／写」这种词中断行。
+      var bits = [
+        '样例图为合成仿手写，历史趋势为模拟数据',
+        '操作只影响你自己'
+      ].map(function (s) {
+        return '<span class="note__sep">·</span><span class="note__bit">' + s + '</span>';
+      }).join('');
       $('#intro-slot').innerHTML =
         '<div class="note note--amber note--thin" id="intro-note">' +
         '<span class="note__ico">' + I('info', { size: 16 }) + '</span>' +
-        '<div><b>' + (mock ? '离线演示模式' : '真实大模型模式') + '</b>' +
-        '<span class="note__sep">·</span>样例图为合成仿手写，历史趋势为模拟数据' +
-        '<span class="note__sep">·</span>操作只影响你自己</div>' +
+        '<div><span class="note__bit"><b>' +
+        (mock ? '离线演示模式' : '真实大模型模式') + '</b></span>' + bits + '</div>' +
         '<button class="note__more" type="button" id="intro-more">展开说明</button>' +
         '<button class="note__close" type="button" id="intro-close" title="不再显示">' +
         I('x', { size: 16 }) + '</button></div>';
