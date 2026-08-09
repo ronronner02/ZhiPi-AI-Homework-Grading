@@ -27,6 +27,7 @@ import requests
 
 from . import ocr as ocr_mod
 from . import confidence as conf
+from . import dimensions
 
 # 详细设计方案 §6.11 第二层「错因标签」枚举，全系统只允许使用这些标签
 ERROR_TAGS = [
@@ -163,6 +164,128 @@ PROMPT_TEMPLATE = """你是一名严谨的初中学科教师，请根据题目�
   "teacher_note": "面向教师的备注",
   "confidence": 0到1之间的小数
 }}"""
+
+
+# 题库外作业的批改模板（判别分维度体系）。
+#
+# 与 PROMPT_TEMPLATE 的两处关键不同：
+# 1. 没有人工标注的标准答案。所以**先让模型自己解一遍**，再以自己的解法为
+#    基准判分。这是必要的：拿不到参考解就只能凭印象打分，那更不可控。
+#    但它也是这条链路最脆的一环——模型解错了，就会拿错的基准去判对的作答，
+#    而界面上的证据链看起来完全合理。故要求它把 reference_answer 输出出来，
+#    让教师能看见判分依据、一眼发现基准就是错的（教师可控的落点）。
+# 2. Rubric 不由模型拟定，而是由 dimensions 模块按学科固定下发。模型只在
+#    给定维度上打分与举证。这样同学科任意两份作业口径一致、分数可比，
+#    教师改分时也能定位到具体维度并回灌。
+OPEN_PROMPT_TEMPLATE = """你是一名严谨的 K12 学科教师，请按给定的评分维度批改学生作答。
+
+【第一步：自己先解题】
+在批改之前，先独立解出这道题，把你的解法写进 reference_answer。
+后续判分以你自己的解法为基准。若题目信息不足以判定（如题干被裁切、
+条件缺失），在 reference_answer 里如实说明「题干不完整，无法确定标准解」，
+并把各维度 confidence 降低、交教师人工复核。
+
+【第二步：按维度判分】
+1. step_analysis 必须**逐项对应下面的评分维度**，每项 step 名称与维度名完全一致，
+   不得增删维度、不得改名、不得合并；
+2. 每个维度的得分不得超过该维度满分；
+3. 每个维度都要给出 reason 与 evidence：
+   - reason：该维度的判定理由（得满分写「为何给满」，扣分写「扣在哪里」）；
+   - evidence：引用学生作答的原文片段作为依据；学生未写出对应内容时填 ""；
+4. 错因标签只能从【可选错因标签】中选，不得自造；该维度无错则 error_tag 为 null。
+
+【防幻觉与降级约束】
+5. 只能依据学生实际写出的内容评判，不得臆造、补全学生未写出的步骤；
+6. 某维度内容无法辨认或存在歧义时，将该项 legible 置为 false，如实说明，
+   不要猜测其含义，并降低整体 confidence；
+7. 学生解法与你的解法不同但同样正确时，**按学生的解法判对**，不得因
+   「与我的解法不一致」而扣分；
+8. 证据不足以判定对错时，宁可降低 confidence 交人工，不得强行给结论；
+9. 只输出 JSON，不要输出多余文字。
+
+【学科】{subject}
+
+【题目（照片中的印刷题面）】
+{question}
+
+【评分维度】（每个维度及其满分，总分 {total_score} 分）
+{dimensions}
+
+【学生作答（识别转写）】
+{student_answer}
+
+【可选错因标签】（只能从中选择）
+{error_tags}
+
+请严格输出以下 JSON：
+{{
+  "reference_answer": "你自己的解法与最终答案（判分基准，会展示给教师核对）",
+  "score": 总分,
+  "max_score": {total_score},
+  "step_analysis": [
+    {{"step": "与评分维度同名", "is_correct": true/false, "score": 该维度得分,
+      "error_tag": "错因标签或null", "reason": "判定理由",
+      "evidence": "引用学生作答原文，无则空字符串", "legible": true/false}}
+  ],
+  "error_tags": [],
+  "student_feedback": "面向学生的个性化评语",
+  "teacher_note": "面向教师的备注（尤其写明哪个维度最需要人工复核）",
+  "confidence": 0到1之间的小数
+}}"""
+
+
+def _build_open_prompt(question: dict, student_text: str,
+                       dimension_bias: dict = None) -> str:
+    """拼装题库外作业的批改 Prompt（维度体系版）。
+
+    dimension_bias 非空时追加一段「教师历史修正」提示：告诉模型它在哪个维度
+    上历史性偏严或偏松。这是教师终审真正回灌到判分的通道——按维度累计，
+    因为维度只有五个，比按题统计收敛快得多。
+    """
+    subject = question.get("subject", "") or "其他"
+    prompt = OPEN_PROMPT_TEMPLATE.format(
+        subject=subject,
+        question=question.get("question_text") or "（题面未能识别，请仅凭作答内容保守判定）",
+        dimensions=dimensions.prompt_block(subject),
+        total_score=dimensions.TOTAL_SCORE,
+        student_answer=student_text,
+        error_tags="、".join(ERROR_TAGS),
+    )
+    hint = _bias_hint(subject, dimension_bias)
+    if hint:
+        # 插在【学生作答】之前：让模型读到作答时已经知道该在哪一维更谨慎
+        marker = "【学生作答（识别转写）】"
+        prompt = prompt.replace(marker, hint + "\n" + marker, 1)
+    return prompt
+
+
+def _bias_hint(subject: str, dimension_bias: dict) -> str:
+    """把教师历史修正量写成一段自然语言提示。
+
+    只提示明显偏差（|平均修正| ≥ 0.5 分）：小于半分的差异在 2-5 分制的维度上
+    属于噪声，写进 Prompt 只会让模型对着噪声调整。
+    """
+    if not dimension_bias:
+        return ""
+    name_of = {item["dimension"]: item["step"]
+               for item in dimensions.rubric_for(subject)}
+    lines = []
+    for key, delta in sorted(dimension_bias.items(), key=lambda kv: -abs(kv[1])):
+        if abs(delta) < 0.5:
+            continue
+        name = name_of.get(key, key)
+        if delta > 0:
+            lines.append("- %s：教师历史上平均往上改 %.1f 分，说明此前判得偏严，"
+                         "本次请确认是否存在「学生写法不同但同样正确」而被扣分的情况。"
+                         % (name, delta))
+        else:
+            lines.append("- %s：教师历史上平均往下改 %.1f 分，说明此前判得偏松，"
+                         "本次请更严格核对该维度的依据是否真的充分。"
+                         % (name, abs(delta)))
+    if not lines:
+        return ""
+    return ("【教师历史修正参考】（同学科既往终审的统计，供你校准松紧；"
+            "不要据此直接加减分，仍按本次作答的实际内容判定）\n" + "\n".join(lines) + "\n")
 
 
 def _step_score(ann: dict, max_score: int) -> int:
@@ -614,7 +737,7 @@ def _parse_llm_steps(question: dict, data: dict):
         # 注意：这里不拼「字迹难辨」前缀——前端已用 s.legible 单独渲染
         # 复核提示（见 app.js step 渲染），前缀只会让无判定依据的步骤
         # 平白多出非空 reason，把 rubric_coverage 虚高。
-        step_analysis.append({
+        entry = {
             "step": step["step"],
             "is_correct": bool(si.get("is_correct", score >= step["max_score"])),
             "score": score,
@@ -624,7 +747,12 @@ def _parse_llm_steps(question: dict, data: dict):
             "reason": reason,
             "evidence": evidence,
             "legible": legible,
-        })
+        }
+        # 维度 key 只有维度体系下发的 Rubric 才有（题库内的人工 Rubric 没有）。
+        # 教师改分后要按「学科 × 维度」回灌，靠这个字段定位改的是哪一维。
+        if step.get("dimension"):
+            entry["dimension"] = step["dimension"]
+        step_analysis.append(entry)
         if tag and tag not in error_tags:
             error_tags.append(tag)
 
@@ -941,18 +1069,30 @@ def derive_factors(question: dict, student_text: str, clarity: float,
 
 
 def grade_adhoc(question: dict, student_text: str, clarity: float,
-                factor_overrides: dict = None) -> dict:
+                factor_overrides: dict = None,
+                dimension_bias: dict = None) -> dict:
     """批改一份「任意上传」的作答文本（无预置步骤标注）。
 
     必须有 LLM 凭据（ZHIPI_LLM_* 或 ZHIPI_VLM_*）；置信度因子按
     derive_factors 冷启动推导，其余输出结构与 grade() 完全一致。
+
+    dimension_bias：该学科各维度的教师平均修正量（正=模型偏严，负=偏松）。
+    仅在题库外的维度体系批改时生效，作为 Prompt 里的一段提示写入。
+    刻意**不**用它去自动加减分——那会让教师看到的分数不再是模型的真实判断，
+    出错时无从追溯；只提示模型「你在这一维历史上偏严/偏松」，判分仍由本次逻辑决定。
     """
     creds = llm_credentials()
     if not creds:
         raise RuntimeError(
             "临时批改需要配置 ZHIPI_LLM_API_KEY 或 ZHIPI_VLM_API_KEY")
 
-    data = _call_llm(creds, _build_prompt(question, student_text))
+    # 题库外的题走维度体系 Prompt：没有人工标准答案，让模型先自解再按固定维度判分。
+    # 判据是 question["open"]，由调用方在构造题目记录时置位——不靠「有没有
+    # standard_answer」猜，那样一道恰好没填标准答案的题库内题会被误走这条路。
+    is_open = bool(question.get("open"))
+    prompt = _build_open_prompt(question, student_text, dimension_bias) if is_open \
+        else _build_prompt(question, student_text)
+    data = _call_llm(creds, prompt)
     step_analysis, total, error_tags = _parse_llm_steps(question, data)
 
     factors = derive_factors(question, student_text, clarity,
@@ -993,4 +1133,15 @@ def grade_adhoc(question: dict, student_text: str, clarity: float,
         result["consistency_check"] = consistency_res
     if cross_res is not None:
         result["cross_check"] = cross_res
+    if is_open:
+        # 判分基准要透出去。题库外的题没有人工标准答案，模型是拿自己的解法
+        # 当基准的——不展示的话，教师无从判断「基准本身是不是错的」，
+        # 而基准一错就会把正确作答判成错，且证据链看起来毫无异样。
+        result["reference_answer"] = str(data.get("reference_answer") or "").strip()
+        result["score_basis"] = "system"    # 分数口径：体系判别分，非试卷实际分值
+        result["dimension_scores"] = [
+            {"dimension": s.get("dimension"), "name": s["step"],
+             "score": s["score"], "max_score": s["max_score"]}
+            for s in step_analysis
+        ]
     return result

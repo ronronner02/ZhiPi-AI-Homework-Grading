@@ -24,7 +24,6 @@
 不配置环境变量时全部不生效，本机演示行为与以前完全一致。部署见 deploy/README.md。
 """
 import base64
-import difflib
 import os
 import json
 import re
@@ -91,6 +90,7 @@ from pydantic import BaseModel, Field
 
 from pipeline import grader, analytics, feishu, folders, guard, session_store
 from pipeline import confidence as conf_mod
+from pipeline import dimensions
 from pipeline import ocr as ocr_mod
 
 BASE_DIR = Path(__file__).parent
@@ -315,6 +315,64 @@ def question_pass_rate(session: dict, question_id: str) -> float | None:
         return None
     prior = _question_prior(question_id)
     return round((prior * 4 + passed * 100.0) / (4 + total), 1)
+
+
+def dimension_pass_rate(session: dict, subject: str) -> float | None:
+    """按「学科 × 维度」聚合本会话的教师认可度，回灌成该学科的先验。
+
+    题库外的作业没有 question_id，question_pass_rate 那条按题统计的路走不通。
+    但维度是固定的：同学科任意两份作业的五个维度完全一致，所以可以按维度累计
+    「教师改了没改这一维的分」，这比按题统计更快收敛——题是无穷的，维度只有五个。
+
+    口径：教师确认、或虽走修改流程但该维度得分未变，都算认可这一维的判分。
+    与 question_pass_rate 一致地跟先验做平滑（先验权重 4 次），避免样本极少时
+    置信度大起大落。无任何同学科终审记录时返回 None（沿用冷启动默认值）。
+
+    返回的是**该学科五个维度的平均认可度**：teacher_pass_rate 因子是单个数，
+    而维度级明细另由 dimension_bias 给出，用于指导后续批改的松紧。
+    """
+    hit = miss = 0
+    for sid, rec in session["reviews"].items():
+        if rec.get("subject") != subject:
+            continue
+        per_dim = rec.get("dimension_deltas")
+        if not per_dim:
+            # 只确认未改分：视同五个维度全部认可
+            if rec.get("teacher_action") == "confirmed" or \
+                    rec.get("final_score") == rec.get("ai_score"):
+                hit += len(dimensions.DIMENSION_KEYS)
+            continue
+        for _key, delta in per_dim.items():
+            if delta == 0:
+                hit += 1
+            else:
+                miss += 1
+    total = hit + miss
+    if total == 0:
+        return None
+    prior = 80.0        # 冷启动先验，与 derive_factors 的 teacher_pass_rate 默认值一致
+    return round((prior * 4 + hit * 100.0) / (4 + total), 1)
+
+
+def dimension_bias(session: dict, subject: str) -> dict:
+    """该学科每个维度的「教师平均修正量」，用于提示后续批改的系统性偏差。
+
+    正值 = 教师普遍往上改（模型在这一维偏严）；负值 = 普遍往下改（模型偏松）。
+    这是**给教师看的诊断信息**，也写进 Prompt 提示模型收紧或放宽。
+
+    刻意不做成自动调分：把教师的历史修正量直接加到新的判分上，等于让模型
+    的错误被一个统计量掩盖掉，而教师看到的分数不再是模型的真实判断——
+    出问题时无从追溯。所以只提示、不改分，是否采纳仍由这一次的判分逻辑决定。
+    """
+    acc = {}
+    for rec in session["reviews"].values():
+        if rec.get("subject") != subject:
+            continue
+        for key, delta in (rec.get("dimension_deltas") or {}).items():
+            slot = acc.setdefault(key, [0, 0])
+            slot[0] += delta
+            slot[1] += 1
+    return {k: round(v[0] / v[1], 2) for k, v in acc.items() if v[1]}
 
 
 def _apply_pass_rate(graded: dict, rate: float | None) -> dict:
@@ -746,26 +804,47 @@ def get_sample_image(name: str):
     return FileResponse(SAMPLE_DIR / name, media_type="image/png")
 
 
-def _detect_question(text: str) -> str | None:
-    """按转写文本与各题（题面 + 标准答案）的相似度自动判定所属题目。
+def _open_question(stem: str, subject: str, printed_max: float | None = None) -> dict:
+    """为题库外的作业构造一条题目记录（判别分维度体系）。
 
-    英语加权条件为「含 3 个以上英文单词」而非「前 40 字符出现字母」，
-    防止 x=2 之类代数式被误判为英语作文；总分低于门槛返回 None
-    （交前端提示教师手动选题），不做没有把握的猜测。
+    与题库内题目的区别只有两处，其余字段同形，下游一律复用：
+    - rubric 来自 dimensions.rubric_for(学科)，不是人工标注；
+    - standard_answer 留空。刻意**不编**一个标准答案：编出来的答案会成为
+      判分基准，错了却看不出来。改由模型在批改时自解并输出 reference_answer，
+      展示给教师核对（见 grader.OPEN_PROMPT_TEMPLATE）。
+
+    max_score 恒为 dimensions.TOTAL_SCORE（15）——这是**体系判别分**的满分，
+    不是试卷上那道题的分值。试卷印的分值另存 printed_max_score，只展示、
+    不参与计算，供教师换算成卷面分。
     """
-    best_qid, best_score = None, -1.0
-    for qid, q in QUESTIONS.items():
-        ref = q["question_text"] + " " + q.get("standard_answer", "")
-        score = difflib.SequenceMatcher(None, text, ref).ratio()
-        # 关键特征加权：题面关键词出现在转写中
-        for kw in q.get("knowledge_points", []):
-            if kw and kw in text:
-                score += 0.1
-        if q["subject"] == "英语" and len(re.findall(r"[A-Za-z]{2,}", text)) >= 3:
-            score += 0.15
-        if score > best_score:
-            best_qid, best_score = qid, score
-    return best_qid if best_score >= 0.15 else None
+    subject = (subject or "其他").strip() or "其他"
+    return {
+        "question_id": None,
+        "open": True,                  # grade_adhoc 据此选维度体系 Prompt
+        "subject": subject,
+        "grade": "",
+        "question_type": "开放题",
+        "title": _adhoc_title(stem, subject),
+        "question_text": (stem or "").strip(),
+        "standard_answer": "",         # 刻意留空，理由见 docstring
+        "rubric": dimensions.rubric_for(subject),
+        "max_score": dimensions.TOTAL_SCORE,
+        "printed_max_score": printed_max,
+        "knowledge_points": [d["step"] for d in dimensions.rubric_for(subject)],
+    }
+
+
+def _adhoc_title(stem: str, subject: str) -> str:
+    """给题库外的题起一个短标题，用于教师台列表与看板分组。
+
+    取题面首句、截断到 24 字。刻意**不**在标题里再写一遍学科——
+    前端展示处已是「学科 · 标题」的格式，重复会出现「数学 · 数学 · 已知函数…」。
+    """
+    s = re.sub(r"\s+", " ", (stem or "")).strip()
+    if not s:
+        return (subject or "其他") + "作业"
+    head = re.split(r"[。？？.!！\n]", s, 1)[0].strip() or s
+    return head[:24] + ("…" if len(head) > 24 else "")
 
 
 class RecognizeReq(BaseModel):
@@ -829,6 +908,7 @@ def api_recognize_image(req: RecognizeReq, request: Request,
 
     sid = result.get("matched_submission_id")
     if sid and sid in SUB_MAP:
+        # 命中内置样例：学科与题面按题库回填（离线演示链路，与以前一致）
         sub = SUB_MAP[sid]
         question = QUESTIONS[sub["question_id"]]
         result.update({
@@ -837,26 +917,42 @@ def api_recognize_image(req: RecognizeReq, request: Request,
             "question_title": question["title"],
             "subject": question["subject"],
         })
+        qlist = result.get("questions") or []
+        if qlist:
+            qlist[0]["subject"] = question["subject"]
+            qlist[0]["stem"] = question["question_text"]
     else:
-        qid = _detect_question(result.get("text", ""))
-        if qid:
-            question = QUESTIONS[qid]
+        # 题库外的任意上传：学科与题面直接用识别结果，**不做题库匹配**。
+        # 原先这里按 difflib 相似度硬套一道内置题，把一页导数题判成英语作文，
+        # 再用英语评分标准批出 0 分。题库只有 3 道题，真实作业几乎必然不在
+        # 里面，所以「匹配」本身就是错的问题——模型能读懂这张纸，让它直说。
+        qlist = result.get("questions") or []
+        if qlist:
+            first = qlist[0]
             result.update({
-                "question_id": qid,
-                "question_title": question["title"],
-                "subject": question["subject"],
+                "question_id": None,          # 题库外，无 ID
+                "subject": first["subject"],
+                "question_title": _adhoc_title(first["stem"], first["subject"]),
+                "question_text": first["stem"],
+                "printed_max_score": first["printed_max_score"],
             })
+    result["question_count"] = len(result.get("questions") or [])
     return result
 
 
 class GradeImageReq(BaseModel):
     matched_submission_id: str | None = None   # 命中内置样例：走既有流水线
-    question_id: str | None = None             # 任意上传：题目 + 转写 + 清晰度
+    question_id: str | None = None             # 题库内题目：题目 + 转写 + 清晰度
     ocr_text: str | None = Field(None, max_length=4000)   # 限长：转写文本要发给大模型，按 token 计费
     ocr_clarity: float = Field(75.0, ge=0, le=100)   # 防直调 API 构造超界置信度
     student_name: str = Field("上传作业", max_length=20)
     engine: str | None = Field(None, max_length=32)   # 识别引擎（回显用）
     folder_id: str | None = Field(None, max_length=32)  # 上传归属文件夹
+    # 题库外的真实作业：题面 + 学科由识别阶段给出，不再往题库里硬套。
+    # 这三个字段是「判别分维度体系」的入口——有题面就能批，不需要 question_id。
+    stem: str | None = Field(None, max_length=4000)     # 照片里的印刷题面（教师可修正）
+    subject: str | None = Field(None, max_length=16)    # 识别出的学科
+    printed_max_score: float | None = Field(None, ge=0, le=300)  # 题面印的分值，仅展示
 
 
 def _clean_name(raw: str) -> str:
@@ -889,11 +985,25 @@ def api_grade_image(req: GradeImageReq, request: Request,
             result["recognition_engine"] = req.engine
         return result
 
-    if not (req.question_id and req.ocr_text and req.ocr_text.strip()):
-        raise HTTPException(status_code=400, detail="缺少 question_id 或 ocr_text")
-    question = QUESTIONS.get(req.question_id)
-    if not question:
-        raise HTTPException(status_code=404, detail="题目不存在：%s" % req.question_id)
+    if not (req.ocr_text and req.ocr_text.strip()):
+        raise HTTPException(status_code=400, detail="缺少 ocr_text（学生作答转写）")
+
+    if req.question_id:
+        # 题库内题目：沿用人工标注的 Rubric 与标准答案
+        question = QUESTIONS.get(req.question_id)
+        if not question:
+            raise HTTPException(status_code=404, detail="题目不存在：%s" % req.question_id)
+    elif req.stem and req.stem.strip():
+        # 题库外的真实作业：按学科下发维度 Rubric，模型自解后按维度判分。
+        # 原先这里强求 question_id，而识别侧对题库外作业给的是 None，
+        # 于是真实作业一律 400——「不再硬套题库」必须同时开出这条路，
+        # 否则只是把「判错」换成了「批不了」。
+        question = _open_question(req.stem, req.subject or "", req.printed_max_score)
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="缺少题面：题库外的作业需要印刷题面作为判分依据。"
+                   "请在识别结果的「题面」框中补齐题目原文后重新提交。")
 
     _rate_guard(request, "grade")
     if not guard.quota_take("grade"):
@@ -902,12 +1012,18 @@ def api_grade_image(req: GradeImageReq, request: Request,
             detail="今日真实批改额度已用尽（公开体验限额）。可点选内置样例作业照片，"
                    "离线链路完全不受影响，红黄绿分流与教师终审都能正常体验。")
 
-    # 临时批改同样回灌该题教师通过率，与内置链路口径一致
-    rate = question_pass_rate(session, req.question_id)
+    # 教师通过率回灌。题库内按题统计；题库外没有 question_id，改按
+    # 「学科 × 维度」统计——题是无穷的，维度只有五个，收敛快得多。
+    if req.question_id:
+        rate = question_pass_rate(session, req.question_id)
+    else:
+        rate = dimension_pass_rate(session, question["subject"])
     overrides = {"teacher_pass_rate": rate} if rate is not None else None
+    bias = dimension_bias(session, question["subject"]) if question.get("open") else {}
     try:
         result = grader.grade_adhoc(question, req.ocr_text, req.ocr_clarity,
-                                    factor_overrides=overrides)
+                                    factor_overrides=overrides,
+                                    dimension_bias=bias)
     except Exception as exc:
         guard.quota_refund("grade")   # 没批成不占额度
         # 超时是这一步最常见的失败，而原始异常文本（HTTPSConnectionPool ...
@@ -978,11 +1094,23 @@ def teacher_results(session: dict = Depends(demo_session)):
             "step_analysis": graded.get("step_analysis", []),
             "confidence_factors": graded.get("confidence_factors", {}),
             "knowledge_points": graded.get("knowledge_points", []),
+            # 判别分口径与试卷原始分值：前端据此标注「体系判别分」而不是
+            # 让 14/15 看起来像卷面分。题库内的题没有这两个字段。
+            "score_basis": graded.get("score_basis", "question"),
+            "printed_max_score": graded.get("printed_max_score"),
+            "reference_answer": graded.get("reference_answer", ""),
+            # 整卷批改：同一张照片拆出的多道题共用 paper_id，教师台按题一行，
+            # 但要能看出「这几行来自同一份试卷」。
+            "paper_id": graded.get("paper_id"),
+            "paper_index": graded.get("paper_index"),
+            "paper_total": graded.get("paper_total"),
             "reviewed": bool(review),
             "final_score": review["final_score"] if review else None,
             "final_error_tags": review.get("final_error_tags") if review else None,
             "final_comment": review.get("final_comment") if review else None,
             "teacher_action": review["teacher_action"] if review else None,
+            # 已按维度改过的分：重开弹层时要显示教师上次的值，而不是回到 AI 分
+            "final_dimension_scores": review.get("final_dimension_scores") if review else None,
         })
     return {
         "mode": current_mode(),
@@ -998,6 +1126,10 @@ class ReviewReq(BaseModel):
     # 教师改判错因（仅允许 §6.11 枚举，长度上限防构造超长数组）
     final_error_tags: list[str] | None = Field(None, max_length=20)
     final_comment: str | None = Field(None, max_length=500)
+    # 维度级改分：{维度key: 教师给的分}。只对判别分维度体系的作业有意义。
+    # 有它才知道教师改的是哪一维——只有总分的话，回灌只能得出「这题判错了」，
+    # 得不出「运算执行这一维判得偏严」，而后者才是能指导下一份批改的信息。
+    final_dimension_scores: dict[str, float] | None = None
 
 
 @app.post("/api/teacher/review")
@@ -1034,6 +1166,10 @@ def api_review(req: ReviewReq, session: dict = Depends(demo_session)):
                 detail="错因标签不在 §6.11 枚举内：%s" % "、".join(illegal))
         final_tags = req.final_error_tags
 
+    # 维度级改分 → 逐维修正量。这是回灌到后续批改的原料：
+    # delta > 0 表示教师往上改（模型这一维偏严），< 0 表示往下改（偏松）。
+    deltas, final_dims = _dimension_deltas(ai, req.final_dimension_scores)
+
     record = {
         "submission_id": sid,
         "teacher_action": req.teacher_action,
@@ -1043,15 +1179,53 @@ def api_review(req: ReviewReq, session: dict = Depends(demo_session)):
         "final_error_tags": final_tags,          # None = 沿用 AI 错因
         "final_comment": (req.final_comment or "")[:500],
         "reviewed": True,
+        # 学科要存下来：dimension_pass_rate / dimension_bias 按学科聚合，
+        # 而终审记录本身查不到学科（uploads 里才有）。
+        "subject": ai.get("subject", ""),
+        "dimension_deltas": deltas,             # {} = 未按维度改或非维度体系作业
+        "final_dimension_scores": final_dims,
     }
     session["reviews"][sid] = record
 
     qid = _review_question_id(session, sid)
+    subject = ai.get("subject", "")
     return {
         "status": req.teacher_action,
         "review": record,
         "question_pass_rate": question_pass_rate(session, qid) if qid else None,
+        # 维度体系作业回传学科级认可度与逐维偏差，让前端能显示
+        # 「教师终审已影响后续同类作业的判分」这条飞轮
+        "dimension_pass_rate": dimension_pass_rate(session, subject) if subject else None,
+        "dimension_bias": dimension_bias(session, subject) if subject else {},
     }
+
+
+def _dimension_deltas(ai: dict, final_scores: dict | None):
+    """算出教师逐维修正量，并返回校验后的终审维度分。
+
+    校验：维度 key 必须在枚举内、分数必须在该维满分内。非法项静默丢弃而不报错——
+    终审是教师的主流程，不该因为一个越界的维度分整单失败；被丢弃的项等同
+    「这一维没改」，方向上是保守的。
+    """
+    steps = {s.get("dimension"): s for s in ai.get("step_analysis", [])
+             if s.get("dimension")}
+    if not steps or not final_scores:
+        return {}, {}
+
+    deltas, cleaned = {}, {}
+    for key, raw in final_scores.items():
+        step = steps.get(key)
+        if step is None or key not in dimensions.DIMENSION_KEYS:
+            continue
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= val <= step["max_score"]):
+            continue
+        cleaned[key] = val
+        deltas[key] = round(val - step["score"], 2)
+    return deltas, cleaned
 
 
 @app.get("/api/grade-progress")

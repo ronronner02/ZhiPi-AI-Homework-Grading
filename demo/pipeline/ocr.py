@@ -143,12 +143,39 @@ def validate_image(image_bytes: bytes) -> str | None:
 
 
 # 多模态识别的转写 Prompt：只转写、不批改，公式用线性写法
-VLM_PROMPT = """你是一个手写作业识别引擎。请把图片中「学生手写的作答内容」逐字转写出来：
-1. 只转写手写部分，忽略印刷体题目、姓名、班级抬头；
-2. 数学公式用线性写法（如 x^2-5x+6=0、v=s/t），保留换行；
-3. 若字迹无法辨认，用〔?〕占位；
-4. 最后评估卷面清晰度 clarity（0-100：90+ 工整清晰，60-89 可辨认，60 以下潦草模糊）。
-只输出 JSON：{"text": "转写文本", "clarity": 数字}"""
+# K12 学科枚举。识别阶段由模型直接归类，**不再**与题库做相似度匹配。
+#
+# 为什么改：原先靠 difflib 逐字符比对转写文本与 3 道内置题，取最相似的一道。
+# 题库只有 3 道题，真实作业几乎必然不在里面，于是代码被迫「硬套」——
+# 一页导数题因为共享标点与字母，被判成英语作文，再用英语评分标准批出 0 分。
+# 那不是阈值调错，是缺一条「判不出」的出口。模型本来就能读懂这张纸，
+# 让它直接说学科，比让它去跟 3 道无关的题比相似度可靠得多。
+SUBJECTS = (
+    "语文", "数学", "英语", "物理", "化学", "生物",
+    "政治", "历史", "地理", "科学", "信息技术", "其他",
+)
+
+VLM_PROMPT = """你是一个作业照片识别引擎。请识别图片中的题目与学生手写作答。
+
+【识别要求】
+1. 一张图可能有多道题。**每道题单独一条**，按图中出现顺序排列；
+2. 每道题都要分别给出：
+   - stem：印刷体题目原文（题干）。若题干被裁掉或未拍全，填写能看到的部分；
+     完全没有印刷题干则填空字符串 ""；
+   - answer：该题下学生手写的作答，逐字转写；学生未作答则填 ""；
+   - subject：学科，**只能从这个列表里选**：%s；
+3. 数学公式用线性写法（如 x^2-5x+6=0、v=s/t、e^x），保留换行；
+4. 字迹无法辨认处用〔?〕占位，不要猜测其含义；
+5. 不要把印刷体题干混进 answer，也不要把手写作答混进 stem；
+6. 若题目旁印有分值（如「本题 12 分」），填入 printed_max_score，否则填 null；
+7. 评估整张卷面清晰度 clarity（0-100：90+ 工整清晰，60-89 可辨认，60 以下潦草模糊）。
+
+只输出 JSON，不要输出多余文字：
+{"clarity": 数字,
+ "questions": [
+   {"index": 1, "subject": "学科", "stem": "题干原文",
+    "answer": "学生手写作答", "printed_max_score": 数字或null}
+ ]}""" % "、".join(SUBJECTS)
 
 
 # ---------- 离线演示识别：感知哈希匹配内置样例 ----------
@@ -276,17 +303,140 @@ def recognize_vlm(image_bytes: bytes, mime: str = "image/png") -> dict:
         clarity = max(0.0, min(100.0, float(clarity)))
     except (TypeError, ValueError):
         clarity = 75.0
+
+    questions = _normalize_questions(data)
+    # text 保留为「全部作答拼接」：批量流水线、教师台、样例匹配分支都按
+    # 单一 text 字段消费，多题结构是增量而非替换。
+    text = "\n\n".join(q["answer"] for q in questions if q["answer"]).strip()
+    if not text:
+        # 兼容模型仍按旧格式只回 {"text": ...} 的情形
+        text = str(data.get("text", "")).strip()
+
     return {
         "engine": "vlm",
         "model": model,
-        "text": str(data.get("text", "")).strip(),
+        "text": text,
         "clarity": clarity,
+        "questions": questions,
     }
 
 
+def _normalize_questions(data: dict) -> list:
+    """把模型返回的 questions 数组规整成可信结构。
+
+    模型是自由文本生成器，不能假定它守约：subject 可能写「高中数学」或英文，
+    index 可能重复或缺失，questions 可能整个缺失。逐项校验后再进业务，
+    否则脏 subject 会一路流到看板的学科筛选里。
+    """
+    raw = data.get("questions")
+    if not isinstance(raw, list):
+        raw = []
+
+    out = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            continue
+        stem = str(item.get("stem") or "").strip()
+        answer = str(item.get("answer") or "").strip()
+        if not stem and not answer:
+            continue          # 空条目直接丢，别在界面上留一行空题
+        out.append({
+            "index": len(out) + 1,        # 就地重编号，不信模型给的 index
+            "subject": _normalize_subject(item.get("subject")),
+            "stem": stem,
+            "answer": answer,
+            "printed_max_score": _normalize_printed_score(item.get("printed_max_score")),
+        })
+
+    # 旧格式兜底：只有 {"text": ...} 时也造出一条，让下游统一按 questions 走
+    if not out:
+        legacy = str(data.get("text") or "").strip()
+        if legacy:
+            out.append({
+                "index": 1,
+                "subject": _normalize_subject(data.get("subject")),
+                "stem": str(data.get("stem") or "").strip(),
+                "answer": legacy,
+                "printed_max_score": None,
+            })
+    return out
+
+
+def _normalize_subject(value) -> str:
+    """把模型给的学科归一到 SUBJECTS 白名单，认不出就是「其他」。
+
+    容忍「高中数学」「数学（理）」这类前后缀写法：白名单项作为子串命中即算。
+    刻意不做同义词映射表——那又是一张需要维护的猜测表，而白名单已够用。
+    """
+    s = str(value or "").strip()
+    if not s:
+        return "其他"
+    if s in SUBJECTS:
+        return s
+    for name in SUBJECTS:
+        if name != "其他" and name in s:
+            return name
+    return "其他"
+
+
+def _normalize_printed_score(value):
+    """印刷题面上标注的分值。取不到或不合理就是 None。
+
+    它**不参与**判分，只作为「试卷原始分值」展示，供教师换算。
+    上限 300 是为了挡住模型把题号、年份当分值填进来。
+    """
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0 or n > 300:
+        return None
+    return round(n, 1)
+
+
+def _sanitize_json_control_chars(text: str) -> str:
+    """把 JSON 字符串值里的裸控制字符转成合法转义。
+
+    多模态模型经常在 {"text":"..."} 里直接塞真实换行/制表符，而不是 \\n / \\t。
+    标准 json.loads 会报 Invalid control character。这与图片无关，是输出格式不稳。
+    只处理字符串内部；结构空白（键之间的换行）保持原样。
+    """
+    out: list[str] = []
+    in_str = False
+    escape = False
+    for ch in text:
+        o = ord(ch)
+        if in_str:
+            if escape:
+                out.append(ch)
+                escape = False
+            elif ch == "\\":
+                out.append(ch)
+                escape = True
+            elif ch == '"':
+                out.append(ch)
+                in_str = False
+            elif o < 32:
+                if ch == "\n":
+                    out.append("\\n")
+                elif ch == "\r":
+                    out.append("\\r")
+                elif ch == "\t":
+                    out.append("\\t")
+                else:
+                    out.append("\\u%04x" % o)
+            else:
+                out.append(ch)
+        else:
+            if ch == '"':
+                in_str = True
+            out.append(ch)
+    return "".join(out)
+
+
 def _extract_json(content: str) -> dict:
-    """从模型返回文本中提取 JSON（容忍 ```json 代码块包裹）。"""
-    text = content.strip()
+    """从模型返回文本中提取 JSON（容忍代码块包裹，以及字符串内裸换行）。"""
+    text = content.strip() if isinstance(content, str) else str(content)
     if text.startswith("```"):
         text = text.split("```", 2)[1] if text.count("```") >= 2 else text.strip("`")
         if text.lstrip().lower().startswith("json"):
@@ -294,7 +444,11 @@ def _extract_json(content: str) -> dict:
     start, end = text.find("{"), text.rfind("}")
     if start != -1 and end != -1:
         text = text[start:end + 1]
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # 常见失败：text 字段含未转义换行。修完再 parse；仍失败则原样抛出。
+        return json.loads(_sanitize_json_control_chars(text))
 
 
 # ---------- 统一识别入口 ----------
@@ -338,11 +492,20 @@ def recognize_image(image_bytes: bytes, mime: str = "image/png",
 
     if matched and submissions and matched in submissions:
         sub = submissions[matched]
+        # 样例分支也给出 questions，让下游只认一种结构。内置样例恒为单题，
+        # 学科与题面由调用方按 question_id 从题库回填（这里拿不到题库）。
         return {
             "engine": "sample-match",
             "text": sub["ocr"]["text"],
             "clarity": float(sub["ocr"]["clarity"]),
             "matched_submission_id": matched,
+            "questions": [{
+                "index": 1,
+                "subject": "",          # 由 app.py 按题库填
+                "stem": "",
+                "answer": sub["ocr"]["text"],
+                "printed_max_score": None,
+            }],
         }
 
     if vlm_configured() and not allow_vlm:
