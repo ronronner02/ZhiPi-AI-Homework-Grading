@@ -140,6 +140,25 @@ return (async function () {
   input.files = dt.files;
   input.dispatchEvent(new Event('change', { bubbles: true }));
 
+  // ---- 1b. 过待批清单 ----
+  // 选完文件不再直接进识别：先落到暂存区，改名后手动发起。这里等清单出现、
+  // 确认改名框在（教师改名的入口），再点「全部批改」把流程接上。
+  var stageOk = await until(function () {
+    var box = document.querySelector('#stage-box');
+    return box && box.style.display !== 'none' &&
+      document.querySelector('.stage-item__name');
+  }, 15000, '待批清单出现');
+  if (stageOk) {
+    var nameInput = document.querySelector('.stage-item__name');
+    out.info.stageName = nameInput ? nameInput.value : '';
+    if (nameInput && nameInput.value.length > 20) {
+      out.bad.push('待批清单默认名超过 20 字（后端会截断）：' + nameInput.value);
+    }
+    var goBtn = document.querySelector('#stage-grade-btn');
+    if (!goBtn) { out.bad.push('待批清单没有「全部批改」按钮'); return out; }
+    goBtn.click();
+  }
+
   // ---- 2. 等识别，检查题库外作业的徽标 ----
   var recogOk = await until(function () {
     var rr = document.querySelector('#recog-result');
@@ -147,6 +166,12 @@ return (async function () {
       document.querySelector('#ocr-text') &&
       document.querySelector('#ocr-text').value.length > 0;
   }, 120000, '识别返回');
+  if (!recogOk) {
+    // 超时本身说明不了原因：可能是限流 429、额度用尽、也可能网关真的慢。
+    // 把界面上那句状态带出来，否则只剩一行「等超时」，照样得重跑一遍才知道。
+    var rs = document.querySelector('#recog-status');
+    out.info.recogStatus = rs ? rs.textContent.trim().slice(0, 200) : '(无状态文字)';
+  }
 
   if (recogOk) {
     var badges = document.querySelector('#recog-badges');

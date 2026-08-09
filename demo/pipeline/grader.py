@@ -221,15 +221,21 @@ OPEN_PROMPT_TEMPLATE = """你是一名严谨的 K12 学科教师，请直接批�
 3. 每个维度都要给出 reason 与 evidence：
    - reason：该维度的判定理由（得满分写「为何给满」，扣分按核心原则第 2 条举证）；
    - evidence：引用学生作答的原文片段作为依据；学生未写出对应内容时填 ""；
-4. 错因标签只能从【可选错因标签】中选，不得自造；该维度无错则 error_tag 为 null。
+4. 错因标签只能从【可选错因标签】中选，不得自造；该维度无错则 error_tag 为 null；
+5. 每个维度还要给出 knowledge_point：**该维度在本题实际考查的课程知识点**，
+   用教材里的知识点名称（如「导数的四则运算」「函数单调性」「一元二次方程求根」
+   「动词时态」），不超过 12 个字。
+   注意：**不要把维度名（题意理解 / 方法选择 / 运算执行 / 步骤完整 / 结论正确
+   或其学科别名）当成知识点填回来**——维度说的是批改的角度，知识点说的是
+   这道题考什么，两者不是一回事。确实说不出对应知识点时填 ""，不要硬凑。
 
 【防幻觉与降级约束】
-5. 只能依据学生实际写出的内容评判，不得臆造、补全学生未写出的步骤；
-6. 某维度内容无法辨认或存在歧义时，将该项 legible 置为 false，如实说明，
+6. 只能依据学生实际写出的内容评判，不得臆造、补全学生未写出的步骤；
+7. 某维度内容无法辨认或存在歧义时，将该项 legible 置为 false，如实说明，
    不要猜测其含义，并降低整体 confidence；
-7. 证据不足以判定对错时，按核心判分原则第 4 条处理——给分、降 confidence、
+8. 证据不足以判定对错时，按核心判分原则第 4 条处理——给分、降 confidence、
    交人工，不得强行给出扣分结论；
-8. 只输出 JSON，不要输出多余文字。
+9. 只输出 JSON，不要输出多余文字。
 
 【学科】{subject}
 
@@ -253,6 +259,7 @@ OPEN_PROMPT_TEMPLATE = """你是一名严谨的 K12 学科教师，请直接批�
   "step_analysis": [
     {{"step": "与评分维度同名", "is_correct": true/false, "score": 该维度得分,
       "error_tag": "错因标签或null", "reason": "判定理由",
+      "knowledge_point": "本题该维度考查的课程知识点，说不出填空字符串",
       "evidence": "引用学生作答原文，无则空字符串", "legible": true/false}}
   ],
   "error_tags": [],
@@ -726,6 +733,20 @@ def _align_llm_steps(rubric: list, steps_in: list) -> list:
     return aligned
 
 
+def _step_kp(si: dict) -> str:
+    """取模型为这一步返回的知识点，并挡掉「拿维度名充数」的回答。
+
+    题库外的 Rubric 是五个评分维度，维度名（题意理解 / 方法选择 / 运算执行
+    / 步骤完整 / 结论正确）描述的是**批改的角度**，不是课程知识点。模型
+    偷懒时最容易把维度名原样抄回来，抄回来就会进「知识点错误率」——
+    看板上出现一行「方法选择 0/1 · 0%」，一眼就是凑数的。
+    """
+    kp = str(si.get("knowledge_point") or "").strip()
+    if not kp or kp in dimensions.ALL_NAMES:
+        return ""
+    return kp[:20]
+
+
 def _parse_llm_steps(question: dict, data: dict):
     """把 LLM 返回结果对齐到 Rubric 并做边界校验，返回 (step_analysis, total, error_tags)。
 
@@ -771,7 +792,12 @@ def _parse_llm_steps(question: dict, data: dict):
             "score": score,
             "max_score": step["max_score"],
             "error_tag": tag,
-            "knowledge_point": step["knowledge_point"],
+            # 题库内：知识点由人工 Rubric 给定，模型无权改。
+            # 题库外：Rubric 是维度体系，本身没有知识点（维度名不是知识点），
+            # 此时取模型返回的本步知识点；模型没给就留空，由看板跳过——
+            # 宁可少一条聚合，也不能把「方法选择」当成一个知识点摆进
+            # 「知识点错误率」，那是类目错误，教师一眼就看出来是凑的。
+            "knowledge_point": step["knowledge_point"] or _step_kp(si),
             "reason": reason,
             "evidence": evidence,
             "legible": legible,
@@ -1131,7 +1157,9 @@ def grade_adhoc(question: dict, student_text: str, clarity: float,
         "status": status,
         "confidence_factors": factors,
         "step_analysis": step_analysis,
-        "knowledge_points": list(dict.fromkeys(s["knowledge_point"] for s in question["rubric"])),
+        "knowledge_points": list(dict.fromkeys(
+            kp for kp in (str(s.get("knowledge_point") or "").strip()
+                          for s in step_analysis) if kp)),
         "error_tags": error_tags,
         "student_feedback": data.get("student_feedback") or _build_feedback(step_analysis, error_tags, seed),
         "teacher_note": data.get("teacher_note") or _build_teacher_note(error_tags, status),

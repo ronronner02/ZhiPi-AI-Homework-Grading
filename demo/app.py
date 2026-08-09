@@ -912,7 +912,9 @@ def _open_question(stem: str, subject: str, printed_max: float | None = None) ->
         "rubric": dimensions.rubric_for(subject),
         "max_score": dimensions.TOTAL_SCORE,
         "printed_max_score": printed_max,
-        "knowledge_points": [d["step"] for d in dimensions.rubric_for(subject)],
+        # 题库外没有人工标注的知识点，也不能拿维度名充数（维度是批改的角度，
+        # 不是课程知识点）。真实知识点由模型逐维给出，批改后写回结果。
+        "knowledge_points": [],
     }
 
 

@@ -66,7 +66,12 @@ def aggregate(class_id: str, results: list) -> dict:
         if r["max_score"]:
             score_pcts.append(r["total_score"] / r["max_score"] * 100)
         for s in r["step_analysis"]:
-            kp = s["knowledge_point"]
+            # 知识点为空 = 这一步没有可聚合的知识点（题库外走维度体系，
+            # 而模型这一维说不出对应知识点）。跳过而不是建一个空名字的桶——
+            # 看板上出现一条无名条目，比少一条更让人怀疑数据是编的。
+            kp = (s.get("knowledge_point") or "").strip()
+            if not kp:
+                continue
             stat = kp_stat.setdefault(kp, [0, 0])
             stat[1] += 1
             if not s["is_correct"]:
@@ -200,12 +205,13 @@ def aggregate_student(student_id: str, student_name: str, results: list, history
         if subj and subj not in subjects:
             subjects.append(subj)
         for s in r.get("step_analysis", []):
-            kp = s["knowledge_point"]
-            stat = kp_stat.setdefault(kp, [0, 0])
-            stat[1] += 1
-            if not s["is_correct"]:
-                stat[0] += 1
             tag = s.get("error_tag")
+            kp = (s.get("knowledge_point") or "").strip()   # 空 = 无可聚合知识点，见上
+            if kp:
+                stat = kp_stat.setdefault(kp, [0, 0])
+                stat[1] += 1
+                if not s["is_correct"]:
+                    stat[0] += 1
             if tag:
                 tag_stat[tag] = tag_stat.get(tag, 0) + 1
                 if tag not in current_tags:

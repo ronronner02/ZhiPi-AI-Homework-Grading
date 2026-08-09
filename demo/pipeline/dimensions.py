@@ -62,7 +62,6 @@ DIMENSIONS = (
 
 DIMENSION_KEYS = tuple(d["key"] for d in DIMENSIONS)
 TOTAL_SCORE = 15
-
 # ---------------------------------------------------------------------------
 # 学科权重档位
 # ---------------------------------------------------------------------------
@@ -107,6 +106,13 @@ _ALIAS_HUMANITIES = {
     "reasoning": ("论述完整", "要点是否齐备、论据是否支撑结论、有无关键遗漏"),
 }
 
+# 全部维度名（含各学科别名）。给 grader 用来挡住「模型拿维度名当知识点交差」：
+# 维度名说的是批改的角度，不是课程知识点，混进知识点聚合就是类目错误。
+ALL_NAMES = frozenset(
+    [d["name"] for d in DIMENSIONS]
+    + [n for alias in (_ALIAS_LANGUAGE, _ALIAS_HUMANITIES) for n, _ in alias.values()]
+)
+
 
 def weights_for(subject: str) -> dict:
     """取该学科的维度分值分配。"""
@@ -135,7 +141,12 @@ def rubric_for(subject: str) -> list:
         out.append({
             "step": name,
             "max_score": w[d["key"]],
-            "knowledge_point": name,   # 维度即知识点单元，供看板按维度聚合
+            # 刻意留空：维度名（题意理解 / 方法选择 / …）描述的是**批改的角度**，
+            # 不是课程知识点。以前这里填的是 name，于是班级看板的「知识点错误率」
+            # 里冒出五行「方法选择 0/1 · 0%」，是明显的类目错误。
+            # 题库外的真实知识点改由模型在批改时逐步给出（grader._step_kp），
+            # 模型给不出就留空，看板跳过这一步而不是拿维度名凑数。
+            "knowledge_point": "",
             "dimension": d["key"],
             "desc": desc,
         })
