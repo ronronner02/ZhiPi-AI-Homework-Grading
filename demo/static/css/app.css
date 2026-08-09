@@ -1372,6 +1372,74 @@ input:focus, select:focus, textarea:focus {
   grid-template-columns: minmax(0, 160px) minmax(0, 1fr);
   gap: 12px;
 }
+/* --------------------------------------------------------------------------
+   一图多题 / 整份试卷清单
+   -------------------------------------------------------------------------- */
+.paper-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.paper-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.paper-q {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-1);
+  background: var(--paper);
+  font-size: 12px;
+}
+/* 超出本次批改上限的题：压低但**不隐藏**——题面还留着，可稍后单独提交 */
+.paper-q.is-off { background: var(--paper-warm); border-style: dashed; opacity: 0.72; }
+.paper-q__no {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--paper-deep);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mid);
+}
+.paper-q__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.paper-q__t { font-weight: 600; color: var(--ink); }
+.paper-q__s {
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.paper-q__pm, .paper-q__off {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+}
+.paper-q__off { color: #8A5A08; font-family: var(--font-sans); }
+/* 同卷标记：教师表里要能看出这几行来自同一张卷子 */
+.paper-mark {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: var(--r-1);
+  background: var(--paper-deep);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--ink-soft);
+  vertical-align: middle;
+}
+
 /* 逐维度终审改分：五维一行铺开，窄屏自动折行 */
 .dim-grid {
   display: grid;

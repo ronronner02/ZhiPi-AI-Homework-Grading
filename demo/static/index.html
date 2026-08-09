@@ -228,6 +228,8 @@
             <div id="recog-status"></div>
             <div id="recog-result" style="display:none;">
               <div class="factor-wrap" id="recog-badges" style="margin-bottom:14px;"></div>
+              <!-- 一图多题 / 整份试卷：认出几道就列几道，超出批改上限的如实标注 -->
+              <div id="paper-sheet" style="display:none;"></div>
               <label class="field-label" id="ocr-title" for="ocr-text">转写文本</label>
               <textarea id="ocr-text" class="textarea" rows="9"></textarea>
               <p class="hint mt-4" id="ocr-hint"></p>
@@ -235,6 +237,10 @@
                 <button class="btn btn--accent" id="grade-btn" type="button">
                   <span data-icon="scan" data-icon-size="16"></span>
                   <span>提交批改</span>
+                </button>
+                <button class="btn" id="paper-grade-btn" type="button" style="display:none;">
+                  <span data-icon="layers" data-icon-size="16"></span>
+                  <span id="paper-grade-label">批改整份</span>
                 </button>
                 <span class="hint-inline" id="grade-hint"></span>
               </div>

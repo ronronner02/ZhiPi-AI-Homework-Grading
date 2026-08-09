@@ -763,6 +763,9 @@
   var BATCH_MAX = 20;   // 公开演示单次上限，超限提示拆批
   var BATCH_TOKEN = 0;  // 批次令牌：重入时作废旧批次，防并行交叉
   var BATCH_LIST = null; // 当前批次列表，renderBatchDone/selectBatchResult 共用
+  // 进度区被两种流程共用：批量照片（量词「张」）与整份试卷（量词「道」）
+  var BATCH_MODE = 'photos';
+  var BATCH_PAPER_ID = '';
 
   function runBatch(files) {
     if (files.length > BATCH_MAX) {
@@ -771,6 +774,8 @@
       return;
     }
     var token = ++BATCH_TOKEN;
+    BATCH_MODE = 'photos';    // 与整份试卷共用进度区，量词不同，进来先复位
+    BATCH_PAPER_ID = '';
     var list = files.map(function (f) {
       return { file: f, name: f.name, status: 'queued', text: '待处理' };
     });
@@ -787,7 +792,8 @@
     var done = list.filter(function (it) { return it.status === 'ok' || it.status === 'fail'; }).length;
     var pct = Math.round(done / list.length * 100);
     $('#batch-progress').innerHTML =
-      '已处理 <b class="mono">' + done + ' / ' + list.length + '</b> 张';
+      '已处理 <b class="mono">' + done + ' / ' + list.length + '</b>' +
+      (BATCH_MODE === 'paper' ? ' 道' : ' 张');
     $('#batch-bar-fill').style.width = pct + '%';
     $('#batch-list').innerHTML = list.map(function (it, i) {
       var cls = 'batch-item';
@@ -812,12 +818,18 @@
     var ok = list.filter(function (it) { return it.status === 'ok'; }).length;
     var fail = list.length - ok;
     var box = $('#batch-done');
+    // 整份试卷与批量照片共用这块进度区，但量词不同：一份卷子是「道题」，
+    // 批量上传是「张照片」。写死「张」会让整卷批改的完成提示读起来是错的。
+    var paper = (BATCH_MODE === 'paper');
+    var unit = paper ? ' 道' : ' 张';
     box.style.display = '';
     box.innerHTML =
       '<div class="note ' + (fail ? 'note--amber' : 'note--green') + '">' +
       '<span class="note__ico">' + I(fail ? 'alert' : 'check', { size: 18 }) + '</span>' +
-      '<div><b>批量完成</b>：成功 ' + ok + ' 张' +
-      (fail ? '，失败 ' + fail + ' 张' : '') +
+      '<div><b>' + (paper ? '整份批改完成' : '批量完成') + '</b>：成功 ' + ok + unit +
+      (fail ? '，失败 ' + fail + unit : '') +
+      (paper && BATCH_PAPER_ID
+        ? '。同卷各题共享编号 <b>' + esc(BATCH_PAPER_ID) + '</b>' : '') +
       '。已进入当前文件夹与教师工作台，按红黄绿置信度分流——<b>优先审红、黄桶</b>。</div>' +
       '</div>' +
       '<div class="toolbar" style="margin:14px 0 0;">' +
@@ -1064,6 +1076,8 @@
       if (r.quota_note) badges.push('<span class="factor factor--warn">' + esc(r.quota_note) + '</span>');
       $('#recog-badges').innerHTML = badges.join('');
 
+      renderPaperList(r);
+
       var ta = $('#ocr-text');
       ta.value = r.text || '';
       var editable = (r.engine === 'vlm');
@@ -1077,6 +1091,132 @@
     }).catch(function (e) {
       showRecogError(e.message);
     });
+  }
+
+  /* 一图多题 / 整份试卷：把认出来的每道题都列出来。
+     单题时整块隐藏，界面与原来完全一致——绝大多数上传都是单题，
+     不该为了少数整卷场景给所有人多加一块东西。 */
+  function renderPaperList(r) {
+    var box = $('#paper-sheet');
+    var btn = $('#paper-grade-btn');
+    var qs = (r && r.questions) || [];
+    if (!box || qs.length < 2) {
+      if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+      if (btn) btn.style.display = 'none';
+      return;
+    }
+
+    var cap = r.gradable_count || qs.length;
+    var rows = qs.map(function (q) {
+      var no = '<span class="paper-q__no">' + q.index + '</span>';
+      var score = q.printed_max_score
+        ? '<span class="paper-q__pm">卷面 ' + q.printed_max_score + ' 分</span>' : '';
+      // 超出上限的题如实标灰，题面仍然留着，可稍后单独提交
+      var off = q.gradable === false
+        ? '<span class="paper-q__off">超出本次上限</span>' : '';
+      return '<label class="paper-q' + (q.gradable === false ? ' is-off' : '') + '">' +
+        no +
+        '<span class="paper-q__body">' +
+          '<span class="paper-q__t">' + esc(q.subject || '') + ' · ' +
+            esc(q.title || ('第 ' + q.index + ' 题')) + '</span>' +
+          '<span class="paper-q__s">' + esc((q.answer || '').slice(0, 60) || '（未识别到作答）') +
+          '</span>' +
+        '</span>' + score + off +
+        '</label>';
+    }).join('');
+
+    box.style.display = '';
+    box.innerHTML =
+      '<div class="paper-head">' +
+        '<b>这张图认出 ' + qs.length + ' 道题</b>' +
+        '<span class="hint-inline">下方转写框只对应第 1 题；整份批改会为每道题单独出一份结果</span>' +
+      '</div>' +
+      (r.paper_note ? '<div class="note note--amber"><span class="note__ico">' +
+        I('alert', { size: 18 }) + '</span><div>' + esc(r.paper_note) + '</div></div>' : '') +
+      '<div class="paper-list">' + rows + '</div>';
+
+    if (btn) {
+      btn.style.display = '';
+      $('#paper-grade-label').textContent = '批改整份（' + cap + ' 道）';
+    }
+    Icons.hydrate(box);
+  }
+
+  /* 整份试卷批改：每道题一次独立批改，共享 paper_id。
+     刻意串行而不并发：单 worker 部署下并发只会让每个请求都变慢，而且
+     配额与限流都是按次计的，串行才能在额度用尽时干净地停在某一道题上，
+     前面已批的结果全部有效。 */
+  function gradePaper() {
+    if (!RECOG || !RECOG.questions || RECOG.questions.length < 2) return;
+    var hint = $('#grade-hint');
+    var todo = RECOG.questions.filter(function (q) { return q.gradable !== false; });
+    if (!todo.length) { hint.textContent = '没有可批改的题目'; return; }
+
+    // paper_id 只是本会话内的分组键，不参与鉴权，前端生成即可
+    var pid = 'P' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    var total = todo.length;
+    var engine = RECOG.engine;
+    var folder = ACTIVE_FOLDER || undefined;
+    var name = RECOG.student_name;
+
+    var list = todo.map(function (q) {
+      return { name: '第 ' + q.index + ' 题 · ' + (q.subject || ''),
+               status: 'wait', text: '排队中', q: q };
+    });
+    BATCH_MODE = 'paper';
+    BATCH_PAPER_ID = pid;
+    BATCH_TOKEN++;            // 作废可能在跑的批量照片批次，防两条流程交叉写进度区
+    $('#batch-sheet').style.display = '';
+    $('#batch-list').innerHTML = '';
+    $('#batch-done').style.display = 'none';
+    renderBatch(list);
+    $('#batch-sheet').scrollIntoView({
+      behavior: M.reduced ? 'auto' : 'smooth', block: 'start' });
+    hint.textContent = '整份批改中，请勿离开本页';
+
+    function step(i) {
+      if (i >= list.length) {
+        // 完成提示由 renderBatchDone 统一出（它已在最后一条上被 renderBatch 调用），
+        // 这里不再另写一份，免得两处文案各说一套
+        hint.textContent = '';
+        loadTeacher();
+        return;
+      }
+      var it = list[i];
+      var q = it.q;
+      it.status = 'busy';
+      it.text = '批改中';
+      renderBatch(list);
+
+      var body = { ocr_text: q.answer || '', ocr_clarity: RECOG.clarity,
+                   engine: engine, folder_id: folder,
+                   stem: q.stem, subject: q.subject || undefined,
+                   printed_max_score: q.printed_max_score || undefined,
+                   paper_id: pid, paper_index: q.index, paper_total: total };
+      if (name) body.student_name = name;
+      // 作答为空的题也要送批：空白卷同样是判分对象，跳过等于悄悄漏批
+      if (!body.ocr_text) body.ocr_text = '（未作答）';
+
+      api('/api/grade-image', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }).then(function (res) {
+        it.status = 'ok';
+        it.result = res;
+        it.text = res.total_score + ' / ' + res.max_score + ' 分 · 置信度 ' +
+          Math.round(res.confidence) + ' · ' + (STATUS_TEXT[res.status] || res.status);
+        CURRENT = res;
+        renderBatch(list);
+        step(i + 1);
+      }).catch(function (e) {
+        it.status = 'fail';
+        // 失败原因要留在那道题上：整份批改里一句笼统的"失败"没法定位是哪道题
+        it.text = '失败：' + e.message;
+        renderBatch(list);
+        step(i + 1);
+      });
+    }
+    step(0);
   }
 
   /* 识别失败后的兜底入口：改用内置样例。
@@ -1405,9 +1545,16 @@
           (r.printed_max_score ? '；卷面标注 ' + r.printed_max_score + ' 分' : '') +
           '">判别</span>'
         : '';
+      // 同一张卷子拆出的多行要能看出同源，否则「张三」在表里出现 8 次
+      // 像是交了 8 份作业
+      var paperMark = (r.paper_id && r.paper_total > 1)
+        ? '<span class="paper-mark" title="整份试卷第 ' + r.paper_index + ' 题（共 ' +
+          r.paper_total + ' 题）·同卷编号 ' + esc(r.paper_id) + '">卷 ' +
+          r.paper_index + '/' + r.paper_total + '</span>'
+        : '';
       return '<tr>' +
         '<td><b>' + esc(r.student_name) + '</b>' + mine + '</td>' +
-        '<td>' + esc(r.subject) + ' · ' + esc(r.question_title) + '</td>' +
+        '<td>' + esc(r.subject) + ' · ' + esc(r.question_title) + paperMark + '</td>' +
         '<td class="num"><b>' + r.ai_score + '</b> / ' + r.max_score + basisMark + '</td>' +
         '<td class="num">' + r.confidence.toFixed(1) + '</td>' +
         '<td><span class="stamp stamp--' + (STATUS_STAMP[r.status] || 'y') + '">' +
@@ -1745,6 +1892,15 @@
             '<span class="spacer"></span>' +
             '<span class="hint-inline">Step 04 · 根据本次批改结果实时聚合</span>' +
           '</div>' +
+          // 内置作答在 llm 模式下惰性批改：没批完就打开看板时，各项指标都只是
+          // 「按已批的那几份算出来的」，必须说明，不能把半成品当结论展示
+          (d.graded_total && d.graded_count < d.graded_total
+            ? '<div class="note note--amber"><span class="note__ico">' +
+              I('alert', { size: 18 }) + '</span><div>内置作答尚在批改中（<b>' +
+              d.graded_count + ' / ' + d.graded_total +
+              '</b> 份已完成）。下列指标只按已批完的部分聚合，稍后刷新本页可看到完整学情。' +
+              '</div></div>'
+            : '') +
           '<div class="kpi-row">' +
             '<div class="kpi"><div class="lab">参与作答</div><div class="val" data-count="' +
               d.student_count + '" data-suffix=" 人">0</div>' +
@@ -2080,6 +2236,7 @@
     $('#reset-btn').addEventListener('click', resetDemo);
     $('#file-input').addEventListener('change', onFileChosen);
     $('#grade-btn').addEventListener('click', submitImageGrade);
+    $('#paper-grade-btn').addEventListener('click', gradePaper);
 
     var createBtn = $('#folder-create-btn');
     if (createBtn) createBtn.addEventListener('click', createFolder);

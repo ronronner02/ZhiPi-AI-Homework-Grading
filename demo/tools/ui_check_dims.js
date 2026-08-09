@@ -76,15 +76,17 @@ return (async function () {
     if (!el) { out.bad.push(label + ' 元素不存在'); return false; }
     var r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) { out.bad.push(label + ' 盒子塌了，点不到'); return false; }
-    // 一律滚到视口中间再量，并等滚动落定：页面用的是 smooth 滚动，
-    // 滚完立刻取坐标会拿到滚动过程中的位置，elementFromPoint 命中 null，
-    // 看起来像"按钮被遮挡"，其实是量得太早。
-    el.scrollIntoView({ block: 'center', behavior: 'auto' });
-    await sleep(250);
+    // behavior 必须写 'instant'。页面设了 html{scroll-behavior:smooth}，而
+    // 'auto' 的语义是「沿用 CSS 的 scroll-behavior」——照样走平滑动画。
+    // 滚动距离大时（手机上可达 1000px）等固定毫秒数必然不够，量到的是动画
+    // 中途的坐标，报出来是"滚动后仍在视口外"或 elementFromPoint 命中 null，
+    // 看着像布局 bug，其实是量得太早。
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    await sleep(120);
     r = el.getBoundingClientRect();
     var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     if (cy < 0 || cy > innerHeight || cx < 0 || cx > innerWidth) {
-      out.bad.push(label + ' 滚动后仍在视口外 cx=' + Math.round(cx) + ' cy=' + Math.round(cy));
+      out.bad.push(label + ' 滚动后仍在视口外 cy=' + Math.round(cy) + ' vh=' + innerHeight);
       return false;
     }
     var top = document.elementFromPoint(cx, cy);

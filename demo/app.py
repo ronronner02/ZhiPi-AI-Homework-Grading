@@ -960,7 +960,25 @@ def api_recognize_image(req: RecognizeReq, request: Request,
                 "question_text": first["stem"],
                 "printed_max_score": first["printed_max_score"],
             })
-    result["question_count"] = len(result.get("questions") or [])
+
+    # 整份试卷 / 一图多题：把每道题都摊给前端，并给出可直接送批改的标题。
+    # detected 是**实际认出来的题数**，gradable 是本次允许批改的题数；
+    # 两者不等时必须让界面说出来，不能悄悄少批几道。
+    qlist = result.get("questions") or []
+    detected = len(qlist)
+    cap = guard.MAX_PAPER_QUESTIONS
+    for q in qlist:
+        q["title"] = _adhoc_title(q["stem"], q["subject"])
+        q["gradable"] = q["index"] <= cap
+    result["question_count"] = detected
+    result["gradable_count"] = min(detected, cap)
+    result["paper_cap"] = cap
+    if detected > cap:
+        result["paper_truncated"] = True
+        result["paper_note"] = (
+            "这张图共认出 %d 道题，本次最多批改前 %d 道（公开体验限额：每道题都是"
+            "一次独立的大模型批改）。其余题目的题面已保留在下方清单里，"
+            "可稍后单独提交。" % (detected, cap))
     return result
 
 
@@ -977,6 +995,11 @@ class GradeImageReq(BaseModel):
     stem: str | None = Field(None, max_length=4000)     # 照片里的印刷题面（教师可修正）
     subject: str | None = Field(None, max_length=16)    # 识别出的学科
     printed_max_score: float | None = Field(None, ge=0, le=300)  # 题面印的分值，仅展示
+    # 整份试卷：同一张卷子的各题共享 paper_id，前端与看板据此聚回一份卷子。
+    # 由前端生成（只在本会话内做分组键，不参与鉴权），这里只校验形状。
+    paper_id: str | None = Field(None, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    paper_index: int | None = Field(None, ge=1, le=200)   # 本题在卷中的序号
+    paper_total: int | None = Field(None, ge=1, le=200)   # 该卷共几道题
 
 
 def _clean_name(raw: str) -> str:
@@ -1084,6 +1107,12 @@ def api_grade_image(req: GradeImageReq, request: Request,
         "ocr_text": req.ocr_text,
         "folder_id": target_folder,
     })
+    # 整份试卷分组信息。index / total 只有在 paper_id 存在时才有意义，
+    # 单独给 index 而不给 id 是调用方拼错了，按无分组处理而不是记一个悬空序号。
+    if req.paper_id:
+        result["paper_id"] = req.paper_id
+        result["paper_index"] = req.paper_index
+        result["paper_total"] = req.paper_total
     # 存进本会话并就地写入 UP-xxx 临时 ID，让这份作业能进教师工作台与班级看板
     upload_id = session_store.add_upload(session, result)
     folders.add_item(session, target_folder, upload_id)
@@ -1282,6 +1311,12 @@ def api_analytics(class_id: str = CLASS_ID,
     data["class_name"] = _submissions_raw.get("class_name", class_id)
     data["builtin_count"] = len(SUBMISSIONS)
     data["upload_count"] = len(session["uploads"])
+    # llm 模式下内置作答是惰性批改的：看板可能在还有若干份没批完时就被打开，
+    # 此时平均得分率、薄弱知识点都是「按已批的那几份算出来的」。实测中途打开
+    # 会看到 19.4% / 薄弱知识点 0 这种数，看起来却像最终结论。
+    # 把进度一起给出去，让界面能说清这一点，而不是把半成品当成结果展示。
+    data["graded_count"] = len(GRADED)
+    data["graded_total"] = len(SUBMISSIONS)
     return data
 
 
