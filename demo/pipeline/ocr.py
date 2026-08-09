@@ -25,6 +25,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -379,16 +380,37 @@ def _normalize_subject(value) -> str:
     return "其他"
 
 
+#  从「12分」「（12分）」「本题 12 分」里取数字。
+#  Prompt 要求返回纯数字，但模型照抄卷面写法是常态；直接 float() 会抛，
+#  于是分值被静默丢成 None，教师就少了换算判别分的依据——而这正是
+#  printed_max_score 这个字段存在的唯一目的。
+_SCORE_NUM_RE = re.compile(r"(\d+(?:\.\d+)?)")
+
+
 def _normalize_printed_score(value):
     """印刷题面上标注的分值。取不到或不合理就是 None。
 
     它**不参与**判分，只作为「试卷原始分值」展示，供教师换算。
     上限 300 是为了挡住模型把题号、年份当分值填进来。
+
+    容忍模型返回「12分」这类带字的写法：只抽第一个数字，抽不到才算没有。
+    刻意只抽**第一个**数字——「第12题，本题8分」这种含两个数字的串，
+    取第一个会得到题号 12 而不是分值 8，但两者都在合法区间内，无从分辨；
+    与其猜，不如让它落在「可能不准但只用于展示」的既有口径里，
+    真正的判分分母始终是体系判别分的 15，不受这个值影响。
     """
+    if value is None or isinstance(value, bool):
+        return None
     try:
         n = float(value)
     except (TypeError, ValueError):
-        return None
+        m = _SCORE_NUM_RE.search(str(value))
+        if not m:
+            return None
+        try:
+            n = float(m.group(1))
+        except ValueError:
+            return None
     if n <= 0 or n > 300:
         return None
     return round(n, 1)

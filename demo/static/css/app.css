@@ -1471,6 +1471,8 @@ input:focus, select:focus, textarea:focus {
   letter-spacing: 0;
 }
 .kpi .delta { font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
+/* 人数与份数不等时的补充说明（整份试卷拆题后必然不等） */
+.kpi__sub { font-size: 11px; color: var(--ink-faint); margin-top: 2px; }
 
 .dist {
   display: flex;

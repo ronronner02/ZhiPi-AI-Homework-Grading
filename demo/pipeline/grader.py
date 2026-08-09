@@ -748,6 +748,17 @@ def _parse_llm_steps(question: dict, data: dict):
             "evidence": evidence,
             "legible": legible,
         }
+        # 模型压根没返回这一评分点时，上面会记成 0 分且 reason / evidence 全空。
+        # 「模型判了并给 0 分」与「模型没判」在界面上长得一模一样，但含义完全
+        # 相反：前者是判分结论，后者是判分缺失。必须单独标出来，否则教师会把
+        # 一个空白当成"这一维确实不得分"。
+        #
+        # 刻意不往 reason 里塞说明文字：_step_has_judgment 认 reason 非空即
+        # 「已覆盖」，写了就会把 rubric_coverage 虚高回 100，正好抹掉这里
+        # 唯一能触发人工复核的信号（实测 5 维只返回 3 维时 coverage 60 →
+        # 置信度 82.3 → 黄桶交教师，这条链路要保住）。
+        if not si:
+            entry["missing"] = True
         # 维度 key 只有维度体系下发的 Rubric 才有（题库内的人工 Rubric 没有）。
         # 教师改分后要按「学科 × 维度」回灌，靠这个字段定位改的是哪一维。
         if step.get("dimension"):

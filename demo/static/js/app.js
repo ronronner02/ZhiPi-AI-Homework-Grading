@@ -1470,6 +1470,12 @@
       var illegible = (s.legible === false)
         ? '<div class="step__quote step__quote--warn">' + I('alert', { size: 14 }) +
           '<span>该步字迹难以辨认，建议教师人工复核</span></div>' : '';
+      // 模型没返回这一评分点：0 分但不是「判定为 0 分」。两者在界面上原本
+      // 长得一模一样，教师会把判分缺失读成判分结论。
+      var missing = s.missing
+        ? '<div class="step__quote step__quote--warn">' + I('alert', { size: 14 }) +
+          '<span>模型未返回该评分点的判定，此处 0 分为缺省值而非判分结论，' +
+          '请人工补判</span></div>' : '';
       // 右侧那枚章：颜色 + 图标 + 读屏文本三重编码，色弱与读屏都能分辨得分状态
       return '<div class="step ' + st[1] + '" data-reveal="' + (i * 45) + '">' +
         '<span class="idx">' + (i + 1) + '</span>' +
@@ -1477,7 +1483,7 @@
           '<div class="t">' + esc(s.step) + ' ' + tag +
             '<span class="tag tag--kp">' + esc(s.knowledge_point) + '</span></div>' +
           '<div class="d">' + esc(s.reason) + '</div>' +
-          evid + illegible +
+          evid + illegible + missing +
         '</div>' +
         '<span class="stamp stamp--' + STEP_STAMP[st[1]] + '" title="' + st[2] + '">' +
           I(st[0], { size: 13, stroke: 2.2 }) +
@@ -1740,7 +1746,12 @@
             '<span class="hint-inline">Step 04 · 根据本次批改结果实时聚合</span>' +
           '</div>' +
           '<div class="kpi-row">' +
-            '<div class="kpi"><div class="lab">参与作答</div><div class="val" data-count="' + d.student_count + '">0</div></div>' +
+            '<div class="kpi"><div class="lab">参与作答</div><div class="val" data-count="' +
+              d.student_count + '" data-suffix=" 人">0</div>' +
+              // 整份试卷拆题后份数与人数不再相等，只报一个数说不清在统计什么
+              (d.result_count != null && d.result_count !== d.student_count
+                ? '<div class="kpi__sub">共 ' + d.result_count + ' 份批改</div>' : '') +
+            '</div>' +
             '<div class="kpi"><div class="lab">平均得分率</div><div class="val" data-count="' + d.average_score_pct + '" data-digits="1" data-suffix="%">0</div></div>' +
             '<div class="kpi"><div class="lab">薄弱知识点</div><div class="val" data-count="' + d.weak_knowledge_points.length + '">0</div></div>' +
             '<div class="kpi"><div class="lab">批改模式</div><div class="val is-text">' + (d.mode === 'llm' ? '真实 LLM' : 'Mock 规则引擎') + '</div></div>' +

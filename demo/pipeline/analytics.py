@@ -47,6 +47,12 @@ def aggregate(class_id: str, results: list) -> dict:
         results:  批改结果列表（grader.grade 的输出）。
     """
     n = len(results)
+    # 参与作答**人数**按学生去重，不能等于结果条数：整份试卷按题拆分后，
+    # 一个学生一张 10 道题的卷子会产生 10 条结果，若直接用条数，看板会显示
+    # 「参与作答 10 人」——班级规模凭空翻十倍，红黄绿占比的分母也跟着错。
+    # 结果里没有 student_id，只能按 student_name 去重。
+    names = {r.get("student_name") for r in results if r.get("student_name")}
+    student_n = len(names) if names else n
     dist = {"green": 0, "yellow": 0, "red": 0}
     score_pcts = []
     kp_stat = {}   # 知识点 -> [判错步骤数, 评估步骤总数]
@@ -85,7 +91,10 @@ def aggregate(class_id: str, results: list) -> dict:
 
     return {
         "class_id": class_id,
-        "student_count": n,
+        "student_count": student_n,
+        # 批改份数单独给出：整份试卷拆题后它与人数不再相等，
+        # 「20 人 / 共 86 份」比只报一个数更说得清看板在统计什么。
+        "result_count": n,
         "average_score_pct": avg,
         "distribution": {
             "green": dist["green"],

@@ -354,11 +354,23 @@ def dimension_pass_rate(session: dict, subject: str) -> float | None:
     return round((prior * 4 + hit * 100.0) / (4 + total), 1)
 
 
-def dimension_bias(session: dict, subject: str) -> dict:
+# 一个维度累计到多少条教师修正，才算「系统性偏差」而不是「有人改过一次」。
+# 回灌进 Prompt 的门槛用它；给教师看的诊断不设门槛（n=1 也是真实数据）。
+# 取 3：低于此值时，单条修正的正负号完全由那一道题决定，把它写进 Prompt
+# 等于让一次偶发分歧去左右后面所有同学科作业的判分松紧。
+BIAS_MIN_SAMPLES = 3
+
+
+def dimension_bias(session: dict, subject: str, min_samples: int = 1) -> dict:
     """该学科每个维度的「教师平均修正量」，用于提示后续批改的系统性偏差。
 
     正值 = 教师普遍往上改（模型在这一维偏严）；负值 = 普遍往下改（模型偏松）。
     这是**给教师看的诊断信息**，也写进 Prompt 提示模型收紧或放宽。
+
+    min_samples：该维度至少累计多少条教师修正才纳入结果。
+    展示用 1（如实给出全部已有数据），回灌进 Prompt 用 BIAS_MIN_SAMPLES——
+    n=1 时 _bias_hint 就会因 |delta| ≥ 0.5 触发，一次偶发修正会变成
+    「你在这一维历史上偏严」写进后续每一次批改的 Prompt。
 
     刻意不做成自动调分：把教师的历史修正量直接加到新的判分上，等于让模型
     的错误被一个统计量掩盖掉，而教师看到的分数不再是模型的真实判断——
@@ -372,7 +384,19 @@ def dimension_bias(session: dict, subject: str) -> dict:
             slot = acc.setdefault(key, [0, 0])
             slot[0] += delta
             slot[1] += 1
-    return {k: round(v[0] / v[1], 2) for k, v in acc.items() if v[1]}
+    return {k: round(v[0] / v[1], 2)
+            for k, v in acc.items() if v[1] >= max(1, min_samples)}
+
+
+def dimension_bias_samples(session: dict, subject: str) -> dict:
+    """每个维度累计了多少条教师修正。前端据此说明「样本还不够，尚未回灌」。"""
+    acc = {}
+    for rec in session["reviews"].values():
+        if rec.get("subject") != subject:
+            continue
+        for key in (rec.get("dimension_deltas") or {}):
+            acc[key] = acc.get(key, 0) + 1
+    return acc
 
 
 def _apply_pass_rate(graded: dict, rate: float | None) -> dict:
@@ -1019,7 +1043,9 @@ def api_grade_image(req: GradeImageReq, request: Request,
     else:
         rate = dimension_pass_rate(session, question["subject"])
     overrides = {"teacher_pass_rate": rate} if rate is not None else None
-    bias = dimension_bias(session, question["subject"]) if question.get("open") else {}
+    # 回灌进 Prompt 的偏差要过样本门槛：n=1 的一次修正不该左右后续判分松紧
+    bias = dimension_bias(session, question["subject"],
+                          min_samples=BIAS_MIN_SAMPLES) if question.get("open") else {}
     try:
         result = grader.grade_adhoc(question, req.ocr_text, req.ocr_clarity,
                                     factor_overrides=overrides,
@@ -1196,7 +1222,12 @@ def api_review(req: ReviewReq, session: dict = Depends(demo_session)):
         # 维度体系作业回传学科级认可度与逐维偏差，让前端能显示
         # 「教师终审已影响后续同类作业的判分」这条飞轮
         "dimension_pass_rate": dimension_pass_rate(session, subject) if subject else None,
+        # 展示用不设样本门槛：n=1 也是真实数据，教师有权看见
         "dimension_bias": dimension_bias(session, subject) if subject else {},
+        # 但要同时告知每一维攒了几条，以及攒到几条才会真正回灌进后续判分，
+        # 否则「已影响后续批改」这句话在 n=1 时是不成立的
+        "dimension_bias_samples": dimension_bias_samples(session, subject) if subject else {},
+        "dimension_bias_min_samples": BIAS_MIN_SAMPLES,
     }
 
 
