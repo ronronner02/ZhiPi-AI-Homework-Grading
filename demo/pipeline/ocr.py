@@ -24,6 +24,7 @@ import base64
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import time
@@ -411,6 +412,11 @@ def _normalize_printed_score(value):
             n = float(m.group(1))
         except ValueError:
             return None
+    # float("nan") / float("inf") 通过 try-except 不会抛，但它们通过 JSON 序列化
+    # 会产生 NaN / Infinity——不是合法的 JSON 值，浏览器的 JSON.parse 会 SyntaxError，
+    # 整个 recognize-image 响应就不可解析了。
+    if math.isnan(n) or math.isinf(n):
+        return None
     if n <= 0 or n > 300:
         return None
     return round(n, 1)

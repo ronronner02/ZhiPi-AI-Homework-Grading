@@ -51,8 +51,11 @@ def aggregate(class_id: str, results: list) -> dict:
     # 一个学生一张 10 道题的卷子会产生 10 条结果，若直接用条数，看板会显示
     # 「参与作答 10 人」——班级规模凭空翻十倍，红黄绿占比的分母也跟着错。
     # 结果里没有 student_id，只能按 student_name 去重。
+    # 注意：没有姓名的提交不能被静默丢弃——上传件默认姓名为「上传作业」，
+    # 真正空名的情形极少，但出现时把无名提交算作 1 个匿名学生桶而不是 0。
     names = {r.get("student_name") for r in results if r.get("student_name")}
-    student_n = len(names) if names else n
+    has_unnamed = any(not r.get("student_name") for r in results)
+    student_n = len(names) + (1 if has_unnamed else 0)
     dist = {"green": 0, "yellow": 0, "red": 0}
     score_pcts = []
     kp_stat = {}   # 知识点 -> [判错步骤数, 评估步骤总数]

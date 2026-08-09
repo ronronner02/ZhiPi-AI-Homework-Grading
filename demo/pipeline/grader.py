@@ -753,11 +753,17 @@ def _parse_llm_steps(question: dict, data: dict):
         # 相反：前者是判分结论，后者是判分缺失。必须单独标出来，否则教师会把
         # 一个空白当成"这一维确实不得分"。
         #
-        # 刻意不往 reason 里塞说明文字：_step_has_judgment 认 reason 非空即
-        # 「已覆盖」，写了就会把 rubric_coverage 虚高回 100，正好抹掉这里
-        # 唯一能触发人工复核的信号（实测 5 维只返回 3 维时 coverage 60 →
-        # 置信度 82.3 → 黄桶交教师，这条链路要保住）。
-        if not si:
+        # 模型没返回任何有实质内容的判分信息时标为 missing。
+        # 有两种情形需要覆盖：
+        #   1. _align_llm_steps 找不到对应步骤，返回 {} —— `not si` 抓到的就是这个。
+        #   2. 模型返回了步骤名但没给评分信息（如 {"step":"步骤完整"}），
+        #      `_align_llm_steps` 位置回退会把它放进来，si 是 truthy，
+        #      但 score/reason/evidence 全缺失，和完全没返回在效果上没区别。
+        # 判据：没有 score/is_correct/reason/evidence/error_tag 任何一项，
+        # 就视为判分缺失。注意 score=0 是合法的明确判分（模型说这步得0分），
+        # 用 "score" in si 而不是 si.get("score") 来区分「明确给0」与「没给」。
+        if not si or not ("score" in si or "is_correct" in si or
+                          si.get("reason") or si.get("evidence") or si.get("error_tag")):
             entry["missing"] = True
         # 维度 key 只有维度体系下发的 Rubric 才有（题库内的人工 Rubric 没有）。
         # 教师改分后要按「学科 × 维度」回灌，靠这个字段定位改的是哪一维。

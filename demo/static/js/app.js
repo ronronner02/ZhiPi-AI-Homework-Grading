@@ -932,6 +932,11 @@
     var maxMB = (CONFIG.guard && CONFIG.guard.max_image_mb) || 8;
 
     compressImage(it.file).then(function (blob) {
+      // token 守卫：paper grading 会 BATCH_TOKEN++，作废本批次的递归，
+      // 但已经发出的 fetch 会继续跑完并在 resolve 里调 renderBatch(photoList)，
+      // 把整版试卷的进度区用照片数据覆盖掉。在这里检查一次，凡是 token 已变的
+      // 就提前返回——不再更新 UI，也不再调用后续的识别/批改请求。
+      if (token !== BATCH_TOKEN) return;
       if (blob.size > maxMB * 1024 * 1024) {
         it.status = 'fail';
         it.text = '超过 ' + maxMB + 'MB 上限';
@@ -1148,9 +1153,15 @@
      前面已批的结果全部有效。 */
   function gradePaper() {
     if (!RECOG || !RECOG.questions || RECOG.questions.length < 2) return;
+    var btn = $('#paper-grade-btn');
+    if (btn && btn.disabled) return;  // 防双击重入：第一次点击禁用后，第二次在此返回
+
     var hint = $('#grade-hint');
     var todo = RECOG.questions.filter(function (q) { return q.gradable !== false; });
     if (!todo.length) { hint.textContent = '没有可批改的题目'; return; }
+
+    // 禁用按钮，防双击重入；完成或出错时重新启用
+    if (btn) btn.disabled = true;
 
     // paper_id 只是本会话内的分组键，不参与鉴权，前端生成即可
     var pid = 'P' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1165,7 +1176,12 @@
     });
     BATCH_MODE = 'paper';
     BATCH_PAPER_ID = pid;
-    BATCH_TOKEN++;            // 作废可能在跑的批量照片批次，防两条流程交叉写进度区
+    // BATCH_TOKEN++ 作废正在进行的批量照片批次，防两条流程交叉写进度区。
+    // 同时用 myToken 捕获本次批次令牌：photo batch 的 step 闭包捕获的是旧 token，
+    // 之后它发出的 fetch 一旦 resolve，在 renderBatch(photoList) 里检查
+    // `if (token !== BATCH_TOKEN)` 就能提前返回（见 processBatch 里的守卫）。
+    var myToken = ++BATCH_TOKEN;
+
     $('#batch-sheet').style.display = '';
     $('#batch-list').innerHTML = '';
     $('#batch-done').style.display = 'none';
@@ -1174,17 +1190,28 @@
       behavior: M.reduced ? 'auto' : 'smooth', block: 'start' });
     hint.textContent = '整份批改中，请勿离开本页';
 
+    function done() {
+      hint.textContent = '';
+      if (btn) btn.disabled = false;
+      loadTeacher();
+    }
+
     function step(i) {
+      // token 守卫：若用户此后又触发了新批次（照片批改），本轮 paper 已失效。
+      // 停止递归但不改 list 里的状态——那边的进度区已被新批次重绘，改了也没人看。
+      if (myToken !== BATCH_TOKEN) {
+        if (btn) btn.disabled = false;
+        return;
+      }
       if (i >= list.length) {
         // 完成提示由 renderBatchDone 统一出（它已在最后一条上被 renderBatch 调用），
         // 这里不再另写一份，免得两处文案各说一套
-        hint.textContent = '';
-        loadTeacher();
+        done();
         return;
       }
       var it = list[i];
       var q = it.q;
-      it.status = 'busy';
+      it.status = 'working';    // 'working' 与 renderBatch 的 .is-busy 检查一致
       it.text = '批改中';
       renderBatch(list);
 
@@ -1201,6 +1228,7 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       }).then(function (res) {
+        if (myToken !== BATCH_TOKEN) { if (btn) btn.disabled = false; return; }
         it.status = 'ok';
         it.result = res;
         it.text = res.total_score + ' / ' + res.max_score + ' 分 · 置信度 ' +
@@ -1209,10 +1237,25 @@
         renderBatch(list);
         step(i + 1);
       }).catch(function (e) {
+        if (myToken !== BATCH_TOKEN) { if (btn) btn.disabled = false; return; }
         it.status = 'fail';
         // 失败原因要留在那道题上：整份批改里一句笼统的"失败"没法定位是哪道题
         it.text = '失败：' + e.message;
         renderBatch(list);
+        // 额度耗尽（429）或超时（504）时停止：后续每道题都会同样失败，
+        // 继续发只是在浪费配额。已批完的结果全部有效，不会因停止而撤销。
+        var msg = e.message || '';
+        if (msg.indexOf('429') >= 0 || msg.indexOf('额度') >= 0 ||
+            msg.indexOf('504') >= 0 || msg.indexOf('超时') >= 0) {
+          for (var j = i + 1; j < list.length; j++) {
+            list[j].status = 'fail';
+            list[j].text = '跳过（前一题 ' +
+              (msg.indexOf('429') >= 0 || msg.indexOf('额度') >= 0 ? '额度耗尽' : '超时') + '）';
+          }
+          renderBatch(list);
+          done();
+          return;
+        }
         step(i + 1);
       });
     }
