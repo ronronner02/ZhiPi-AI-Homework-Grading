@@ -45,11 +45,27 @@ STATUS_LABEL = {
 
 
 def compute_confidence(factors: dict) -> float:
-    """按 §9.7 公式加权求和，返回百分制置信度（保留 1 位小数）。"""
+    """按 §9.7 公式加权求和，返回百分制置信度（保留 1 位小数）。
+
+    取值为 None 的因子表示「这一维本次测不了」，按权重重归一化剔除，
+    而不是当成 0 分计入。二者差别很大：题库外的作业没有人工标准答案，
+    answer_match 无从比对，若记 0 分就等于凭空扣掉 25 分置信度
+    （权重 0.25），把一份识别清晰、判分完整的作业硬推进红桶。
+    「测不出」与「测出来是 0」是两件事，公式必须能区分。
+
+    全部因子都测不出时返回 0.0 —— 没有任何依据就不该给出置信度。
+    """
     total = 0.0
+    weight_sum = 0.0
     for key, weight in WEIGHTS.items():
-        total += float(factors.get(key, 0)) * weight
-    return round(total, 1)
+        value = factors.get(key, 0)
+        if value is None:
+            continue
+        total += float(value) * weight
+        weight_sum += weight
+    if weight_sum <= 0:
+        return 0.0
+    return round(total / weight_sum, 1)
 
 
 def route(confidence: float) -> str:

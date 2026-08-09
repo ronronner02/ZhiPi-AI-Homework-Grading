@@ -451,6 +451,10 @@ hr { border: 0; border-top: 1px solid var(--rule-soft); margin: 14px 0; }
 .factor--warn b { color: #8A5A08; }
 .factor--bad  { background: var(--st-red-lt);    border-color: #E8A9A5; color: var(--st-red); }
 .factor--bad b { color: var(--st-red); }
+/* 不计入：这一维本次测不出（题库外作业没有人工标准答案），权重已重归一化剔除。
+   压低对比度，避免读成一个「很低的分数」。 */
+.factor--na   { border-style: dashed; color: var(--ink-faint); }
+.factor--na b { color: var(--ink-faint); font-family: var(--font-sans); }
 
 /* --------------------------------------------------------------------------
    6. 表单控件

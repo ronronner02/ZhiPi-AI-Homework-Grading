@@ -1431,9 +1431,14 @@
     if (!r.confidence_factors) return '';
     return Object.keys(r.confidence_factors).map(function (k) {
       var w = FACTOR_WEIGHT[k];
-      return '<span class="factor">' + esc(FACTOR_LABEL[k] || k) +
-        (w ? ' <em class="factor__w">&#215;' + w.toFixed(2) + '</em>' : '') +
-        ' <b>' + r.confidence_factors[k] + '</b></span>';
+      var v = r.confidence_factors[k];
+      // null = 这一维本次测不出（题库外作业没有人工标准答案可比对）。
+      // 权重已在后端按重归一化剔除，此处如实标注，不要显示成 0 或 null。
+      var off = (v === null || v === undefined);
+      return '<span class="factor' + (off ? ' factor--na' : '') + '">' +
+        esc(FACTOR_LABEL[k] || k) +
+        (w && !off ? ' <em class="factor__w">&#215;' + w.toFixed(2) + '</em>' : '') +
+        ' <b>' + (off ? '不计入' : v) + '</b></span>';
     }).join('');
   }
 
