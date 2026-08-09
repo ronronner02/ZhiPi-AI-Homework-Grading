@@ -109,26 +109,31 @@ class CDP {
       }
     });
   }
-  send(method, params = {}) {
+  send(method, params = {}, timeoutMs = 30000) {
     const id = ++this.id;
     return new Promise((res, reject) => {
       this.pending.set(id, { resolve: res, reject });
       this.ws.send(JSON.stringify({ id, method, params }));
       setTimeout(() => {
         if (this.pending.has(id)) { this.pending.delete(id); reject(new Error(`${method} 超时`)); }
-      }, 30000);
+      }, timeoutMs);
     });
   }
   on(method, fn) {
     if (!this.handlers.has(method)) this.handlers.set(method, []);
     this.handlers.get(method).push(fn);
   }
-  /** 求值并把结果按值取回（不要 objectId，避免跨进程引用） */
-  async evaluate(expr) {
+  /** 求值并把结果按值取回（不要 objectId，避免跨进程引用）
+   *
+   * 超时给得比其他命令宽：自检脚本里会等真实识别 + 真实批改回来，
+   * 单次 evaluate 动辄 40-90 秒，按 30 秒砍会砍在半路上，
+   * 报出来的是「Runtime.evaluate 超时」，看不出是脚本还没跑完。
+   */
+  async evaluate(expr, timeoutMs = 300000) {
     const r = await this.send('Runtime.evaluate', {
       expression: `(function(){ ${expr} })()`,
       returnByValue: true, awaitPromise: true,
-    });
+    }, timeoutMs);
     if (r.exceptionDetails) {
       throw new Error('页内异常：' + (r.exceptionDetails.exception?.description
         || r.exceptionDetails.text));
