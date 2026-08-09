@@ -84,6 +84,7 @@ def _load_dotenv_once() -> str | None:
 _DOTENV_SOURCE = _load_dotenv_once()
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -230,6 +231,61 @@ async def _lifespan(_app):
 
 
 app = FastAPI(title="智批π · AI 智能作业批改系统 Demo", lifespan=_lifespan)
+
+
+# 请求体字段 → 中文名。只列体验者真能撞到的，其余按字段名原样回显。
+_FIELD_CN = {
+    "student_name": "学生姓名",
+    "ocr_text": "转写文本",
+    "ocr_clarity": "卷面清晰度",
+    "stem": "题面",
+    "subject": "学科",
+    "printed_max_score": "题面分值",
+    "engine": "识别引擎",
+    "folder_id": "文件夹",
+    "paper_id": "试卷编号",
+    "name": "名称",
+    "final_score": "终判分",
+    "final_comment": "终审评语",
+}
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(request: Request, exc: RequestValidationError):
+    """把 Pydantic 的英文校验错误翻成一句能照着做的中文。
+
+    默认 422 的 detail 长这样：`String should have at most 20 characters`——
+    既不说是哪个字段，也不说该怎么办，前端原样弹出来就是「批改失败：
+    String should have at most 20 characters」。体验者根本无从下手，
+    实际原因可能只是文件名太长（微信临时名是 32 位十六进制）。
+    """
+    def cn(msg: str) -> str:
+        m = re.match(r"String should have at most (\d+) characters", msg)
+        if m:
+            return "超长（最多 %s 个字符）" % m.group(1)
+        m = re.match(r"String should have at least (\d+) characters", msg)
+        if m:
+            return "太短（至少 %s 个字符）" % m.group(1)
+        m = re.match(r"Input should be less than or equal to (\S+)", msg)
+        if m:
+            return "超出上限（最大 %s）" % m.group(1)
+        m = re.match(r"Input should be greater than or equal to (\S+)", msg)
+        if m:
+            return "低于下限（最小 %s）" % m.group(1)
+        if msg.startswith("String should match pattern"):
+            return "格式不合法"
+        if msg == "Field required":
+            return "缺失"
+        return msg          # 没覆盖到的原样带出，至少字段名是中文的
+
+    parts = []
+    for err in exc.errors():
+        loc = [str(x) for x in err.get("loc", []) if x not in ("body", "query", "path")]
+        field = loc[-1] if loc else "请求"
+        parts.append("字段「%s」%s" % (_FIELD_CN.get(field, field), cn(err.get("msg", "取值不合法"))))
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "请求参数不合法：" + "；".join(parts[:3])})
 
 class _CachedStatic(StaticFiles):
     """给静态资源补上 Cache-Control。
@@ -989,7 +1045,12 @@ class GradeImageReq(BaseModel):
     question_id: str | None = None             # 题库内题目：题目 + 转写 + 清晰度
     ocr_text: str | None = Field(None, max_length=4000)   # 限长：转写文本要发给大模型，按 token 计费
     ocr_clarity: float = Field(75.0, ge=0, le=100)   # 防直调 API 构造超界置信度
-    student_name: str = Field("上传作业", max_length=20)
+    # 不设 max_length=20：姓名的限长由 _clean_name 截断承担。写在 Field 上会抢在
+    # 清洗之前把整个请求打回 422——而这里最常见的"超长姓名"是微信 / 相机的
+    # 机器文件名（如 32 位十六进制），用户完全没意识到自己填了名字，却只看到
+    # 一句 "String should have at most 20 characters" 和一份没批成的作业。
+    # 截断是无损的（姓名只用于展示），拒绝整次批改不是。
+    student_name: str = Field("上传作业", max_length=200)
     engine: str | None = Field(None, max_length=32)   # 识别引擎（回显用）
     folder_id: str | None = Field(None, max_length=32)  # 上传归属文件夹
     # 题库外的真实作业：题面 + 学科由识别阶段给出，不再往题库里硬套。

@@ -623,21 +623,23 @@
 
     rows.push(c.double_check
       ? { on: true,  k: '二次复批',
-          v: '同模型再批一遍，两次吻合度作为置信度因子' }
+          v: '同一模型再批一遍，两次吻合度作为置信度因子' }
       : { on: false, k: '二次复批',
-          v: '未启用 · 置信度里的「自检一致性」退回模型自报值（ZHIPI_DOUBLE_CHECK=1 开启）' });
+          v: '未启用 · 置信度里的「二次批改一致性」退回模型自报值' });
 
+    // 刻意不显示第二模型的具体型号：型号会换，界面不该跟着变；
+    // 教师要知道的是「有没有第二个独立模型在复核」，不是它叫什么。
     if (!c.cross_check) {
       rows.push({ on: false, k: '交叉验证',
-                  v: '未启用 · 填入第二模型的链接与密钥即自动启用；未启用时该因子留空，权重重归一化剔除' });
+                  v: '未启用 · 配好大模型二即自动启用；未启用时该因子留空，权重重归一化剔除' });
     } else if (c.cross_budget_tight) {
       // 这条是硬警告：预算小于最快一次成功耗时，等于每次必然超时后静默丢弃。
       rows.push({ on: false, k: '交叉验证',
-                  v: c.cross_model + ' · 预算仅 ' + c.cross_timeout +
-                     ' 秒，实测第二模型多需 25-90 秒，几乎必然超时后被丢弃（调大 ZHIPI_CROSS_TIMEOUT）' });
+                  v: '大模型二 · 预算仅 ' + c.cross_timeout +
+                     ' 秒，实测第二模型多需 25-90 秒，几乎必然超时后被丢弃（需调大超时预算）' });
     } else {
       rows.push({ on: true, k: '交叉验证',
-                  v: c.cross_model + ' 独立复核，仅黄/红初评触发；一致性分并入同名置信度因子后复评' });
+                  v: '大模型二独立复核，仅黄/红初评触发；一致性分并入同名置信度因子后复评' });
     }
     el.innerHTML = rows.map(chainRow).join('');
     Icons.hydrate(el);
@@ -741,11 +743,15 @@
   // 这样文件名就是学生姓名，不再统一显示「上传作业」。
   // ——————————————————————————————————————————————————————————————
   var STAGED_FILES = [];  // [{file, name, blobUrl}]
+  var NAME_MAX = 20;      // 与后端 _clean_name 的截断长度一致
 
   function stageFiles(files) {
     var maxMB = (CONFIG.guard && CONFIG.guard.max_image_mb) || 8;
     files.forEach(function (f) {
-      var raw = f.name.replace(/\.[^.]+$/, ''); // 去掉扩展名当默认名
+      // 去扩展名当默认名，并截到后端会保留的长度。不截的话，微信 / 相机的
+      // 机器文件名（32 位十六进制之类）会让用户看到一个自己没打过的长名字，
+      // 而真正用上的只有前 20 个字符。
+      var raw = f.name.replace(/\.[^.]+$/, '').slice(0, NAME_MAX);
       STAGED_FILES.push({ file: f, name: raw, blobUrl: URL.createObjectURL(f) });
     });
     renderStaging();
@@ -770,7 +776,7 @@
       return '<div class="stage-item">' +
         '<img class="stage-item__thumb" src="' + esc(it.blobUrl) + '" alt="">' +
         '<input class="input input--sm stage-item__name" type="text" ' +
-          'placeholder="学生姓名" value="' + esc(it.name) + '" ' +
+          'placeholder="学生姓名" value="' + esc(it.name) + '" maxlength="' + NAME_MAX + '" ' +
           'data-idx="' + idx + '" aria-label="学生姓名">' +
         '<button class="btn btn--primary btn--sm" type="button" data-grade-idx="' + idx + '">' +
           '批改</button>' +
@@ -806,7 +812,9 @@
         URL.revokeObjectURL(it.blobUrl);
         STAGED_FILES.splice(i, 1);
         renderStaging();
-        handleFileWithName(it.file, it.name || it.file.name);
+        // 名字清空就不回退到原始文件名——机器文件名不是姓名，
+        // 让后端用默认的「上传作业」比显示一串十六进制强
+        handleFileWithName(it.file, it.name);
       });
     });
 
@@ -817,7 +825,7 @@
       STAGED_FILES = [];
       renderStaging();
       if (copy.length === 1) {
-        handleFileWithName(copy[0].file, copy[0].name || copy[0].file.name);
+        handleFileWithName(copy[0].file, copy[0].name);
       } else {
         var renamed = copy.map(function (it) {
           it.file._stageName = it.name;
@@ -895,7 +903,9 @@
     BATCH_MODE = 'photos';    // 与整份试卷共用进度区，量词不同，进来先复位
     BATCH_PAPER_ID = '';
     var list = files.map(function (f) {
-      return { file: f, name: f._stageName || f.name, status: 'queued', text: '待处理' };
+      // 未经暂存区的直传（拖入 / 整卷）也要截，f.name 这里是带扩展名的原始文件名
+      return { file: f, name: (f._stageName || f.name).slice(0, NAME_MAX),
+               status: 'queued', text: '待处理' };
     });
     var sheet = $('#batch-sheet');
     sheet.style.display = '';
@@ -1479,29 +1489,32 @@
 
     var steps = stepChainHtml(r.step_analysis);
 
+    // 因子区只放五因子本身。二次批改一致性与双模型交叉验证的分数已经是其中
+    // 两枚 chip，再挂一个「复核分 15」「模型二判 15 分」的绿标签是同一件事说两遍。
     var factors = factorChipsHtml(r);
-    if (r.consistency_check) {
-      factors += '<span class="factor factor--ok">二次批改一致性 <b>' +
-        r.consistency_check.agreement + '</b>（复核分 ' + r.consistency_check.second_score + '）</span>';
-    }
-    if (r.cross_check) {
-      factors += '<span class="factor ' + (r.cross_check.escalated ? 'factor--bad' : 'factor--ok') +
-        '">双模型交叉验证 <b>' + (r.cross_check.escalated ? '结论分歧 · 已转人工' : '结论一致') +
-        '</b>（' + esc(r.cross_check.model2 || '模型 2') + ' 判 ' + r.cross_check.model2_score +
-        ' 分，分差 ' + r.cross_check.gap + '）</span>';
-    }
-    // 初评 → 复评：这份的分流被交叉验证改过，必须让教师看见是什么改的
+    // 分流被交叉验证改过是另一回事——五因子里看不出来，作为一行说明留在下面
+    var crossNote = '';
     if (r.confidence_preliminary != null && r.status_preliminary &&
         r.status_preliminary !== r.status) {
-      factors += '<span class="factor factor--warn">交叉验证后改判 <b>' +
-        (STATUS_TEXT[r.status_preliminary] || r.status_preliminary) + ' → ' +
-        (STATUS_TEXT[r.status] || r.status) + '</b>（置信度 ' +
-        r.confidence_preliminary + ' → ' + r.confidence + '）</span>';
+      crossNote = '<p class="hint">经大模型二独立复核后，本份由「' +
+        (STATUS_TEXT[r.status_preliminary] || r.status_preliminary) + '」改判为「' +
+        (STATUS_TEXT[r.status] || r.status) + '」，置信度 ' +
+        r.confidence_preliminary + ' → ' + r.confidence + '。</p>';
     }
 
     var tags = r.error_tags.length
       ? r.error_tags.map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('')
       : '<span class="muted">无</span>';
+
+    // 知识点块：题库外走维度体系时，知识点就是那五个维度名，和上面的
+    // 逐批改节点一字不差，再列一遍纯属占地方——那种情况整块不出。
+    var kps = r.knowledge_points || [];
+    var stepNames = (r.step_analysis || []).map(function (s) { return String(s.step || '').trim(); });
+    var kpDup = kps.length && kps.every(function (k) { return stepNames.indexOf(String(k).trim()) >= 0; });
+    var kpBlock = (!kps.length || kpDup) ? '' :
+      '<h3 class="block-title">知识点</h3><div class="factor-wrap">' +
+        kps.map(function (k) { return '<span class="tag tag--kp">' + esc(k) + '</span>'; }).join('') +
+      '</div>';
 
     var mine = (r.source === 'upload')
       ? '<div class="note note--green"><span class="note__ico">' + I('circleCheck', { size: 18 }) +
@@ -1561,8 +1574,9 @@
         '</div>' +
 
         (r.note ? '<p class="hint">' + esc(r.note) + '</p>' : '') +
-        '<h3 class="block-title">置信度五因子 · 设计方案 §9.7</h3>' +
+        '<h3 class="block-title">置信度五因子</h3>' +
         '<div class="factor-wrap">' + factors + '</div>' +
+        crossNote +
       '</div>' +
 
       '<div class="sheet">' +
@@ -1592,10 +1606,8 @@
             '每一步判分都引用学生作答原文作为依据，老师是在「审」而不是在「信」。</span>' +
         '</div>' +
         steps +
-        '<h3 class="block-title">知识点</h3><div class="factor-wrap">' +
-          r.knowledge_points.map(function (k) { return '<span class="tag tag--kp">' + esc(k) + '</span>'; }).join('') +
-        '</div>' +
-        '<h3 class="block-title">错因标签 &#183; &#167;6.11 十类枚举</h3><div class="factor-wrap">' + tags + '</div>' +
+        kpBlock +
+        '<h3 class="block-title">错因标签</h3><div class="factor-wrap">' + tags + '</div>' +
       '</div>' +
 
       '<div class="sheet">' +
@@ -1794,12 +1806,16 @@
         ? '<div class="step__quote step__quote--warn">' + I('alert', { size: 14 }) +
           '<span>模型未返回该评分点的判定，此处 0 分为缺省值而非判分结论，' +
           '请人工补判</span></div>' : '';
+      // 知识点与步骤名相同就不再挂一次。题库外走维度体系时，知识点就是维度名、
+      // 也就是步骤名，两个一模一样的标签并排显示像是渲染出了 bug。
+      var kp = String(s.knowledge_point || '').trim();
+      var kpTag = (kp && kp !== String(s.step || '').trim())
+        ? '<span class="tag tag--kp">' + esc(kp) + '</span>' : '';
       // 右侧那枚章：颜色 + 图标 + 读屏文本三重编码，色弱与读屏都能分辨得分状态
       return '<div class="step ' + st[1] + '" data-reveal="' + (i * 45) + '">' +
         '<span class="idx">' + (i + 1) + '</span>' +
         '<div>' +
-          '<div class="t">' + esc(s.step) + ' ' + tag +
-            '<span class="tag tag--kp">' + esc(s.knowledge_point) + '</span></div>' +
+          '<div class="t">' + esc(s.step) + ' ' + tag + kpTag + '</div>' +
           '<div class="d">' + esc(s.reason) + '</div>' +
           evid + illegible + missing +
         '</div>' +
@@ -1915,7 +1931,7 @@
           '<input class="input" type="number" id="rv-score" min="0" max="' + r.max_score +
             '" step="0.5" value="' + baseScore + '"' +
             (dims.length ? ' readonly' : '') + '></div>' +
-          '<div class="field"><label>错因标签改判 &#183; &#167;6.11 十类枚举</label>' +
+          '<div class="field"><label>错因标签改判</label>' +
           '<div class="tagpick" id="rv-tags">' + tags + '</div></div>' +
         '</div>' +
         '<div class="field" style="margin-top:12px;">' +
