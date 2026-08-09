@@ -217,13 +217,15 @@ async def _lifespan(_app):
             else "关闭  ← llm_self_consistency 因子退回模型自报值"), flush=True)
         if not chain["cross_check"]:
             print("[智批π] 双模型交叉验证：未启用（第二模型三件套留空）"
-                  "  ← 填上 ZHIPI_LLM_API_KEY_2 / BASE_URL_2 / MODEL_2 即自动启用",
+                  "  ← 填上 ZHIPI_LLM_API_KEY_2 / BASE_URL_2 / MODEL_2 即自动启用；"
+                  "未启用时 cross_model_agreement 因子留空，按权重重归一化剔除",
                   flush=True)
         else:
             warn = ("  ← 预算偏小，实测第二模型多需 25-90 秒，可能每次超时"
                     if chain["cross_budget_tight"] else "")
-            print("[智批π] 双模型交叉验证：%s，仅黄/红触发，预算 %d 秒%s" % (
-                chain["cross_model"], chain["cross_timeout"], warn), flush=True)
+            print("[智批π] 双模型交叉验证：%s，仅黄/红初评触发，预算 %d 秒；"
+                  "一致性分并入同名置信度因子后复评%s" % (
+                      chain["cross_model"], chain["cross_timeout"], warn), flush=True)
     yield
 
 

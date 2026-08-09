@@ -20,7 +20,6 @@ import difflib
 import hashlib
 import os
 import json
-import re
 import time
 
 import requests
@@ -814,12 +813,28 @@ def _maybe_consistency(question: dict, student_text: str, first_result: dict, cr
         return None
 
 
+def _cross_agreement(gap: float, max_score: float) -> float:
+    """把双模型的总分差换算成 0-100 的一致性分（§9.7 第四因子）。
+
+    与二次批改一致性用同一条斜率（分差占满分每 1% 扣 2 分），两个「一致性」
+    因子的刻度才可比：满分差 0 得 100，差满分的 15% 得 70（正是分歧阈值），
+    差满分一半即归零。刻意不掺错因标签差异——跨厂商模型的标签用词本就不同，
+    把措辞差异算进去会把分歧率抬成噪声。
+    """
+    ceiling = float(max_score) or 1.0
+    return round(max(0.0, 100.0 - abs(float(gap)) / ceiling * 200.0), 1)
+
+
 def cross_check(question: dict, student_text: str, first_total, creds2: dict = None,
                 timeout: int = None):
-    """双模型交叉验证（P2）：用第二模型独立批改一次并与首轮总分比对。
+    """双模型交叉验证：用第二模型独立批改一次并与首轮总分比对。
 
-    分差超过满分 15% 视为分歧显著（escalated），上层据此把分流强制转红
-    交人工，避免单一模型的系统性误判。第二模型凭据未配齐时返回 None。
+    产出两样东西：`agreement` 作为置信度第四因子并入加权（换一家模型仍判同
+    一个分，是同模型两次自评给不出的独立佐证）；分差超过满分 15%
+    （等价于 agreement < 70）时 `escalated` 置位，上层据此把分流强制转红交
+    人工，避免单一模型的系统性误判被高一致性掩盖。
+
+    第二模型凭据未配齐时返回 None，该因子留空按权重重归一化剔除。
     timeout 缺省走主批改超时；由 _maybe_cross_check 传入更短的值。
     """
     if creds2 is None:
@@ -833,6 +848,7 @@ def cross_check(question: dict, student_text: str, first_total, creds2: dict = N
         "model2": creds2["model"],
         "model2_score": second_total,
         "gap": round(gap, 1),
+        "agreement": _cross_agreement(gap, question["max_score"]),
         "escalated": gap > question["max_score"] * 0.15,
     }
 
@@ -858,6 +874,38 @@ def _maybe_cross_check(question: dict, student_text: str, first_total, status: s
                            timeout=_cross_timeout())
     except Exception:
         return None
+
+
+def _settle_cross(question: dict, student_text: str, total, factors: dict,
+                  confidence: float, status: str):
+    """跑双模型交叉验证并把一致性分并回置信度，返回五元组。
+
+    返回 (factors, confidence, status, cross_res, prelim)；未触发时原样返回，
+    cross_res 与 prelim 为 None。
+
+    为什么必须分两段算：交叉验证只在黄 / 红件上跑，而「是不是黄 / 红」本身
+    要由置信度决定——两者互为前提。解法是先用四项可测因子算一次**初评**，
+    据此决定要不要调第二模型；拿到一致性分后把它写回交叉验证因子，整体**复评**
+    一次。绿件永远走不到第二段，交叉验证因子留空按权重重归一化剔除，判定口径
+    与旧的四因子完全一致（见 confidence.WEIGHTS 的取值说明）。
+
+    复评可能把黄件抬成绿件——两个独立模型判出同一个分，本就是比单模型
+    自评更硬的证据，这正是引入该因子的意义。但 escalated 一票否决：分差
+    显著时无论复评多少分都强制转红，避免「一致性 0 分把总分拉低还不够转红」
+    这种由加权决定的漏网。
+    """
+    cross_res = _maybe_cross_check(question, student_text, total, status)
+    if cross_res is None:
+        return factors, confidence, status, None, None
+
+    prelim = {"confidence": confidence, "status": status}
+    factors = dict(factors)
+    factors["cross_model_agreement"] = cross_res["agreement"]
+    confidence = conf.compute_confidence(factors)
+    status = conf.route(confidence)
+    if cross_res.get("escalated"):
+        status = "red"
+    return factors, confidence, status, cross_res, prelim
 
 
 def grade_llm(question: dict, submission: dict, student_text: str,
@@ -888,13 +936,15 @@ def grade_llm(question: dict, submission: dict, student_text: str,
         if isinstance(llm_conf, (int, float)):
             factors["llm_self_consistency"] = float(llm_conf) * 100 if llm_conf <= 1 else float(llm_conf)
     factors = _apply_overrides(factors, factor_overrides)
+    # 交叉验证因子先留空：要等初评分流决定跑不跑，未跑就按权重重归一化剔除
+    factors.setdefault("cross_model_agreement", None)
     confidence = conf.compute_confidence(factors)
     status = conf.route(confidence)
 
-    # 双模型交叉验证：黄 / 红结果用第二模型复核，分歧显著时强制转红交人工
-    cross_res = _maybe_cross_check(question, student_text, total, status)
-    if cross_res and cross_res.get("escalated"):
-        status = "red"
+    # 双模型交叉验证：黄 / 红初评用第二模型复核，一致性分并入该因子后复评；
+    # 分差显著时一票否决强制转红交人工
+    factors, confidence, status, cross_res, prelim = _settle_cross(
+        question, student_text, total, factors, confidence, status)
 
     seed = submission.get("submission_id") or submission.get("student_name", "")
     result = {
@@ -914,6 +964,9 @@ def grade_llm(question: dict, submission: dict, student_text: str,
         result["consistency_check"] = consistency_res
     if cross_res is not None:
         result["cross_check"] = cross_res
+        # 初评值透出去，教师才看得见「这份是被交叉验证改判的」
+        result["confidence_preliminary"] = prelim["confidence"]
+        result["status_preliminary"] = prelim["status"]
     return result
 
 
@@ -948,102 +1001,6 @@ def grade(question: dict, submission: dict, factor_overrides: dict = None) -> di
 
 # ---------- 任意上传作业的临时批改（图片链路专用） ----------
 
-# 数值与常见单位提取：单位按「长单位优先」排列，避免 m/s 被拆成 m 与 s；
-# 结尾负向断言防止把单词前缀误认成单位（如 minutes 里的 min / m）
-_NUM_UNIT_RE = re.compile(
-    r"(-?\d+(?:\.\d+)?)\s*"
-    r"(km/h|km/s|m/s²|m/s2|m/s|cm/s|mm|cm|dm|km|kg|mg|mL|ml|"
-    r"kPa|Pa|kN|kJ|kW|Hz|min|°C|℃|N|J|W|V|A|Ω|L|h|m|s|g)?"
-    r"(?![A-Za-z])"
-)
-
-
-# ASCII 与 Unicode 上下标的等价映射。
-# 为什么必须有这一层：标准答案由人手写成 `x² - 5x + 6 = 0 → x₁ = 2，x₂ = 3`
-# （Unicode 上下标），而多模态识别按 Prompt 要求输出线性写法
-# `x^2-5x+6=0 / x1=2, x2=3`（ASCII）。两者数学含义相同，但抽数值时
-# ASCII 的 `x1` 会被读成「数字 1」，凭空多出一个标准答案里没有的数，
-# 于是 s_nums ⊆ a_nums 判定失败 —— 一份完全正确的作答，
-# answer_match 从 100 掉到 25.8，总置信度从 93 掉到 78，绿桶（自动通过）
-# 因此几乎永不触发。实测确认过这条链路。
-_SUB_DIGITS = "₀₁₂₃₄₅₆₇₈₉"
-_SUP_DIGITS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
-# 紧跟在字母后的数字 = 变量下标（x1 → x₁）。Unicode 下标不是 ASCII 数字，
-# 抽取正则自然就不会把它当成数值。
-_VAR_INDEX_RE = re.compile(r"([A-Za-z])(\d)(?![\d.])")
-# 幂：x^2 → x²
-_POWER_RE = re.compile(r"\^\s*(\d)")
-
-
-def _norm_notation(text: str) -> str:
-    """把 ASCII 线性写法收敛到标准答案使用的 Unicode 上下标写法。
-
-    只处理「同义不同形」，不碰任何会改变数学含义的字符：
-        x^2  → x²      （幂，避免指数被当成数值）
-        x1=  → x₁=     （变量下标，避免下标被当成数值）
-    刻意不动独立的数字、运算符与单位。
-    """
-    if not text:
-        return ""
-    out = _POWER_RE.sub(lambda m: _SUP_DIGITS[int(m.group(1))], str(text))
-    out = _VAR_INDEX_RE.sub(
-        lambda m: m.group(1) + _SUB_DIGITS[int(m.group(2))], out)
-    return out
-
-
-def _extract_nums_units(text: str):
-    """从文本抽取（数值集合, 紧跟数值的单位集合），用于归一化比对。
-
-    先做记号归一：否则 `x1=2` 里的下标 1 会被当成一个真实数值。
-    """
-    nums, units = set(), set()
-    for num, unit in _NUM_UNIT_RE.findall(_norm_notation(text)):
-        nums.add(float(num))
-        if unit:
-            units.add(unit)
-    return nums, units
-
-
-def _answer_match_score(student_text: str, standard_answer: str) -> float:
-    """粗粒度答案匹配度（0-100）：终答数值 + 单位归一比对，字符相似度兜底。
-
-    口径（详见技术说明文档 §6.3）：本因子度量「学生终答与标准答案的
-    可比对程度」，服务于置信度评估，并非判分本身。比对规则：
-    1. 数值一致性 = 标准答案的最终数值出现在学生终答中，且学生终答的
-       数值都在标准答案数值集合内（容忍学生只写最终结果、省略中间量）；
-    2. 数值一致且单位一致 → 100；数值一致但单位缺失/不一致 → 70
-       （单位分歧是明确可判信号，不允许高于正确终答的匹配度）；
-    3. 数值不一致 → 序列相似度 × 100 且封顶 60（明确的数值分歧
-       不允许伪装成高匹配度）；
-    4. 双方均无数值（如作文题）→ 序列相似度 × 100（作文与评分标准
-       描述天然相似度低，倾向交教师复核，符合冷启动保守原则）。
-    """
-    lines = [ln.strip() for ln in student_text.splitlines() if ln.strip()]
-    tail = lines[-1] if lines else ""
-    std = standard_answer or ""
-
-    # 相似度兜底也走归一化后的文本比：标准答案用 `x₁ = 2`、识别输出 `x1=2`，
-    # 不归一的话连「写法相同」的正确答案都拿不到高相似度。
-    tail_cmp = _norm_notation(tail)
-    std_cmp = _norm_notation(std)
-
-    s_nums, s_units = _extract_nums_units(tail)
-    a_matches = _NUM_UNIT_RE.findall(std)
-    a_nums = {float(n) for n, _ in a_matches}
-    a_units = {u for _, u in a_matches if u}
-    final_num = float(a_matches[-1][0]) if a_matches else None
-
-    ratio = difflib.SequenceMatcher(None, tail_cmp, std_cmp).ratio()
-
-    if s_nums and a_nums:
-        nums_consistent = final_num in s_nums and s_nums.issubset(a_nums)
-        if nums_consistent:
-            units_ok = s_units.issubset(a_units) if a_units else not s_units
-            return 100.0 if (units_ok and (s_units or not a_units)) else 70.0
-        return round(min(60.0, ratio * 100), 1)
-
-    return round(ratio * 100, 1)
-
 
 def _step_has_judgment(step: dict) -> bool:
     """一步是否具备可解释的判定依据。
@@ -1060,17 +1017,20 @@ def _step_has_judgment(step: dict) -> bool:
 
 def derive_factors(question: dict, student_text: str, clarity: float,
                    step_analysis: list, llm_conf) -> dict:
-    """为无预置标注的上传作答推导四个置信度因子。
+    """为无预置标注的上传作答推导五个置信度因子。
 
     - ocr_clarity        识别引擎给出的卷面清晰度；
     - rubric_coverage    具备判定依据（reason 或 evidence）的步骤占比；
-    - llm_self_consistency  二次批改一致性（同一份作答独立批两次的比较分）；
+    - llm_self_consistency  二次批改一致性（同一模型独立批两次的比较分）；
                             冷启动回退值 60，二次批改完成后被覆盖；
+    - cross_model_agreement 双模型交叉验证一致性。这里恒为 None——它只在
+                            初评落黄 / 红后才调第二模型，此刻还没算出分流，
+                            由 _settle_cross 在复评阶段回填；始终为 None 时
+                            按权重重归一化剔除，不当 0 分白扣；
     - teacher_pass_rate  冷启动默认 80（无历史数据）。
 
     「答案匹配度」已移除：该因子算法假设存在简短终答形式的标准答案，
-    题库外作业没有，比对出来的是噪声。二次批改一致性替代其位置，
-    权重从 0.20 提升到 0.30，是更真实的批改质量信号。
+    题库外作业没有，比对出来的是噪声。
     """
     covered = sum(1 for s in step_analysis if _step_has_judgment(s))
     coverage = round(covered / len(step_analysis) * 100, 1) if step_analysis else 0.0
@@ -1083,6 +1043,7 @@ def derive_factors(question: dict, student_text: str, clarity: float,
         "ocr_clarity": round(float(clarity), 1),
         "rubric_coverage": coverage,
         "llm_self_consistency": round(self_consistency, 1),
+        "cross_model_agreement": None,
         "teacher_pass_rate": 80.0,
     }
 
@@ -1126,10 +1087,9 @@ def grade_adhoc(question: dict, student_text: str, clarity: float,
     confidence = conf.compute_confidence(factors)
     status = conf.route(confidence)
 
-    # 黄 / 红结果触发双模型交叉验证，分歧显著时强制转红交人工
-    cross_res = _maybe_cross_check(question, student_text, total, status)
-    if cross_res and cross_res.get("escalated"):
-        status = "red"
+    # 黄 / 红初评触发双模型交叉验证，一致性分并入该因子后复评；分差显著强制转红
+    factors, confidence, status, cross_res, prelim = _settle_cross(
+        question, student_text, total, factors, confidence, status)
 
     # 临时批改无 submission_id，用作答文本本身作确定性评语 seed
     seed = student_text
@@ -1152,6 +1112,8 @@ def grade_adhoc(question: dict, student_text: str, clarity: float,
         result["consistency_check"] = consistency_res
     if cross_res is not None:
         result["cross_check"] = cross_res
+        result["confidence_preliminary"] = prelim["confidence"]
+        result["status_preliminary"] = prelim["status"]
     if is_open:
         # 判分基准要透出去。题库外的题没有人工标准答案，模型是拿自己的解法
         # 当基准的——不展示的话，教师无从判断「基准本身是不是错的」，

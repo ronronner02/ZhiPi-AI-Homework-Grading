@@ -94,18 +94,25 @@
     ocr_clarity: 'OCR 识别清晰度',
     rubric_coverage: 'Rubric 覆盖度',
     llm_self_consistency: '二次批改一致性',
+    cross_model_agreement: '双模型交叉验证',
     teacher_pass_rate: '历史教师通过率'
   };
-  // 答案匹配度已移除（题库外作业没有标准答案，比对结果是噪声）；
-  // 二次批改一致性权重提升至 0.30，替代其位置。
+  /* 答案匹配度已移除（题库外作业没有标准答案，比对结果是噪声）。
+     权重取值让「未触发交叉验证时」的重归一化结果 = 旧四因子口径
+     （0.20/0.24/0.24/0.12 各除以 0.80 = 0.25/0.30/0.30/0.15），
+     绿件判定口径一分未改，第五因子是纯增量。与后端 confidence.WEIGHTS 对齐。 */
   var FACTOR_WEIGHT = {
-    ocr_clarity: 0.25, rubric_coverage: 0.30,
-    llm_self_consistency: 0.30, teacher_pass_rate: 0.15
+    ocr_clarity: 0.20, rubric_coverage: 0.24,
+    llm_self_consistency: 0.24, cross_model_agreement: 0.20,
+    teacher_pass_rate: 0.12
   };
+  // 展示顺序按公式书写顺序固定，不跟后端字典的插入顺序走
+  var FACTOR_ORDER = ['ocr_clarity', 'rubric_coverage', 'llm_self_consistency',
+                      'cross_model_agreement', 'teacher_pass_rate'];
 
   var TRAIL = [
     { tab: 'submit', n: '01', t: '选文件夹 / 上传', tip: '自建文件夹、指定上传目标；也可打开 Demo 样例夹点内置照片。整夹可一键批改并自动飞书提醒。' },
-    { tab: 'result', n: '02', t: '过程级批改', tip: '每一步判分都附「引用学生原文」的证据链，右侧是置信度四因子明细。' },
+    { tab: 'result', n: '02', t: '过程级批改', tip: '每一步判分都附「引用学生原文」的证据链，右侧是置信度五因子明细。' },
     { tab: 'teacher', n: '03', t: '教师终审', tip: '改一份的分数或错因——提交后，同题其他作答的置信度会按教师的通过率实时变化。' },
     { tab: 'board', n: '04', t: '班级学情', tip: '薄弱点、错因分布与讲评课件大纲，根据批改结果实时聚合。' }
   ];
@@ -622,7 +629,7 @@
 
     if (!c.cross_check) {
       rows.push({ on: false, k: '交叉验证',
-                  v: '未启用 · 填入第二模型的链接与密钥即自动启用，用于跨模型复核黄/红件' });
+                  v: '未启用 · 填入第二模型的链接与密钥即自动启用；未启用时该因子留空，权重重归一化剔除' });
     } else if (c.cross_budget_tight) {
       // 这条是硬警告：预算小于最快一次成功耗时，等于每次必然超时后静默丢弃。
       rows.push({ on: false, k: '交叉验证',
@@ -630,7 +637,7 @@
                      ' 秒，实测第二模型多需 25-90 秒，几乎必然超时后被丢弃（调大 ZHIPI_CROSS_TIMEOUT）' });
     } else {
       rows.push({ on: true, k: '交叉验证',
-                  v: c.cross_model + ' 独立复核，仅黄/红件触发' });
+                  v: c.cross_model + ' 独立复核，仅黄/红初评触发；一致性分并入同名置信度因子后复评' });
     }
     el.innerHTML = rows.map(chainRow).join('');
     Icons.hydrate(el);
@@ -1480,7 +1487,16 @@
     if (r.cross_check) {
       factors += '<span class="factor ' + (r.cross_check.escalated ? 'factor--bad' : 'factor--ok') +
         '">双模型交叉验证 <b>' + (r.cross_check.escalated ? '结论分歧 · 已转人工' : '结论一致') +
-        '</b>（' + esc(r.cross_check.model2 || '模型 2') + ' 判 ' + r.cross_check.model2_score + ' 分）</span>';
+        '</b>（' + esc(r.cross_check.model2 || '模型 2') + ' 判 ' + r.cross_check.model2_score +
+        ' 分，分差 ' + r.cross_check.gap + '）</span>';
+    }
+    // 初评 → 复评：这份的分流被交叉验证改过，必须让教师看见是什么改的
+    if (r.confidence_preliminary != null && r.status_preliminary &&
+        r.status_preliminary !== r.status) {
+      factors += '<span class="factor factor--warn">交叉验证后改判 <b>' +
+        (STATUS_TEXT[r.status_preliminary] || r.status_preliminary) + ' → ' +
+        (STATUS_TEXT[r.status] || r.status) + '</b>（置信度 ' +
+        r.confidence_preliminary + ' → ' + r.confidence + '）</span>';
     }
 
     var tags = r.error_tags.length
@@ -1545,7 +1561,7 @@
         '</div>' +
 
         (r.note ? '<p class="hint">' + esc(r.note) + '</p>' : '') +
-        '<h3 class="block-title">置信度四因子 · 设计方案 §9.7</h3>' +
+        '<h3 class="block-title">置信度五因子 · 设计方案 §9.7</h3>' +
         '<div class="factor-wrap">' + factors + '</div>' +
       '</div>' +
 
@@ -1798,14 +1814,20 @@
 
   // 置信度因子 HTML（结果页 / 审卷面板共用）
   function factorChipsHtml(r) {
-    if (!r.confidence_factors) return '';
-    return Object.keys(r.confidence_factors).map(function (k) {
+    var f = r.confidence_factors;
+    if (!f) return '';
+    return FACTOR_ORDER.map(function (k) {
+      if (!(k in f)) return '';
       var w = FACTOR_WEIGHT[k];
-      var v = r.confidence_factors[k];
-      if (v === null || v === undefined) return '';   // answer_match 旧数据 / 测不出 → 静默略过
-      return '<span class="factor">' +
-        esc(FACTOR_LABEL[k] || k) +
-        (w ? ' <em class="factor__w">&#215;' + w.toFixed(2) + '</em>' : '') +
+      var v = f[k];
+      var wHtml = w ? ' <em class="factor__w">&#215;' + w.toFixed(2) + '</em>' : '';
+      // 测不出的一维要摆在明面上：静默略过会让教师以为公式只有四项，
+      // 而实际是这一项的权重被重归一化摊给了其余四项。
+      if (v === null || v === undefined) {
+        return '<span class="factor factor--na">' + esc(FACTOR_LABEL[k] || k) +
+          wHtml + ' <b>未触发 · 权重已重归一化</b></span>';
+      }
+      return '<span class="factor">' + esc(FACTOR_LABEL[k] || k) + wHtml +
         ' <b>' + v + '</b></span>';
     }).join('');
   }
