@@ -92,20 +92,20 @@
 
   var FACTOR_LABEL = {
     ocr_clarity: 'OCR 识别清晰度',
-    answer_match: '答案匹配程度',
     rubric_coverage: 'Rubric 覆盖度',
-    llm_self_consistency: 'LLM 自检一致性',
+    llm_self_consistency: '二次批改一致性',
     teacher_pass_rate: '历史教师通过率'
   };
-  // 权重来自设计方案 §9.7，展示出来让评委看到置信度是算的不是编的
+  // 答案匹配度已移除（题库外作业没有标准答案，比对结果是噪声）；
+  // 二次批改一致性权重提升至 0.30，替代其位置。
   var FACTOR_WEIGHT = {
-    ocr_clarity: 0.25, answer_match: 0.25, rubric_coverage: 0.20,
-    llm_self_consistency: 0.20, teacher_pass_rate: 0.10
+    ocr_clarity: 0.25, rubric_coverage: 0.30,
+    llm_self_consistency: 0.30, teacher_pass_rate: 0.15
   };
 
   var TRAIL = [
     { tab: 'submit', n: '01', t: '选文件夹 / 上传', tip: '自建文件夹、指定上传目标；也可打开 Demo 样例夹点内置照片。整夹可一键批改并自动飞书提醒。' },
-    { tab: 'result', n: '02', t: '过程级批改', tip: '每一步判分都附「引用学生原文」的证据链，右侧是置信度五因子明细。' },
+    { tab: 'result', n: '02', t: '过程级批改', tip: '每一步判分都附「引用学生原文」的证据链，右侧是置信度四因子明细。' },
     { tab: 'teacher', n: '03', t: '教师终审', tip: '改一份的分数或错因——提交后，同题其他作答的置信度会按教师的通过率实时变化。' },
     { tab: 'board', n: '04', t: '班级学情', tip: '薄弱点、错因分布与讲评课件大纲，根据批改结果实时聚合。' }
   ];
@@ -124,6 +124,7 @@
   var ACTIVE = 'submit';
   var FOLDERS = [];        // 文件夹列表摘要
   var ACTIVE_FOLDER = 'demo';
+  var _FOLDER_DETAIL_OPEN_ID = null; // 当前展开的夹 id，null = 收起
   var SAMPLE_IMAGES = [];  // 内置样例（打开 Demo 夹时展示）
 
   /* ======================================================================
@@ -297,6 +298,7 @@
     api('/api/demo/reset', { method: 'POST' }).then(function () {
       CURRENT = null; RECOG = null; TRAIL_AT = 0; OUTLINE_MD = '';
       FOLDERS = []; ACTIVE_FOLDER = 'demo';
+      _FOLDER_DETAIL_OPEN_ID = null;
       $('#recog-sheet').style.display = 'none';
       $('#batch-sheet').style.display = 'none';
       $('#folder-detail-sheet').style.display = 'none';
@@ -456,6 +458,16 @@
     var meta = activeFolderMeta();
     if (!meta) return;
     var sheet = $('#folder-detail-sheet');
+    var btn   = $('#folder-open-btn');
+    // 同一个夹再点一次 → 收起
+    if (_FOLDER_DETAIL_OPEN_ID === meta.folder_id && sheet.style.display !== 'none') {
+      sheet.style.display = 'none';
+      _FOLDER_DETAIL_OPEN_ID = null;
+      if (btn) btn.textContent = '查看夹内文件';
+      return;
+    }
+    _FOLDER_DETAIL_OPEN_ID = meta.folder_id;
+    if (btn) btn.textContent = '收起夹内文件';
     var body = $('#folder-detail-body');
     $('#folder-detail-title').textContent = meta.name + ' · 夹内文件';
     sheet.style.display = '';
@@ -717,15 +729,108 @@
     });
   }
 
-  function onFileChosen(ev) {
-    var files = Array.prototype.slice.call(ev.target.files || []);
-    ev.target.value = '';                      // 先清空，选同一个文件也能再次触发
-    if (!files.length) return;
-    if (files.length === 1) { handleFile(files[0]); return; }
-    runBatch(files);
+  // ——————————————————————————————————————————————————————————————
+  // 暂存区：文件选好后先进暂存，用户改名后再手动触发识别/批改。
+  // 这样文件名就是学生姓名，不再统一显示「上传作业」。
+  // ——————————————————————————————————————————————————————————————
+  var STAGED_FILES = [];  // [{file, name, blobUrl}]
+
+  function stageFiles(files) {
+    var maxMB = (CONFIG.guard && CONFIG.guard.max_image_mb) || 8;
+    files.forEach(function (f) {
+      var raw = f.name.replace(/\.[^.]+$/, ''); // 去掉扩展名当默认名
+      STAGED_FILES.push({ file: f, name: raw, blobUrl: URL.createObjectURL(f) });
+    });
+    renderStaging();
   }
 
-  function handleFile(file) {
+  function renderStaging() {
+    var box   = $('#stage-box');
+    var list  = $('#stage-list');
+    var title = $('#stage-title');
+    var gBtn  = $('#stage-grade-btn');
+    var gLbl  = $('#stage-grade-label');
+    var cBtn  = $('#stage-clear-btn');
+    if (!box) return;
+
+    if (!STAGED_FILES.length) { box.style.display = 'none'; return; }
+    box.style.display = '';
+    if (title) title.textContent = '待批清单 · 共 ' + STAGED_FILES.length + ' 份';
+    if (gLbl)  gLbl.textContent  = '全部批改（' + STAGED_FILES.length + ' 份）';
+
+    // 渲染每一份的缩略图 + 改名输入框 + 单独批改/移除按钮
+    list.innerHTML = STAGED_FILES.map(function (it, idx) {
+      return '<div class="stage-item">' +
+        '<img class="stage-item__thumb" src="' + esc(it.blobUrl) + '" alt="">' +
+        '<input class="input input--sm stage-item__name" type="text" ' +
+          'placeholder="学生姓名" value="' + esc(it.name) + '" ' +
+          'data-idx="' + idx + '" aria-label="学生姓名">' +
+        '<button class="btn btn--primary btn--sm" type="button" data-grade-idx="' + idx + '">' +
+          '批改</button>' +
+        '<button class="btn btn--ghost btn--sm stage-item__rm" type="button" ' +
+          'data-rm-idx="' + idx + '" aria-label="移除">&times;</button>' +
+      '</div>';
+    }).join('');
+    Icons.hydrate(box);
+
+    // 同步改名到数组
+    var nameInputs = list.querySelectorAll('.stage-item__name');
+    nameInputs.forEach(function (inp) {
+      inp.addEventListener('input', function () {
+        var i = Number(inp.dataset.idx);
+        if (STAGED_FILES[i]) STAGED_FILES[i].name = inp.value;
+      });
+    });
+    // 移除单份
+    list.querySelectorAll('[data-rm-idx]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var i = Number(btn.dataset.rmIdx);
+        if (STAGED_FILES[i]) URL.revokeObjectURL(STAGED_FILES[i].blobUrl);
+        STAGED_FILES.splice(i, 1);
+        renderStaging();
+      });
+    });
+    // 单份批改
+    list.querySelectorAll('[data-grade-idx]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var i = Number(btn.dataset.gradeIdx);
+        var it = STAGED_FILES[i];
+        if (!it) return;
+        URL.revokeObjectURL(it.blobUrl);
+        STAGED_FILES.splice(i, 1);
+        renderStaging();
+        handleFileWithName(it.file, it.name || it.file.name);
+      });
+    });
+
+    // 全部批改（只绑一次，通过 onclick 覆写避免重复绑定）
+    if (gBtn) gBtn.onclick = function () {
+      var copy = STAGED_FILES.slice();
+      STAGED_FILES.forEach(function (it) { URL.revokeObjectURL(it.blobUrl); });
+      STAGED_FILES = [];
+      renderStaging();
+      if (copy.length === 1) {
+        handleFileWithName(copy[0].file, copy[0].name || copy[0].file.name);
+      } else {
+        var renamed = copy.map(function (it) {
+          it.file._stageName = it.name;
+          return it.file;
+        });
+        runBatch(renamed);
+      }
+    };
+    // 清空
+    if (cBtn) cBtn.onclick = function () {
+      STAGED_FILES.forEach(function (it) { URL.revokeObjectURL(it.blobUrl); });
+      STAGED_FILES = [];
+      renderStaging();
+    };
+
+    box.scrollIntoView({ behavior: M.reduced ? 'auto' : 'smooth', block: 'nearest' });
+  }
+
+  // 带自定义学生名的单文件识别入口
+  function handleFileWithName(file, studentName) {
     var maxMB = (CONFIG.guard && CONFIG.guard.max_image_mb) || 8;
     markPlate(null);
     var sheet = $('#recog-sheet');
@@ -733,11 +838,10 @@
     $('#recog-result').style.display = 'none';
     $('#recog-status').innerHTML = spinner('正在处理图片');
     sheet.scrollIntoView({ behavior: M.reduced ? 'auto' : 'smooth', block: 'start' });
-
     compressImage(file).then(function (blob) {
       if (blob.size > maxMB * 1024 * 1024) {
         showRecogError('压缩后仍有 ' + (blob.size / 1048576).toFixed(1) + 'MB，超过 ' +
-          maxMB + 'MB 上限。请用相册的「编辑 → 缩小」或截图后重试。');
+          maxMB + 'MB 上限。');
         return;
       }
       $('#chosen-img').src = URL.createObjectURL(blob);
@@ -745,9 +849,16 @@
         ? '已自动压缩 ' + (file.size / 1048576).toFixed(1) + 'MB → ' + (blob.size / 1048576).toFixed(1) + 'MB'
         : '';
       return blobToB64(blob).then(function (b64) {
-        return recognize(b64, blob.type || file.type || 'image/png', note);
+        return recognize(b64, blob.type || file.type || 'image/png', note, studentName);
       });
     });
+  }
+
+  function onFileChosen(ev) {
+    var files = Array.prototype.slice.call(ev.target.files || []);
+    ev.target.value = '';
+    if (!files.length) return;
+    stageFiles(files);   // 先进暂存，不自动识别
   }
 
   function showRecogError(msg) {
@@ -777,7 +888,7 @@
     BATCH_MODE = 'photos';    // 与整份试卷共用进度区，量词不同，进来先复位
     BATCH_PAPER_ID = '';
     var list = files.map(function (f) {
-      return { file: f, name: f.name, status: 'queued', text: '待处理' };
+      return { file: f, name: f._stageName || f.name, status: 'queued', text: '待处理' };
     });
     var sheet = $('#batch-sheet');
     sheet.style.display = '';
@@ -1023,7 +1134,7 @@
       '或先用下方内置样例照片体验完整流程。'
   };
 
-  function recognize(b64, mime, note) {
+  function recognize(b64, mime, note, studentName) {
     RECOG = null;
     var sheet = $('#recog-sheet');
     sheet.style.display = '';
@@ -1048,6 +1159,7 @@
         return;
       }
       RECOG = r;
+      if (studentName) RECOG.student_name = studentName;
       $('#recog-status').innerHTML = '';
       $('#recog-result').style.display = '';
 
@@ -1433,7 +1545,7 @@
         '</div>' +
 
         (r.note ? '<p class="hint">' + esc(r.note) + '</p>' : '') +
-        '<h3 class="block-title">置信度五因子 &#183; 设计方案 &#167;9.7</h3>' +
+        '<h3 class="block-title">置信度四因子 · 设计方案 §9.7</h3>' +
         '<div class="factor-wrap">' + factors + '</div>' +
       '</div>' +
 
@@ -1684,19 +1796,17 @@
     }).join('') + '</div>';
   }
 
-  // 置信度五因子 HTML（结果页 / 审卷面板共用）
+  // 置信度因子 HTML（结果页 / 审卷面板共用）
   function factorChipsHtml(r) {
     if (!r.confidence_factors) return '';
     return Object.keys(r.confidence_factors).map(function (k) {
       var w = FACTOR_WEIGHT[k];
       var v = r.confidence_factors[k];
-      // null = 这一维本次测不出（题库外作业没有人工标准答案可比对）。
-      // 权重已在后端按重归一化剔除，此处如实标注，不要显示成 0 或 null。
-      var off = (v === null || v === undefined);
-      return '<span class="factor' + (off ? ' factor--na' : '') + '">' +
+      if (v === null || v === undefined) return '';   // answer_match 旧数据 / 测不出 → 静默略过
+      return '<span class="factor">' +
         esc(FACTOR_LABEL[k] || k) +
-        (w && !off ? ' <em class="factor__w">&#215;' + w.toFixed(2) + '</em>' : '') +
-        ' <b>' + (off ? '不计入' : v) + '</b></span>';
+        (w ? ' <em class="factor__w">&#215;' + w.toFixed(2) + '</em>' : '') +
+        ' <b>' + v + '</b></span>';
     }).join('');
   }
 
@@ -2319,8 +2429,7 @@
       var fs = e.dataTransfer && e.dataTransfer.files;
       if (!fs || !fs.length) return;
       var files = Array.prototype.slice.call(fs);
-      if (files.length === 1) { handleFile(files[0]); return; }
-      runBatch(files);
+      stageFiles(files);   // 拖入也进暂存区，不自动识别
     });
 
     // 全局委托：动态生成的按钮都在这里接

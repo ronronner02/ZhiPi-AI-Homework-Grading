@@ -204,7 +204,21 @@
                    multiple class="sr-only">
           </label>
         </div>
-        <p class="hint mt-4">一次可选多张：单张会先给你确认转写；<b>多张自动进入批量流水线</b>。上传件会进入上方选中的文件夹。</p>
+        <p class="hint mt-4">照片先进入下方待批清单，可改名后再决定批改哪几份。上传件会进入上方选中的文件夹。</p>
+
+        <div id="stage-box" style="display:none;">
+          <div class="toolbar mt-4">
+            <h3 id="stage-title">待批清单</h3>
+            <span class="spacer"></span>
+            <button class="btn btn--accent btn--sm" type="button" id="stage-grade-btn">
+              <span data-icon="scan" data-icon-size="14"></span>
+              <span id="stage-grade-label">开始批改</span>
+            </button>
+            <button class="btn btn--ghost btn--sm" type="button" id="stage-clear-btn">清空</button>
+          </div>
+          <p class="hint">名称会作为这份作业的学生名写入批改结果。批改前可随时修改。</p>
+          <div class="stage-list" id="stage-list"></div>
+        </div>
       </div>
 
       <div class="sheet" id="batch-sheet" style="display:none;">

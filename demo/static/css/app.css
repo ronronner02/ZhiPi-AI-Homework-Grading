@@ -1427,6 +1427,31 @@ input:focus, select:focus, textarea:focus {
   font-family: var(--font-mono);
 }
 .paper-q__off { color: #8A5A08; font-family: var(--font-sans); }
+
+/* --------------------------------------------------------------------------
+   暂存区：文件选好先改名，再手动发起批改
+   -------------------------------------------------------------------------- */
+#stage-box { margin-top: 12px; }
+.stage-list { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.stage-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-1);
+  background: var(--paper);
+}
+.stage-item__thumb {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: var(--r-1);
+  background: var(--paper-deep);
+}
+/* 名称输入框弹性撑满剩余宽度 */
+.stage-item .input--sm { flex: 1 1 auto; min-width: 0; }
 /* 同卷标记：教师表里要能看出这几行来自同一张卷子 */
 .paper-mark {
   display: inline-block;

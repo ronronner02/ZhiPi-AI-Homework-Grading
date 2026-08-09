@@ -81,7 +81,8 @@ factors = grader.derive_factors(
 )
 ck("截图同款覆盖度应为 100", factors["rubric_coverage"], 100.0)
 ck("OCR 清晰度透传", factors["ocr_clarity"], 95.0)
-ck("答案匹配满分附近", factors["answer_match"] >= 90, True)
+# answer_match 已从四因子体系中移除，derive_factors 不再返回该键
+ck("factor 键集合正确", set(factors.keys()), {"ocr_clarity", "rubric_coverage", "llm_self_consistency", "teacher_pass_rate"})
 
 
 # ---------------------------------------------------------------- 旧口径回归：只认 reason 会把本例打成 0

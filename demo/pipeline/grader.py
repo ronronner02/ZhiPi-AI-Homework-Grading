@@ -1060,29 +1060,17 @@ def _step_has_judgment(step: dict) -> bool:
 
 def derive_factors(question: dict, student_text: str, clarity: float,
                    step_analysis: list, llm_conf) -> dict:
-    """为无预置标注的上传作答推导 §9.7 五个置信度因子。
+    """为无预置标注的上传作答推导四个置信度因子。
 
     - ocr_clarity        识别引擎给出的卷面清晰度；
-    - answer_match       最终答案与人工标准答案的数值 + 单位归一匹配度
-      （题库外作业没有人工标准答案，返回 None 表示测不出）；
     - rubric_coverage    具备判定依据（reason 或 evidence）的步骤占比；
-    - llm_self_consistency  批改模型自评置信度（冷启动回退值；启用二次
-      批改时会被两次批改的一致性分覆盖）；
+    - llm_self_consistency  二次批改一致性（同一份作答独立批两次的比较分）；
+                            冷启动回退值 60，二次批改完成后被覆盖；
     - teacher_pass_rate  冷启动默认 80（无历史数据）。
 
-    题库外作业（question["open"]）的 answer_match 一律返回 None，即
-    「这一维测不出」，由 compute_confidence 按权重重归一化剔除。原因：
-    本因子的算法是「取学生最后一行 ↔ 标准答案」做数值 + 单位比对，前提是
-    基准为一句简短终答。题库外作业没有人工标准答案，唯一可用的基准是模型
-    自解 reference_answer，而它是一段几百字的完整解题过程（实测 400+ 字，
-    含多问、导数推导、单调性讨论）——拿一行终答去比一整篇解答，得到的是
-    噪声不是信号：实测同一份**完全正确**的作答得 2.7 分。
-    记 0 分是凭空扣 25 分置信度，记 2.7 分是拿噪声冒充证据，两者都不如
-    如实承认「这一维没法测」。
-
-    这不会削弱安全网：题库外作业的真实防线是二次批改一致性与双模型交叉
-    验证。实测这份作答两条防线都命中（一致性 23.3、双模型分差 5.0
-    escalated），仍强制转人工。
+    「答案匹配度」已移除：该因子算法假设存在简短终答形式的标准答案，
+    题库外作业没有，比对出来的是噪声。二次批改一致性替代其位置，
+    权重从 0.20 提升到 0.30，是更真实的批改质量信号。
     """
     covered = sum(1 for s in step_analysis if _step_has_judgment(s))
     coverage = round(covered / len(step_analysis) * 100, 1) if step_analysis else 0.0
@@ -1091,14 +1079,8 @@ def derive_factors(question: dict, student_text: str, clarity: float,
     else:
         self_consistency = 60.0
 
-    if question.get("open"):
-        match = None
-    else:
-        match = _answer_match_score(student_text, question.get("standard_answer", ""))
-
     return {
         "ocr_clarity": round(float(clarity), 1),
-        "answer_match": match,
         "rubric_coverage": coverage,
         "llm_self_consistency": round(self_consistency, 1),
         "teacher_pass_rate": 80.0,
