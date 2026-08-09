@@ -1042,31 +1042,31 @@ def _step_has_judgment(step: dict) -> bool:
     return bool(reason or evidence)
 
 
-#  题库外作业的 answer_match 上限。
-#  基准是模型自己解出来的，没有任何人工确认过；学生答案与它一致只说明
-#  「两次独立求解相互印证」，不等于「对照人工标准答案判定为正确」。
-#  实测见过模型自解形式与学生等价变形不同就扣 5 分的情况，因此即使完全
-#  吻合也不给满分，保留一段余量，不让题库外的题靠这一维直接冲进绿桶。
-_OPEN_MATCH_CAP = 85.0
-
-
 def derive_factors(question: dict, student_text: str, clarity: float,
-                   step_analysis: list, llm_conf,
-                   basis_answer: str = None) -> dict:
+                   step_analysis: list, llm_conf) -> dict:
     """为无预置标注的上传作答推导 §9.7 五个置信度因子。
 
     - ocr_clarity        识别引擎给出的卷面清晰度；
-    - answer_match       最终答案与**判分基准**的数值 + 单位归一匹配度；
+    - answer_match       最终答案与人工标准答案的数值 + 单位归一匹配度
+      （题库外作业没有人工标准答案，返回 None 表示测不出）；
     - rubric_coverage    具备判定依据（reason 或 evidence）的步骤占比；
     - llm_self_consistency  批改模型自评置信度（冷启动回退值；启用二次
       批改时会被两次批改的一致性分覆盖）；
     - teacher_pass_rate  冷启动默认 80（无历史数据）。
 
-    basis_answer：题库外作业的判分基准（模型自解 reference_answer）。
-    这一维的口径始终是「学生终答与本次判分所依据的基准有多可比」——
-    题库内基准是人工标准答案，题库外则是模型自解，语义一致。
-    基准为空（模型没给出自解）时返回 None，表示这一维测不出，
-    由 compute_confidence 重归一化剔除，而不是记 0 分白扣 25 分置信度。
+    题库外作业（question["open"]）的 answer_match 一律返回 None，即
+    「这一维测不出」，由 compute_confidence 按权重重归一化剔除。原因：
+    本因子的算法是「取学生最后一行 ↔ 标准答案」做数值 + 单位比对，前提是
+    基准为一句简短终答。题库外作业没有人工标准答案，唯一可用的基准是模型
+    自解 reference_answer，而它是一段几百字的完整解题过程（实测 400+ 字，
+    含多问、导数推导、单调性讨论）——拿一行终答去比一整篇解答，得到的是
+    噪声不是信号：实测同一份**完全正确**的作答得 2.7 分。
+    记 0 分是凭空扣 25 分置信度，记 2.7 分是拿噪声冒充证据，两者都不如
+    如实承认「这一维没法测」。
+
+    这不会削弱安全网：题库外作业的真实防线是二次批改一致性与双模型交叉
+    验证。实测这份作答两条防线都命中（一致性 23.3、双模型分差 5.0
+    escalated），仍强制转人工。
     """
     covered = sum(1 for s in step_analysis if _step_has_judgment(s))
     coverage = round(covered / len(step_analysis) * 100, 1) if step_analysis else 0.0
@@ -1076,9 +1076,7 @@ def derive_factors(question: dict, student_text: str, clarity: float,
         self_consistency = 60.0
 
     if question.get("open"):
-        basis = str(basis_answer or "").strip()
-        match = min(_answer_match_score(student_text, basis), _OPEN_MATCH_CAP) \
-            if basis else None
+        match = None
     else:
         match = _answer_match_score(student_text, question.get("standard_answer", ""))
 
@@ -1119,8 +1117,7 @@ def grade_adhoc(question: dict, student_text: str, clarity: float,
     step_analysis, total, error_tags = _parse_llm_steps(question, data)
 
     factors = derive_factors(question, student_text, clarity,
-                             step_analysis, data.get("confidence"),
-                             basis_answer=data.get("reference_answer"))
+                             step_analysis, data.get("confidence"))
     # 「LLM 自检一致性」优先取二次批改一致性分；被禁用 / 失败时保留自报回退值
     first_result = {"total_score": total, "error_tags": error_tags,
                     "max_score": question["max_score"]}

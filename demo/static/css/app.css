@@ -1129,6 +1129,24 @@ input:focus, select:focus, textarea:focus {
   line-height: 1.1;
 }
 .score-card .val small { font-size: 0.9rem; font-weight: 600; color: var(--ink-soft); }
+/* 判别分口径说明：必须让「这不是试卷分值」看得见，否则会被直接抄进成绩册 */
+.score-card__note {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.score-card__note b { font-family: var(--font-mono); color: var(--ink-mid); }
+/* 判分基准来自模型自解、未经人工确认，警示不能弱化成普通 muted 文字 */
+.basis-warn {
+  display: block;
+  margin-top: 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--st-yellow);
+  font-size: 11px;
+  line-height: 1.5;
+  color: #8A5A08;
+}
 
 .meter {
   margin-top: 8px;
@@ -1354,6 +1372,44 @@ input:focus, select:focus, textarea:focus {
   grid-template-columns: minmax(0, 160px) minmax(0, 1fr);
   gap: 12px;
 }
+/* 逐维度终审改分：五维一行铺开，窄屏自动折行 */
+.dim-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.dim-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-1);
+  background: var(--paper-warm);
+}
+.dim-cell__k { font-size: 12px; color: var(--ink-mid); font-weight: 600; }
+.dim-cell__in { display: flex; align-items: baseline; gap: 4px; }
+.dim-cell__in em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+}
+/* AI 原判要一直在旁边可见：老师改分时需要知道自己改动了多少 */
+.dim-cell__ai {
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+}
+.input--sm {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 7px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+.input--sm.is-bad { border-color: var(--st-red); background: var(--st-red-lt); }
 .detail-actions {
   display: flex;
   flex-wrap: wrap;

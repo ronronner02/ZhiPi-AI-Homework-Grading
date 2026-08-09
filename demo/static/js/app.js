@@ -944,16 +944,22 @@
           renderBatch(list);
           var body;
           if (r.engine === 'vlm') {
-            if (!r.question_id) {
+            body = { ocr_text: r.text || '', ocr_clarity: r.clarity, engine: r.engine,
+                     folder_id: ACTIVE_FOLDER || undefined };
+            if (r.question_id) {
+              body.question_id = r.question_id;
+            } else if (r.question_text) {
+              // 同单份路径：题库外作业走题面 + 学科的判别分体系
+              body.stem = r.question_text;
+              body.subject = r.subject || undefined;
+              body.printed_max_score = r.printed_max_score || undefined;
+            } else {
               it.status = 'fail';
-              it.text = '未能判定题目';
+              it.text = '未能提取题面';
               renderBatch(list);
               if (token === BATCH_TOKEN) processBatch(list, idx + 1, token);
               return;
             }
-            body = { question_id: r.question_id, ocr_text: r.text || '',
-                     ocr_clarity: r.clarity, engine: r.engine,
-                     folder_id: ACTIVE_FOLDER || undefined };
           } else if (r.matched_submission_id) {
             body = { matched_submission_id: r.matched_submission_id, engine: r.engine,
                      folder_id: ACTIVE_FOLDER || undefined };
@@ -1039,6 +1045,20 @@
       } else if (r.question_id) {
         badges.push('<span class="factor factor--ok">自动判题 <b>' +
           esc(r.subject || '') + ' · ' + esc(r.question_title || '') + '</b></span>');
+      } else if (r.subject) {
+        // 题库外作业：学科由模型在 K12 白名单内归类。以前这里不显示任何东西，
+        // 老师看不到「系统认为这是哪一科」，判错了也无从发现。
+        badges.push('<span class="factor factor--ok">学科归类 <b>' +
+          esc(r.subject) + '</b></span>');
+        badges.push('<span class="factor">判分口径 <b>体系判别分 15</b></span>');
+        if (r.printed_max_score) {
+          badges.push('<span class="factor">卷面分值 <b>' + r.printed_max_score + '</b></span>');
+        }
+      }
+      // 一张图多道题：如实告知只批了第一道，不要让另外几道悄悄消失
+      if (r.question_count > 1) {
+        badges.push('<span class="factor factor--warn">检测到 <b>' + r.question_count +
+          '</b> 道题</span>');
       }
       if (note) badges.push('<span class="factor">' + esc(note) + '</span>');
       if (r.quota_note) badges.push('<span class="factor factor--warn">' + esc(r.quota_note) + '</span>');
@@ -1088,14 +1108,25 @@
     if (RECOG.engine === 'vlm') {
       // VLM 模式下一律按「当前转写文本」批改，哪怕命中了内置样例——
       // 否则教师对转写的修正就成了摆设（教师可控原则）
-      if (!RECOG.question_id) { hint.textContent = '未能判定题目，无法批改'; return; }
       body = {
-        question_id: RECOG.question_id,
         ocr_text: $('#ocr-text').value,
         ocr_clarity: RECOG.clarity,
         engine: RECOG.engine,
         folder_id: ACTIVE_FOLDER || undefined
       };
+      if (RECOG.question_id) {
+        body.question_id = RECOG.question_id;
+      } else if (RECOG.question_text) {
+        // 题库外的真实作业：拿题面 + 学科走五维度判别分体系。
+        // 这里以前要求必须命中题库，命中不了就报「未能判定题目」——
+        // 而删掉题库强行匹配后 question_id 恒为 null，等于整条上传动线断死。
+        body.stem = RECOG.question_text;
+        body.subject = RECOG.subject || undefined;
+        body.printed_max_score = RECOG.printed_max_score || undefined;
+      } else {
+        hint.textContent = '未能提取题面，无法批改：请确认照片里包含印刷题目';
+        return;
+      }
       if (RECOG.student_name) body.student_name = RECOG.student_name;
     } else if (RECOG.matched_submission_id) {
       body = { matched_submission_id: RECOG.matched_submission_id, engine: RECOG.engine,
@@ -1167,6 +1198,8 @@
         '</b> 并进入「03 教师工作台」与「04 班级看板」，可以继续走完终审动线。</div></div>' : '';
 
     var sk = STATUS_STAMP[r.status] || 'y';
+    // score_basis === 'system'：题库外作业，分数是五维度体系判别分而非试卷实际分值
+    var sysBasis = (r.score_basis === 'system');
 
     $('#result-body').innerHTML =
       mine +
@@ -1183,8 +1216,16 @@
 
         '<div class="score-row">' +
           '<div class="score-card">' +
-            '<div class="lab">总分 Score</div>' +
+            '<div class="lab">' + (sysBasis ? '体系判别分 Discriminant' : '总分 Score') + '</div>' +
             '<div class="val"><span id="ro-score">0</span><small> / ' + r.max_score + '</small></div>' +
+            // 题库外作业：15 分是本体系的判别口径，不是试卷上那道题的分值。
+            // 不写清楚，老师会直接把它当成实际得分抄进成绩册。
+            (sysBasis
+              ? '<div class="score-card__note">按五维度判别，非试卷分值' +
+                (r.printed_max_score
+                  ? '；卷面标注 <b>' + r.printed_max_score + '</b> 分，可按比例折算'
+                  : '') + '</div>'
+              : '') +
           '</div>' +
           '<div class="score-card">' +
             '<div class="lab">综合置信 Confidence</div>' +
@@ -1217,7 +1258,17 @@
         '<div class="toolbar"><h3>题目与作答</h3></div>' +
         '<div class="kv">' +
           '<div class="kv__k">题目</div><div class="kv__v">' + esc(r.question_text) + '</div>' +
-          '<div class="kv__k">标准答案</div><div class="kv__v muted">' + esc(r.standard_answer) + '</div>' +
+          // 题库外作业没有人工标准答案，判分基准是模型自己解出来的。
+          // 必须如实标注来源：基准一错就会把正确作答判成错，而证据链看起来毫无异样。
+          (sysBasis
+            ? '<div class="kv__k">判分基准</div><div class="kv__v pre">' +
+              (r.reference_answer
+                ? esc(r.reference_answer) +
+                  '<span class="basis-warn">模型自解，未经人工确认，请先核对基准再看判分</span>'
+                : '<span class="muted">模型未给出自解，本次判分缺少可核对的基准</span>') +
+              '</div>'
+            : '<div class="kv__k">标准答案</div><div class="kv__v muted">' +
+              esc(r.standard_answer) + '</div>') +
           '<div class="kv__k">学生作答</div><div class="kv__v pre">' + esc(r.ocr_text) + '</div>' +
         '</div>' +
       '</div>' +
@@ -1347,10 +1398,17 @@
         ? r.error_tags.map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('')
         : '<span class="muted">&#8212;</span>';
       var mine = (r.source === 'upload') ? ' <span class="tag tag--mine">我的上传</span>' : '';
+      // 判别分与题库题的实际分值同列展示，必须有区分标记，否则两种口径混在
+      // 一张表里没法比较。卷面分值已知时一并给出，方便老师折算。
+      var basisMark = (r.score_basis === 'system')
+        ? '<span class="basis-mark" title="体系判别分（五维度），非试卷分值' +
+          (r.printed_max_score ? '；卷面标注 ' + r.printed_max_score + ' 分' : '') +
+          '">判别</span>'
+        : '';
       return '<tr>' +
         '<td><b>' + esc(r.student_name) + '</b>' + mine + '</td>' +
         '<td>' + esc(r.subject) + ' · ' + esc(r.question_title) + '</td>' +
-        '<td class="num"><b>' + r.ai_score + '</b> / ' + r.max_score + '</td>' +
+        '<td class="num"><b>' + r.ai_score + '</b> / ' + r.max_score + basisMark + '</td>' +
         '<td class="num">' + r.confidence.toFixed(1) + '</td>' +
         '<td><span class="stamp stamp--' + (STATUS_STAMP[r.status] || 'y') + '">' +
           I(r.status, { size: 12 }) + ' ' + STATUS_TEXT[r.status] + '</span></td>' +
@@ -1358,11 +1416,15 @@
         '<td>' + actions + '</td></tr>';
     }).join('');
 
+    var hasBasis = rows.some(function (r) { return r.score_basis === 'system'; });
     body.innerHTML = filterBar +
       '<div class="table-wrap teacher-table-wrap"><table class="teacher-table">' +
       '<thead><tr><th>学生</th><th>题目</th><th>AI 分</th><th>置信度</th>' +
       '<th>分流</th><th>错因</th><th>操作</th></tr></thead>' +
-      '<tbody>' + trs + '</tbody></table></div>';
+      '<tbody>' + trs + '</tbody></table></div>' +
+      (hasBasis ? '<p class="hint">标注「判别」的是题库外作业，' +
+        '分数为五维度体系判别分（满分 15），代表本体系的判别口径而非试卷分值，' +
+        '可按卷面分值比例折算。</p>' : '');
     Icons.hydrate(body);
     var sel = body.querySelectorAll('select[data-f]');
     for (var i = 0; i < sel.length; i++) {
@@ -1461,6 +1523,33 @@
       ? '<p class="pre-sm">' + esc(r.ocr_text) + '</p>'
       : '<p class="hint">（内置样例 · 转写见结果页）</p>';
 
+    // 维度体系作业：逐维改分。只有总分的话，回灌只能得出「这题判错了」，
+    // 得不出「运算执行这一维偏严」，而后者才是能指导下一份批改的信息。
+    // 预填 AI 的逐维得分，教师只改错的那一维；总分随之自动求和。
+    var dims = (r.step_analysis || []).filter(function (s) { return s.dimension; });
+    var dimBase = (r.final_dimension_scores && Object.keys(r.final_dimension_scores).length)
+      ? r.final_dimension_scores : null;
+    var dimBlock = dims.length
+      ? '<h3 class="block-title">逐维度终审改分</h3>' +
+        '<div class="dim-grid" id="rv-dims">' +
+        dims.map(function (s) {
+          var v = (dimBase && dimBase[s.dimension] != null) ? dimBase[s.dimension] : s.score;
+          return '<label class="dim-cell">' +
+            '<span class="dim-cell__k">' + esc(s.step) + '</span>' +
+            '<span class="dim-cell__in">' +
+            '<input class="input input--sm" type="number" data-dim="' + esc(s.dimension) +
+              '" data-ai="' + s.score + '" min="0" max="' + s.max_score +
+              '" step="0.5" value="' + v + '"' +
+              ' aria-label="' + esc(s.step) + ' 得分，满分 ' + s.max_score + '">' +
+            '<em>/ ' + s.max_score + '</em></span>' +
+            '<span class="dim-cell__ai">AI ' + s.score + '</span>' +
+            '</label>';
+        }).join('') +
+        '</div>' +
+        '<p class="hint">改动任一维度，终审总分自动按各维之和更新。' +
+        '逐维修正量会按「学科 × 维度」累积，作为后续同类作业的判分提示。</p>'
+      : '';
+
     $('#modal-root').innerHTML =
       '<div class="mask" id="mask"><div class="dialog dialog--wide" role="dialog" aria-modal="true"' +
       ' aria-labelledby="rv-title">' +
@@ -1491,10 +1580,13 @@
         '</div>' +
       '</div>' +
       '<div class="review-foot">' +
+        dimBlock +
         '<div class="review-form-grid">' +
-          '<div class="field"><label for="rv-score">终审分数</label>' +
+          '<div class="field"><label for="rv-score">终审分数' +
+            (dims.length ? ' <span class="hint-inline">（各维之和）</span>' : '') + '</label>' +
           '<input class="input" type="number" id="rv-score" min="0" max="' + r.max_score +
-            '" step="0.5" value="' + baseScore + '"></div>' +
+            '" step="0.5" value="' + baseScore + '"' +
+            (dims.length ? ' readonly' : '') + '></div>' +
           '<div class="field"><label>错因标签改判 &#183; &#167;6.11 十类枚举</label>' +
           '<div class="tagpick" id="rv-tags">' + tags + '</div></div>' +
         '</div>' +
@@ -1511,12 +1603,57 @@
       '</div></div></div>';
     Icons.hydrate($('#modal-root'));
     var input = $('#rv-score');
-    if (input) input.focus();
+
+    if (dims.length) {
+      var dimInputs = $$('#rv-dims input[data-dim]');
+      var syncTotal = function () {
+        var sum = 0;
+        dimInputs.forEach(function (el) {
+          var n = Number(el.value);
+          var max = Number(el.max);
+          // 越界值不参与求和，也不静默改写老师输入的数字：
+          // 标红提示、由老师自己改，比替他做决定安全。
+          var bad = isNaN(n) || n < 0 || n > max;
+          el.classList.toggle('is-bad', bad);
+          if (!bad) sum += n;
+        });
+        input.value = Math.round(sum * 100) / 100;
+      };
+      dimInputs.forEach(function (el) {
+        el.addEventListener('input', syncTotal);
+      });
+      // 打开即对齐一次：AI 总分与逐维之和理论上相等，但终审记录里可能
+      // 只存过总分（旧记录），此时以逐维之和为准，避免提交出一个自相矛盾的单子。
+      syncTotal();
+      if (dimInputs.length) dimInputs[0].focus();
+    } else if (input) {
+      input.focus();
+    }
   }
 
   function closeModal() { $('#modal-root').innerHTML = ''; }
 
   function submitReview(id, maxScore) {
+    // 逐维改分：先校验每一维，越界就地报错，不让它悄悄不参与总分求和
+    var dimEls = $$('#rv-dims input[data-dim]');
+    var dimScores = null, dimChanged = false;
+    if (dimEls.length) {
+      dimScores = {};
+      for (var i = 0; i < dimEls.length; i++) {
+        var el = dimEls[i];
+        var n = Number(el.value);
+        var mx = Number(el.max);
+        if (el.value === '' || isNaN(n) || n < 0 || n > mx) {
+          alert('「' + (el.getAttribute('aria-label') || '').split(' ')[0] +
+            '」得分须在 0 ~ ' + mx + ' 之间');
+          el.focus();
+          return;
+        }
+        dimScores[el.dataset.dim] = n;
+        if (n !== Number(el.dataset.ai)) dimChanged = true;
+      }
+    }
+
     var score = Number($('#rv-score').value);
     if (isNaN(score) || score < 0 || score > maxScore) {
       alert('分数须在 0 ~ ' + maxScore + ' 之间');
@@ -1531,11 +1668,16 @@
     var baseScore = (row && row.final_score != null) ? row.final_score : (row ? row.ai_score : 0);
     var tagsSame = tags.length === baseTags.length &&
       tags.every(function (t) { return baseTags.indexOf(t) >= 0; });
-    var untouched = row && score === baseScore && tagsSame && !comment;
+    // dimChanged 必须参与判定：运算执行 -1、步骤完整 +1 时总分不变，但这是
+    // 两个方向相反的真实偏差信号，按「确认」提交会把它整个丢掉。
+    var untouched = row && score === baseScore && tagsSame && !comment && !dimChanged;
     var payload = untouched
       ? { submission_id: id, teacher_action: 'confirmed' }
       : { submission_id: id, teacher_action: 'modified', final_score: score,
           final_error_tags: tags, final_comment: comment || null };
+    // 维度分随「修改」一起提交：即使总分没变，逐维之间的挪动也是有效回灌信号
+    // （比如运算执行 -1、步骤完整 +1，总分不动但两维的偏差方向相反）。
+    if (dimScores && !untouched) payload.final_dimension_scores = dimScores;
 
     api('/api/teacher/review', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
