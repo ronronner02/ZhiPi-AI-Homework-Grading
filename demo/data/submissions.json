@@ -9,7 +9,7 @@
       "student_name": "张明",
       "class_id": "C001",
       "ocr": {"text": "x²-5x+6=0\n(x-2)(x-3)=0\nx₁=2, x₂=3", "clarity": 96},
-      "confidence_factors": {"ocr_clarity": 96, "rubric_coverage": 100, "llm_self_consistency": 92, "cross_model_agreement": null, "teacher_pass_rate": 88},
+      "confidence_factors": {"ocr_clarity": 96, "answer_match": 95, "rubric_coverage": 100, "llm_self_consistency": 92, "teacher_pass_rate": 88},
       "step_annotations": [
         {"step_id": 1, "is_correct": true, "reason": "选择因式分解法，方法得当", "evidence": "(x-2)(x-3)=0"},
         {"step_id": 2, "is_correct": true, "reason": "分解为 (x-2)(x-3)，展开还原正确", "evidence": "(x-2)(x-3)=0"},
@@ -24,7 +24,7 @@
       "student_name": "李华",
       "class_id": "C001",
       "ocr": {"text": "x²-5x+6=0\n(x-2)(x-3)=0\nx=2", "clarity": 88},
-      "confidence_factors": {"ocr_clarity": 88, "rubric_coverage": 85, "llm_self_consistency": 68, "cross_model_agreement": null, "teacher_pass_rate": 80},
+      "confidence_factors": {"ocr_clarity": 88, "answer_match": 70, "rubric_coverage": 85, "llm_self_consistency": 68, "teacher_pass_rate": 80},
       "step_annotations": [
         {"step_id": 1, "is_correct": true, "reason": "选择因式分解法，方法得当", "evidence": "(x-2)(x-3)=0"},
         {"step_id": 2, "is_correct": true, "reason": "分解为 (x-2)(x-3)，正确", "evidence": "(x-2)(x-3)=0"},
@@ -39,7 +39,7 @@
       "student_name": "王芳",
       "class_id": "C001",
       "ocr": {"text": "x²-5x+6=0\n(x-2)(x+3)=0\nx=-2, x=-3", "clarity": 55},
-      "confidence_factors": {"ocr_clarity": 55, "rubric_coverage": 60, "llm_self_consistency": 50, "cross_model_agreement": null, "teacher_pass_rate": 70},
+      "confidence_factors": {"ocr_clarity": 55, "answer_match": 45, "rubric_coverage": 60, "llm_self_consistency": 50, "teacher_pass_rate": 70},
       "step_annotations": [
         {"step_id": 1, "is_correct": true, "reason": "尝试用因式分解法，方向正确", "evidence": "(x-2)(x+3)=0"},
         {"step_id": 2, "is_correct": false, "error_tag": "计算错误", "reason": "分解写成 (x-2)(x+3)，展开常数项为 -6，与原式 +6 不符", "evidence": "(x-2)(x+3)=0"},
@@ -54,7 +54,7 @@
       "student_name": "赵磊",
       "class_id": "C001",
       "ocr": {"text": "v = s/t = 200/20 = 10 m/s", "clarity": 97},
-      "confidence_factors": {"ocr_clarity": 97, "rubric_coverage": 100, "llm_self_consistency": 94, "cross_model_agreement": null, "teacher_pass_rate": 90},
+      "confidence_factors": {"ocr_clarity": 97, "answer_match": 96, "rubric_coverage": 100, "llm_self_consistency": 94, "teacher_pass_rate": 90},
       "step_annotations": [
         {"step_id": 1, "is_correct": true, "reason": "写出速度公式 v=s/t，正确", "evidence": "v = s/t"},
         {"step_id": 2, "is_correct": true, "reason": "代入 200/20，数值正确", "evidence": "200/20"},
@@ -69,7 +69,7 @@
       "student_name": "陈伟",
       "class_id": "C001",
       "ocr": {"text": "v = s/t = 200/20 = 10 km/s", "clarity": 94},
-      "confidence_factors": {"ocr_clarity": 94, "rubric_coverage": 100, "llm_self_consistency": 90, "cross_model_agreement": null, "teacher_pass_rate": 85},
+      "confidence_factors": {"ocr_clarity": 94, "answer_match": 90, "rubric_coverage": 100, "llm_self_consistency": 90, "teacher_pass_rate": 85},
       "step_annotations": [
         {"step_id": 1, "is_correct": true, "reason": "写出速度公式 v=s/t，正确", "evidence": "v = s/t"},
         {"step_id": 2, "is_correct": true, "reason": "代入 200/20，数值正确", "evidence": "200/20"},
@@ -84,7 +84,7 @@
       "student_name": "孙涛",
       "class_id": "C001",
       "ocr": {"text": "v = t/s = 20/200 = 0.1 m/s", "clarity": 82},
-      "confidence_factors": {"ocr_clarity": 82, "rubric_coverage": 80, "llm_self_consistency": 62, "cross_model_agreement": null, "teacher_pass_rate": 72},
+      "confidence_factors": {"ocr_clarity": 82, "answer_match": 55, "rubric_coverage": 80, "llm_self_consistency": 62, "teacher_pass_rate": 72},
       "step_annotations": [
         {"step_id": 1, "is_correct": false, "error_tag": "公式选择错误", "reason": "速度公式应为 v=s/t，学生写成 v=t/s，公式倒置", "evidence": "v = t/s"},
         {"step_id": 2, "is_correct": false, "reason": "沿用倒置公式代入，数值位置颠倒（受上一步影响）", "evidence": "20/200"},
@@ -99,7 +99,7 @@
       "student_name": "周琳",
       "class_id": "C001",
       "ocr": {"text": "Last weekend I had a great time. On Saturday morning I did my homework. In the afternoon I played basketball with my friends. On Sunday I visited my grandparents and helped them clean the house. We had a big dinner together. I felt very happy and relaxd.", "clarity": 92},
-      "confidence_factors": {"ocr_clarity": 92, "rubric_coverage": 95, "llm_self_consistency": 86, "cross_model_agreement": null, "teacher_pass_rate": 84},
+      "confidence_factors": {"ocr_clarity": 92, "answer_match": 88, "rubric_coverage": 95, "llm_self_consistency": 86, "teacher_pass_rate": 84},
       "step_annotations": [
         {"step_id": 1, "is_correct": true, "reason": "内容切题，时间、活动、感受要点齐全，字数达标", "evidence": "Last weekend I had a great time."},
         {"step_id": 2, "is_correct": true, "reason": "全文一般过去时，时态一致", "evidence": "In the afternoon I played basketball with my friends."},
@@ -114,7 +114,7 @@
       "student_name": "吴敏",
       "class_id": "C001",
       "ocr": {"text": "Last weekend I have a good time. On Saturday I go to the park with my family. We play games and eat lunch there. On Sunday I stay at home and watch TV. It is a happy weekend for me.", "clarity": 85},
-      "confidence_factors": {"ocr_clarity": 85, "rubric_coverage": 85, "llm_self_consistency": 66, "cross_model_agreement": null, "teacher_pass_rate": 76},
+      "confidence_factors": {"ocr_clarity": 85, "answer_match": 68, "rubric_coverage": 85, "llm_self_consistency": 66, "teacher_pass_rate": 76},
       "step_annotations": [
         {"step_id": 1, "is_correct": true, "reason": "内容切题，要点基本完整", "evidence": "Last weekend I have a good time."},
         {"step_id": 2, "is_correct": false, "partial_ratio": 0.25, "error_tag": "概念理解错误", "reason": "全文应用一般过去时，多处动词误用现在时：have/go/play/eat/stay/watch/is", "evidence": "On Saturday I go to the park with my family. We play games and eat lunch there."},
@@ -129,7 +129,7 @@
       "student_name": "郑浩",
       "class_id": "C001",
       "ocr": {"text": "My weekend is good. I like weekend. Weekend is fun. I want play.", "clarity": 58},
-      "confidence_factors": {"ocr_clarity": 58, "rubric_coverage": 55, "llm_self_consistency": 48, "cross_model_agreement": null, "teacher_pass_rate": 65},
+      "confidence_factors": {"ocr_clarity": 58, "answer_match": 40, "rubric_coverage": 55, "llm_self_consistency": 48, "teacher_pass_rate": 65},
       "step_annotations": [
         {"step_id": 1, "is_correct": false, "partial_ratio": 0.25, "error_tag": "审题错误", "reason": "未按要求描述上周末的具体活动，内容空泛跑题，字数远少于 60 词", "evidence": "My weekend is good. I like weekend."},
         {"step_id": 2, "is_correct": false, "partial_ratio": 0.25, "error_tag": "概念理解错误", "reason": "语法多处错误，如 I want play 应为 I want to play", "evidence": "I want play"},
@@ -144,7 +144,7 @@
       "student_name": "张明",
       "class_id": "C001",
       "ocr": {"text": "v = 200/20 = 10 m/s", "clarity": 90},
-      "confidence_factors": {"ocr_clarity": 90, "rubric_coverage": 75, "llm_self_consistency": 62, "cross_model_agreement": null, "teacher_pass_rate": 80},
+      "confidence_factors": {"ocr_clarity": 90, "answer_match": 88, "rubric_coverage": 75, "llm_self_consistency": 62, "teacher_pass_rate": 80},
       "step_annotations": [
         {"step_id": 1, "is_correct": false, "partial_ratio": 0.5, "error_tag": "答案正确但过程不规范", "reason": "未写出公式原式 v=s/t，直接代入数值计算，答案正确但过程不规范", "evidence": ""},
         {"step_id": 2, "is_correct": true, "reason": "代入 200/20，数值正确", "evidence": "200/20"},
@@ -159,7 +159,7 @@
       "student_name": "张明",
       "class_id": "C001",
       "ocr": {"text": "Last weekend I was very busy but happy. On Saturday morning I finished my homework, then I went to the library and read an intresting book about space. On Sunday I played football with my classmates in the park. After that we ate ice cream together. I really enjoyed my weekend very much and hope the next one comes soon.", "clarity": 93},
-      "confidence_factors": {"ocr_clarity": 93, "rubric_coverage": 95, "llm_self_consistency": 88, "cross_model_agreement": null, "teacher_pass_rate": 84},
+      "confidence_factors": {"ocr_clarity": 93, "answer_match": 90, "rubric_coverage": 95, "llm_self_consistency": 88, "teacher_pass_rate": 84},
       "step_annotations": [
         {"step_id": 1, "is_correct": true, "reason": "内容切题，时间、活动、感受要点齐全，字数达标", "evidence": "Last weekend I was very busy but happy."},
         {"step_id": 2, "is_correct": true, "reason": "通篇使用一般过去时（finished/went/read/played/ate/enjoyed），时态一致", "evidence": "On Saturday morning I finished my homework, then I went to the library"},

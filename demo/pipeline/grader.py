@@ -869,28 +869,19 @@ def _maybe_consistency(question: dict, student_text: str, first_result: dict, cr
         return None
 
 
-def _cross_agreement(gap: float, max_score: float) -> float:
-    """把双模型的总分差换算成 0-100 的一致性分（§9.7 第四因子）。
-
-    与二次批改一致性用同一条斜率（分差占满分每 1% 扣 2 分），两个「一致性」
-    因子的刻度才可比：满分差 0 得 100，差满分的 15% 得 70（正是分歧阈值），
-    差满分一半即归零。刻意不掺错因标签差异——跨厂商模型的标签用词本就不同，
-    把措辞差异算进去会把分歧率抬成噪声。
-    """
-    ceiling = float(max_score) or 1.0
-    return round(max(0.0, 100.0 - abs(float(gap)) / ceiling * 200.0), 1)
-
-
 def cross_check(question: dict, student_text: str, first_total, creds2: dict = None,
                 timeout: int = None):
     """双模型交叉验证：用第二模型独立批改一次并与首轮总分比对。
 
-    产出两样东西：`agreement` 作为置信度第四因子并入加权（换一家模型仍判同
-    一个分，是同模型两次自评给不出的独立佐证）；分差超过满分 15%
-    （等价于 agreement < 70）时 `escalated` 置位，上层据此把分流强制转红交
-    人工，避免单一模型的系统性误判被高一致性掩盖。
+    这是**后置防线，不占置信度权重**：分差超过满分 15% 视为分歧显著
+    （escalated），上层据此把分流强制转红交人工，避免单一模型的系统性误判
+    被高置信度掩盖。
 
-    第二模型凭据未配齐时返回 None，该因子留空按权重重归一化剔除。
+    为什么是一票否决而不是并入加权：加权表达的是「有多少把握」，一票否决
+    表达的是「这份不能自动放行」。若把它折成一个因子加权，会出现「两个模型
+    结论明显打架、但其余四项都很高，总分仍在绿区」——恰恰是最该拦下来的那种。
+
+    第二模型凭据未配齐时返回 None，这一道防线静默跳过，不影响主批改。
     timeout 缺省走主批改超时；由 _maybe_cross_check 传入更短的值。
     """
     if creds2 is None:
@@ -904,8 +895,7 @@ def cross_check(question: dict, student_text: str, first_total, creds2: dict = N
         "model2": creds2["model"],
         "model2_score": second_total,
         "gap": round(gap, 1),
-        "agreement": _cross_agreement(gap, question["max_score"]),
-        "escalated": gap > question["max_score"] * 0.15,
+        "escalated": gap > question["max_score"] * conf.CROSS_DISAGREE_RATIO,
     }
 
 
@@ -934,34 +924,21 @@ def _maybe_cross_check(question: dict, student_text: str, first_total, status: s
 
 def _settle_cross(question: dict, student_text: str, total, factors: dict,
                   confidence: float, status: str):
-    """跑双模型交叉验证并把一致性分并回置信度，返回五元组。
+    """跑双模型交叉验证这道后置防线，返回 (status, cross_res)。
 
-    返回 (factors, confidence, status, cross_res, prelim)；未触发时原样返回，
-    cross_res 与 prelim 为 None。
+    交叉验证**不参与加权**，所以这里既不动 factors 也不重算 confidence——
+    它唯一的作用是一票否决：两模型分差超过满分 15% 时把分流强制转红交人工。
 
-    为什么必须分两段算：交叉验证只在黄 / 红件上跑，而「是不是黄 / 红」本身
-    要由置信度决定——两者互为前提。解法是先用四项可测因子算一次**初评**，
-    据此决定要不要调第二模型；拿到一致性分后把它写回交叉验证因子，整体**复评**
-    一次。绿件永远走不到第二段，交叉验证因子留空按权重重归一化剔除，判定口径
-    与旧的四因子完全一致（见 confidence.WEIGHTS 的取值说明）。
-
-    复评可能把黄件抬成绿件——两个独立模型判出同一个分，本就是比单模型
-    自评更硬的证据，这正是引入该因子的意义。但 escalated 一票否决：分差
-    显著时无论复评多少分都强制转红，避免「一致性 0 分把总分拉低还不够转红」
-    这种由加权决定的漏网。
+    只在黄 / 红件上跑（绿件省一次调用）。这也解释了为什么它当不了因子：
+    它的取值只在一部分作答上存在，把「大多数时候没有」的东西折进加权，
+    要么得给绿件编一个值，要么让绿件和黄件走两套口径，两条路都不干净。
     """
     cross_res = _maybe_cross_check(question, student_text, total, status)
     if cross_res is None:
-        return factors, confidence, status, None, None
-
-    prelim = {"confidence": confidence, "status": status}
-    factors = dict(factors)
-    factors["cross_model_agreement"] = cross_res["agreement"]
-    confidence = conf.compute_confidence(factors)
-    status = conf.route(confidence)
+        return status, None
     if cross_res.get("escalated"):
         status = "red"
-    return factors, confidence, status, cross_res, prelim
+    return status, cross_res
 
 
 def grade_llm(question: dict, submission: dict, student_text: str,
@@ -992,14 +969,12 @@ def grade_llm(question: dict, submission: dict, student_text: str,
         if isinstance(llm_conf, (int, float)):
             factors["llm_self_consistency"] = float(llm_conf) * 100 if llm_conf <= 1 else float(llm_conf)
     factors = _apply_overrides(factors, factor_overrides)
-    # 交叉验证因子先留空：要等初评分流决定跑不跑，未跑就按权重重归一化剔除
-    factors.setdefault("cross_model_agreement", None)
     confidence = conf.compute_confidence(factors)
     status = conf.route(confidence)
 
-    # 双模型交叉验证：黄 / 红初评用第二模型复核，一致性分并入该因子后复评；
+    # 双模型交叉验证（后置防线，不占权重）：黄 / 红件用第二模型复核，
     # 分差显著时一票否决强制转红交人工
-    factors, confidence, status, cross_res, prelim = _settle_cross(
+    status, cross_res = _settle_cross(
         question, student_text, total, factors, confidence, status)
 
     seed = submission.get("submission_id") or submission.get("student_name", "")
@@ -1020,9 +995,6 @@ def grade_llm(question: dict, submission: dict, student_text: str,
         result["consistency_check"] = consistency_res
     if cross_res is not None:
         result["cross_check"] = cross_res
-        # 初评值透出去，教师才看得见「这份是被交叉验证改判的」
-        result["confidence_preliminary"] = prelim["confidence"]
-        result["status_preliminary"] = prelim["status"]
     return result
 
 
@@ -1072,21 +1044,20 @@ def _step_has_judgment(step: dict) -> bool:
 
 
 def derive_factors(question: dict, student_text: str, clarity: float,
-                   step_analysis: list, llm_conf) -> dict:
-    """为无预置标注的上传作答推导五个置信度因子。
+                   step_analysis: list, llm_conf, answer_match=None) -> dict:
+    """为无预置标注的上传作答推导置信度因子。
 
     - ocr_clarity        识别引擎给出的卷面清晰度；
+    - answer_match       答案匹配度。**有题库才有值**：调用方传入逐题比对
+                         教师页标准答案后的页级加权分；无题库（让大模型自己
+                         判）时留 None，按权重重归一化剔除——没有基准就没有
+                         「匹配度」可言，硬算成 0 分会凭空扣掉 25 分；
     - rubric_coverage    具备判定依据（reason 或 evidence）的步骤占比；
     - llm_self_consistency  二次批改一致性（同一模型独立批两次的比较分）；
                             冷启动回退值 60，二次批改完成后被覆盖；
-    - cross_model_agreement 双模型交叉验证一致性。这里恒为 None——它只在
-                            初评落黄 / 红后才调第二模型，此刻还没算出分流，
-                            由 _settle_cross 在复评阶段回填；始终为 None 时
-                            按权重重归一化剔除，不当 0 分白扣；
     - teacher_pass_rate  冷启动默认 80（无历史数据）。
 
-    「答案匹配度」已移除：该因子算法假设存在简短终答形式的标准答案，
-    题库外作业没有，比对出来的是噪声。
+    双模型交叉验证不在此列：它是后置防线，只对黄 / 红件触发，不占权重。
     """
     covered = sum(1 for s in step_analysis if _step_has_judgment(s))
     coverage = round(covered / len(step_analysis) * 100, 1) if step_analysis else 0.0
@@ -1097,20 +1068,25 @@ def derive_factors(question: dict, student_text: str, clarity: float,
 
     return {
         "ocr_clarity": round(float(clarity), 1),
+        "answer_match": (round(float(answer_match), 1)
+                         if isinstance(answer_match, (int, float)) else None),
         "rubric_coverage": coverage,
         "llm_self_consistency": round(self_consistency, 1),
-        "cross_model_agreement": None,
         "teacher_pass_rate": 80.0,
     }
 
 
 def grade_adhoc(question: dict, student_text: str, clarity: float,
                 factor_overrides: dict = None,
-                dimension_bias: dict = None) -> dict:
+                dimension_bias: dict = None,
+                answer_match=None) -> dict:
     """批改一份「任意上传」的作答文本（无预置步骤标注）。
 
     必须有 LLM 凭据（ZHIPI_LLM_* 或 ZHIPI_VLM_*）；置信度因子按
     derive_factors 冷启动推导，其余输出结构与 grade() 完全一致。
+
+    answer_match：逐题比对教师页标准答案得出的页级匹配度（0-100）。
+    只有走题库路径时才有值；无题库时保持 None，该因子按权重重归一化剔除。
 
     dimension_bias：该学科各维度的教师平均修正量（正=模型偏严，负=偏松）。
     仅在题库外的维度体系批改时生效，作为 Prompt 里的一段提示写入。
@@ -1132,7 +1108,8 @@ def grade_adhoc(question: dict, student_text: str, clarity: float,
     step_analysis, total, error_tags = _parse_llm_steps(question, data)
 
     factors = derive_factors(question, student_text, clarity,
-                             step_analysis, data.get("confidence"))
+                             step_analysis, data.get("confidence"),
+                             answer_match=answer_match)
     # 「LLM 自检一致性」优先取二次批改一致性分；被禁用 / 失败时保留自报回退值
     first_result = {"total_score": total, "error_tags": error_tags,
                     "max_score": question["max_score"]}
@@ -1143,8 +1120,8 @@ def grade_adhoc(question: dict, student_text: str, clarity: float,
     confidence = conf.compute_confidence(factors)
     status = conf.route(confidence)
 
-    # 黄 / 红初评触发双模型交叉验证，一致性分并入该因子后复评；分差显著强制转红
-    factors, confidence, status, cross_res, prelim = _settle_cross(
+    # 双模型交叉验证（后置防线，不占权重）：黄 / 红件复核，分差显著强制转红
+    status, cross_res = _settle_cross(
         question, student_text, total, factors, confidence, status)
 
     # 临时批改无 submission_id，用作答文本本身作确定性评语 seed
@@ -1170,8 +1147,6 @@ def grade_adhoc(question: dict, student_text: str, clarity: float,
         result["consistency_check"] = consistency_res
     if cross_res is not None:
         result["cross_check"] = cross_res
-        result["confidence_preliminary"] = prelim["confidence"]
-        result["status_preliminary"] = prelim["status"]
     if is_open:
         # 判分基准要透出去。题库外的题没有人工标准答案，模型是拿自己的解法
         # 当基准的——不展示的话，教师无从判断「基准本身是不是错的」，

@@ -92,23 +92,21 @@
 
   var FACTOR_LABEL = {
     ocr_clarity: 'OCR 识别清晰度',
+    answer_match: '答案匹配度',
     rubric_coverage: 'Rubric 覆盖度',
     llm_self_consistency: '二次批改一致性',
-    cross_model_agreement: '双模型交叉验证',
     teacher_pass_rate: '历史教师通过率'
   };
-  /* 答案匹配度已移除（题库外作业没有标准答案，比对结果是噪声）。
-     权重取值让「未触发交叉验证时」的重归一化结果 = 旧四因子口径
-     （0.20/0.24/0.24/0.12 各除以 0.80 = 0.25/0.30/0.30/0.15），
-     绿件判定口径一分未改，第五因子是纯增量。与后端 confidence.WEIGHTS 对齐。 */
+  /* 与后端 confidence.WEIGHTS 对齐。答案匹配度只在「教师先传了答案页」时有值，
+     无题库批改时为 null，按权重重归一化剔除——不是 0 分。
+     双模型交叉验证不在这里：它是后置防线（分差 > 15% 强制转红），不占权重。 */
   var FACTOR_WEIGHT = {
-    ocr_clarity: 0.20, rubric_coverage: 0.24,
-    llm_self_consistency: 0.24, cross_model_agreement: 0.20,
-    teacher_pass_rate: 0.12
+    ocr_clarity: 0.25, answer_match: 0.25, rubric_coverage: 0.20,
+    llm_self_consistency: 0.20, teacher_pass_rate: 0.10
   };
   // 展示顺序按公式书写顺序固定，不跟后端字典的插入顺序走
-  var FACTOR_ORDER = ['ocr_clarity', 'rubric_coverage', 'llm_self_consistency',
-                      'cross_model_agreement', 'teacher_pass_rate'];
+  var FACTOR_ORDER = ['ocr_clarity', 'answer_match', 'rubric_coverage',
+                      'llm_self_consistency', 'teacher_pass_rate'];
 
   var TRAIL = [
     { tab: 'submit', n: '01', t: '选文件夹 / 上传', tip: '自建文件夹、指定上传目标；也可打开 Demo 样例夹点内置照片。整夹可一键批改并自动飞书提醒。' },
@@ -631,7 +629,7 @@
     // 教师要知道的是「有没有第二个独立模型在复核」，不是它叫什么。
     if (!c.cross_check) {
       rows.push({ on: false, k: '交叉验证',
-                  v: '未启用 · 配好大模型二即自动启用；未启用时该因子留空，权重重归一化剔除' });
+                  v: '未启用 · 配好大模型二即自动启用（后置防线，不占置信度权重）' });
     } else if (c.cross_budget_tight) {
       // 这条是硬警告：预算小于最快一次成功耗时，等于每次必然超时后静默丢弃。
       rows.push({ on: false, k: '交叉验证',
@@ -639,7 +637,7 @@
                      ' 秒，实测第二模型多需 25-90 秒，几乎必然超时后被丢弃（需调大超时预算）' });
     } else {
       rows.push({ on: true, k: '交叉验证',
-                  v: '大模型二独立复核，仅黄/红初评触发；一致性分并入同名置信度因子后复评' });
+                  v: '大模型二独立复核，仅黄/红件触发；分差超过满分 15% 一票否决转人工' });
     }
     el.innerHTML = rows.map(chainRow).join('');
     Icons.hydrate(el);
@@ -1489,17 +1487,17 @@
 
     var steps = stepChainHtml(r.step_analysis);
 
-    // 因子区只放五因子本身。二次批改一致性与双模型交叉验证的分数已经是其中
-    // 两枚 chip，再挂一个「复核分 15」「模型二判 15 分」的绿标签是同一件事说两遍。
+    // 因子区只放五因子本身。二次批改一致性的分数已经是其中一枚 chip，
+    // 再挂一个「复核分 15」的绿标签是同一件事说两遍。
     var factors = factorChipsHtml(r);
-    // 分流被交叉验证改过是另一回事——五因子里看不出来，作为一行说明留在下面
+    // 交叉验证不占权重，所以在五因子里看不出来；它一票否决转红时必须有交代，
+    // 否则教师看到的是「置信度 88 却判了红」——像个 bug。
     var crossNote = '';
-    if (r.confidence_preliminary != null && r.status_preliminary &&
-        r.status_preliminary !== r.status) {
-      crossNote = '<p class="hint">经大模型二独立复核后，本份由「' +
-        (STATUS_TEXT[r.status_preliminary] || r.status_preliminary) + '」改判为「' +
-        (STATUS_TEXT[r.status] || r.status) + '」，置信度 ' +
-        r.confidence_preliminary + ' → ' + r.confidence + '。</p>';
+    if (r.cross_check && r.cross_check.escalated) {
+      crossNote = '<p class="hint">大模型二独立复核判 <b>' +
+        r.cross_check.model2_score + '</b> 分，与本次判分相差 ' +
+        r.cross_check.gap + ' 分（超过满分 15%），两个模型结论分歧显著，' +
+        '已不按置信度自动放行，<b>强制转人工批改</b>。</p>';
     }
 
     var tags = r.error_tags.length
@@ -1840,8 +1838,10 @@
       // 测不出的一维要摆在明面上：静默略过会让教师以为公式只有四项，
       // 而实际是这一项的权重被重归一化摊给了其余四项。
       if (v === null || v === undefined) {
+        var why = (k === 'answer_match') ? '无题库 · 权重已重归一化'
+                                         : '未触发 · 权重已重归一化';
         return '<span class="factor factor--na">' + esc(FACTOR_LABEL[k] || k) +
-          wHtml + ' <b>未触发 · 权重已重归一化</b></span>';
+          wHtml + ' <b>' + why + '</b></span>';
       }
       return '<span class="factor">' + esc(FACTOR_LABEL[k] || k) + wHtml +
         ' <b>' + v + '</b></span>';

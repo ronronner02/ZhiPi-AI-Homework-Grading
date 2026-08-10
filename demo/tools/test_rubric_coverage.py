@@ -84,12 +84,6 @@ factors = grader.derive_factors(
 )
 ck("截图同款覆盖度应为 100", factors["rubric_coverage"], 100.0)
 ck("OCR 清晰度透传", factors["ocr_clarity"], 95.0)
-# answer_match 已移除；cross_model_agreement 由 _settle_cross 在复评阶段回填，
-# derive_factors 只占位为 None（未触发时按权重重归一化剔除）
-ck("factor 键集合正确", set(factors.keys()),
-   {"ocr_clarity", "rubric_coverage", "llm_self_consistency",
-    "cross_model_agreement", "teacher_pass_rate"})
-ck("交叉验证因子冷启动留空", factors["cross_model_agreement"], None)
 
 
 # ---------------------------------------------------------------- 旧口径回归：只认 reason 会把本例打成 0
@@ -149,82 +143,65 @@ ck("难辨步不算覆盖 → 覆盖度 50（4 步里 2 步有依据）",
    il_factors["rubric_coverage"], 50.0)
 
 
-# ---------------------------------------------------------------- 第五因子：双模型交叉验证
+# ---------------------------------------------------------------- 五因子加权与重归一化
 from pipeline import confidence as conf
 
-# 分差 → 一致性分的刻度：与二次批改一致性同斜率，分歧阈值正好落在 70
-ck("分差 0 → 一致性 100", grader._cross_agreement(0, 6), 100.0)
-ck("分差 = 满分 15% → 一致性 70（分歧阈值）", grader._cross_agreement(0.9, 6), 70.0)
-ck("分差 = 满分一半 → 一致性 0", grader._cross_agreement(3, 6), 0.0)
-ck("分差超过满分一半不给负分", grader._cross_agreement(5, 6), 0.0)
-ck("满分为 0 也不崩", grader._cross_agreement(1, 0), 0.0)
-
-# 未触发交叉验证时的重归一化必须等于旧的四因子口径，否则绿件判定被这次改动动了
-BASE = {"ocr_clarity": 90, "rubric_coverage": 80,
-        "llm_self_consistency": 70, "teacher_pass_rate": 60}
-legacy = round(90 * 0.25 + 80 * 0.30 + 70 * 0.30 + 60 * 0.15, 1)
-ck("第五因子留空 → 口径与旧四因子完全一致",
-   conf.compute_confidence(dict(BASE, cross_model_agreement=None)), legacy)
-ck("第五因子缺键 → 同样按重归一化处理", conf.compute_confidence(BASE), legacy)
-ck("第五因子有值 → 五项加权",
-   conf.compute_confidence(dict(BASE, cross_model_agreement=100)),
-   round(90 * 0.20 + 80 * 0.24 + 70 * 0.24 + 100 * 0.20 + 60 * 0.12, 1))
 ck("权重和为 1", round(sum(conf.WEIGHTS.values()), 6), 1.0)
+ck("因子集合就是原先五项", set(conf.WEIGHTS),
+   {"ocr_clarity", "answer_match", "rubric_coverage",
+    "llm_self_consistency", "teacher_pass_rate"})
+
+FULL = {"ocr_clarity": 90, "answer_match": 80, "rubric_coverage": 70,
+        "llm_self_consistency": 60, "teacher_pass_rate": 50}
+ck("五项齐全 → 直接加权",
+   conf.compute_confidence(FULL),
+   round(90 * .25 + 80 * .25 + 70 * .20 + 60 * .20 + 50 * .10, 1))
+
+# 无题库这条路是常态，不是异常：answer_match 留空要按重归一化剔除，
+# 而不是当 0 分白扣 25 分。缺键与 None 必须同义。
+NOBANK = dict(FULL, answer_match=None)
+expect = round((90 * .25 + 70 * .20 + 60 * .20 + 50 * .10) / .75, 1)
+ck("无题库 → answer_match=None 重归一化", conf.compute_confidence(NOBANK), expect)
+miss = {k: v for k, v in FULL.items() if k != "answer_match"}
+ck("无题库 → 缺键与 None 同义", conf.compute_confidence(miss), expect)
+ck("全测不出 → 0 分而不是崩", conf.compute_confidence({k: None for k in conf.WEIGHTS}), 0.0)
+
+ck("阈值分流 绿", conf.route(85.0), "green")
+ck("阈值分流 黄", conf.route(84.9), "yellow")
+ck("阈值分流 红", conf.route(59.9), "red")
+
+# derive_factors：无题库不给 answer_match，有题库才写
+d0 = grader.derive_factors(QUESTION, "x", 90.0, partial_parsed, 0.8)
+ck("derive_factors 键集合正确", set(d0.keys()), set(conf.WEIGHTS))
+ck("无题库 → answer_match 留空", d0["answer_match"], None)
+d1 = grader.derive_factors(QUESTION, "x", 90.0, partial_parsed, 0.8, answer_match=88.25)
+ck("有题库 → answer_match 写入并保留 1 位", d1["answer_match"], 88.2)
 
 
-# _settle_cross：初评→复评的三条路径。用桩替掉真实网络调用。
+# ---------------------------------------------------------------- 交叉验证：后置防线，不占权重
 _real_maybe = grader._maybe_cross_check
-YELLOW = {"ocr_clarity": 80, "rubric_coverage": 78,
-          "llm_self_consistency": 72, "teacher_pass_rate": 80,
-          "cross_model_agreement": None}
-prelim_c = conf.compute_confidence(YELLOW)
-ck("样例初评落黄", conf.route(prelim_c), "yellow")
-
+BASE_F = {"ocr_clarity": 80, "answer_match": 80, "rubric_coverage": 78,
+          "llm_self_consistency": 72, "teacher_pass_rate": 80}
+base_c = conf.compute_confidence(BASE_F)
 try:
     grader._maybe_cross_check = lambda *a, **k: None
-    f, c, s, res, prelim = grader._settle_cross(
-        QUESTION, "x", 5, YELLOW, prelim_c, "yellow")
-    ck("未触发 → 置信度不变", c, prelim_c)
-    ck("未触发 → 分流不变", s, "yellow")
-    ck("未触发 → 无 cross_check 字段", (res, prelim), (None, None))
+    s_, res = grader._settle_cross(QUESTION, "x", 5, BASE_F, base_c, "yellow")
+    ck("未触发 → 分流不变", s_, "yellow")
+    ck("未触发 → 无 cross_check", res, None)
 
-    # 第二模型判出同一个分：两个独立模型互证，临界黄件可以被抬成绿件。
-    # 权重设计使复评值恒等于 0.8×初评 + 0.2×一致性分——升绿需初评 ≥ 81.25。
-    PROMO = {"ocr_clarity": 85, "rubric_coverage": 85,
-             "llm_self_consistency": 80, "teacher_pass_rate": 80,
-             "cross_model_agreement": None}
-    promo_c = conf.compute_confidence(PROMO)
-    ck("临界样例初评仍落黄", (promo_c, conf.route(promo_c)), (82.7, "yellow"))
+    # 结论一致：不加分也不减分——它不占权重，只在分歧时说话
     grader._maybe_cross_check = lambda *a, **k: {
-        "model2": "m2", "model2_score": 5, "gap": 0.0,
-        "agreement": 100.0, "escalated": False}
-    f, c, s, res, prelim = grader._settle_cross(
-        QUESTION, "x", 5, PROMO, promo_c, "yellow")
-    ck("一致 → 一致性分写入第五因子", f["cross_model_agreement"], 100.0)
-    ck("一致 → 复评 = 0.8×初评 + 0.2×一致性", c, round(0.8 * promo_c + 20, 1))
-    ck("一致 → 复评升为绿", s, "green")
-    ck("一致 → 初评值保留供教师追溯", prelim["status"], "yellow")
-    ck("一致 → 原 factors 未被就地改写", PROMO["cross_model_agreement"], None)
+        "model2": "m2", "model2_score": 5, "gap": 0.0, "escalated": False}
+    s_, res = grader._settle_cross(QUESTION, "x", 5, BASE_F, base_c, "yellow")
+    ck("结论一致 → 分流仍按置信度，不被抬桶", s_, "yellow")
+    ck("结论一致 → 仍回传复核详情", res["model2_score"], 5)
+    ck("交叉验证不写进 factors", "cross_model_agreement" in BASE_F, False)
 
-    # 中等一致性（分差达满分 15%）只会把置信度往下拉，不该抬桶
+    # 分歧显著：一票否决，压过绿区置信度
     grader._maybe_cross_check = lambda *a, **k: {
-        "model2": "m2", "model2_score": 4.1, "gap": 0.9,
-        "agreement": 70.0, "escalated": False}
-    _, c70, s70, _, _ = grader._settle_cross(
-        QUESTION, "x", 5, PROMO, promo_c, "yellow")
-    ck("一致性 70 → 复评低于初评", c70 < promo_c, True)
-    ck("一致性 70 → 仍是黄件", s70, "yellow")
-
-    # 分差显著：escalated 一票否决，无论复评多少分都必须转红
-    grader._maybe_cross_check = lambda *a, **k: {
-        "model2": "m2", "model2_score": 0, "gap": 5.0,
-        "agreement": 0.0, "escalated": True}
-    f, c, s, res, prelim = grader._settle_cross(
-        QUESTION, "x", 5, dict(YELLOW, ocr_clarity=100, rubric_coverage=100,
-                               llm_self_consistency=100, teacher_pass_rate=100),
-        99.0, "green")
-    ck("分歧 → 即使复评仍在绿区也强制转红", s, "red")
-    ck("分歧 → 一致性 0 计入加权", f["cross_model_agreement"], 0.0)
+        "model2": "m2", "model2_score": 0, "gap": 5.0, "escalated": True}
+    s_, res = grader._settle_cross(QUESTION, "x", 5, BASE_F, 99.0, "green")
+    ck("分歧 → 绿区也强制转红", s_, "red")
 finally:
     grader._maybe_cross_check = _real_maybe
 

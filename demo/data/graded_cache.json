@@ -3,13 +3,13 @@
     "mode": "llm",
     "total_score": 10,
     "max_score": 10,
-    "confidence": 97.2,
+    "confidence": 96.6,
     "status": "green",
     "confidence_factors": {
       "ocr_clarity": 96,
+      "answer_match": 95,
       "rubric_coverage": 100,
       "llm_self_consistency": 100.0,
-      "cross_model_agreement": null,
       "teacher_pass_rate": 88
     },
     "step_analysis": [
@@ -79,13 +79,13 @@
     "mode": "llm",
     "total_score": 7,
     "max_score": 10,
-    "confidence": 89.5,
-    "status": "green",
+    "confidence": 84.5,
+    "status": "yellow",
     "confidence_factors": {
       "ocr_clarity": 88,
+      "answer_match": 70,
       "rubric_coverage": 85,
       "llm_self_consistency": 100.0,
-      "cross_model_agreement": null,
       "teacher_pass_rate": 80
     },
     "step_analysis": [
@@ -158,13 +158,13 @@
     "mode": "llm",
     "total_score": 2,
     "max_score": 10,
-    "confidence": 72.2,
+    "confidence": 64.0,
     "status": "yellow",
     "confidence_factors": {
       "ocr_clarity": 55,
+      "answer_match": 45,
       "rubric_coverage": 60,
       "llm_self_consistency": 100.0,
-      "cross_model_agreement": null,
       "teacher_pass_rate": 70
     },
     "step_analysis": [
@@ -237,13 +237,13 @@
     "mode": "llm",
     "total_score": 6,
     "max_score": 6,
-    "confidence": 97.8,
+    "confidence": 97.3,
     "status": "green",
     "confidence_factors": {
       "ocr_clarity": 97,
+      "answer_match": 96,
       "rubric_coverage": 100,
       "llm_self_consistency": 100.0,
-      "cross_model_agreement": null,
       "teacher_pass_rate": 90
     },
     "step_analysis": [
@@ -313,13 +313,13 @@
     "mode": "llm",
     "total_score": 5,
     "max_score": 6,
-    "confidence": 96.3,
+    "confidence": 94.5,
     "status": "green",
     "confidence_factors": {
       "ocr_clarity": 94,
+      "answer_match": 90,
       "rubric_coverage": 100,
       "llm_self_consistency": 100.0,
-      "cross_model_agreement": null,
       "teacher_pass_rate": 85
     },
     "step_analysis": [
@@ -391,13 +391,13 @@
     "mode": "llm",
     "total_score": 0,
     "max_score": 6,
-    "confidence": 85.3,
-    "status": "green",
+    "confidence": 77.5,
+    "status": "yellow",
     "confidence_factors": {
       "ocr_clarity": 82,
+      "answer_match": 55,
       "rubric_coverage": 80,
       "llm_self_consistency": 100.0,
-      "cross_model_agreement": null,
       "teacher_pass_rate": 72
     },
     "step_analysis": [
@@ -471,13 +471,13 @@
     "mode": "llm",
     "total_score": 13,
     "max_score": 15,
-    "confidence": 94.1,
+    "confidence": 92.4,
     "status": "green",
     "confidence_factors": {
       "ocr_clarity": 92,
+      "answer_match": 88,
       "rubric_coverage": 95,
       "llm_self_consistency": 100.0,
-      "cross_model_agreement": null,
       "teacher_pass_rate": 84
     },
     "step_analysis": [
@@ -551,13 +551,13 @@
     "mode": "llm",
     "total_score": 6,
     "max_score": 15,
-    "confidence": 86.7,
-    "status": "green",
+    "confidence": 81.9,
+    "status": "yellow",
     "confidence_factors": {
       "ocr_clarity": 85,
+      "answer_match": 68,
       "rubric_coverage": 85,
       "llm_self_consistency": 95.0,
-      "cross_model_agreement": null,
       "teacher_pass_rate": 76
     },
     "step_analysis": [
@@ -632,13 +632,13 @@
     "mode": "llm",
     "total_score": 2,
     "max_score": 15,
-    "confidence": 70.8,
+    "confidence": 62.0,
     "status": "yellow",
     "confidence_factors": {
       "ocr_clarity": 58,
+      "answer_match": 40,
       "rubric_coverage": 55,
       "llm_self_consistency": 100.0,
-      "cross_model_agreement": null,
       "teacher_pass_rate": 65
     },
     "step_analysis": [
@@ -713,13 +713,13 @@
     "mode": "llm",
     "total_score": 4,
     "max_score": 6,
-    "confidence": 87.0,
+    "confidence": 87.5,
     "status": "green",
     "confidence_factors": {
       "ocr_clarity": 90,
+      "answer_match": 88,
       "rubric_coverage": 75,
       "llm_self_consistency": 100.0,
-      "cross_model_agreement": null,
       "teacher_pass_rate": 80
     },
     "step_analysis": [
@@ -791,13 +791,13 @@
     "mode": "llm",
     "total_score": 14,
     "max_score": 15,
-    "confidence": 94.4,
+    "confidence": 93.2,
     "status": "green",
     "confidence_factors": {
       "ocr_clarity": 93,
+      "answer_match": 90,
       "rubric_coverage": 95,
       "llm_self_consistency": 100.0,
-      "cross_model_agreement": null,
       "teacher_pass_rate": 84
     },
     "step_analysis": [
