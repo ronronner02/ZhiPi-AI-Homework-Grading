@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>FIG.2 一眼看效果</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  .fig { width: 1280px; height: 860px; padding: 28px 34px 18px; display: flex; flex-direction: column; }
+  .body { flex: 1; padding-top: 14px; display: flex; gap: 16px; }
+
+  .col-l { width: 596px; flex: none; display: flex; flex-direction: column; }
+  .col-r { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+
+  .cap { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+  .cap .no {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: .06em;
+    background: var(--ink); color: var(--paper-white); padding: 2px 7px 1px;
+  }
+  .cap .tt { font-size: 14.5px; font-weight: 700; }
+  .cap .ss { font-size: 11px; color: var(--ink-soft); margin-left: auto; }
+
+  .shot {
+    border: 1.5px solid var(--ink); box-shadow: var(--shadow-riso);
+    background: var(--paper-white); overflow: hidden; position: relative;
+  }
+  .shot img { display: block; width: 100%; }
+  /* 截断处柔和渐隐，示意"下面还有内容"，不做硬切 */
+  .shot--fade::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 42px;
+    background: linear-gradient(to bottom, rgba(251,249,245,0), rgba(251,249,245,.96));
+  }
+
+  .note { font-size: 11.5px; line-height: 1.55; color: var(--ink-mid); margin-top: 6px; }
+  .note b { color: var(--ink); }
+  .hl { background: var(--blue-lt); color: var(--blue-deep); padding: 0 3px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="fig">
+  <div class="fig-head">
+    <span class="fig-num">FIG.2</span>
+    <span class="fig-title">方案效果长什么样：三块真实界面</span>
+    <span class="fig-sub">公网站点实截 · 非设计稿 ｜ 对应 §2.2</span>
+  </div>
+
+  <div class="body">
+    <div class="col-l">
+      <div class="cap">
+        <span class="no">01</span><span class="tt">一份作业：判到哪一步、为什么扣分</span>
+      </div>
+      <div class="shot shot--fade"><img src="crop-modal.png" alt="教师终审弹窗"></div>
+      <div class="note">
+        逐节点判分 + <b>每步引用学生原文</b>（evidence）；两层错因标签；三段式评语；
+        右侧<span class="hl">置信度五因子明细</span>与终审入口——教师改分改错因，结果回灌置信度。
+      </div>
+    </div>
+
+    <div class="col-r">
+      <div>
+        <div class="cap">
+          <span class="no">02</span><span class="tt">全班队列：老师只看该看的那几份</span>
+        </div>
+        <div class="shot"><img src="crop-queue.png" alt="教师工作台红黄绿队列"></div>
+        <div class="note">
+          <span class="hl">红黄绿分流</span>把 11 份按置信度排好：绿（≥85）抽查通过，黄（60–85）一键确认，红（&lt;60）转人工。
+        </div>
+      </div>
+      <div>
+        <div class="cap">
+          <span class="no">03</span><span class="tt">班级学情：批改数据接到下一节课</span>
+        </div>
+        <div class="shot shot--fade" style="height:172px"><img src="crop-board.png" alt="班级看板"></div>
+        <div class="note">
+          薄弱知识点 · 错因分布 · 红黄绿占比自动聚合，并一键生成<b>讲评课件大纲</b>。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fig-foot">
+    <span>智批π · 教师可控的多模态作业批改与错因诊断系统 ｜ 队名：我chovy</span>
+    <span>截自公网体验站点（§2.5），数据为内置基线样例</span>
+  </div>
+</div>
+</body>
+</html>

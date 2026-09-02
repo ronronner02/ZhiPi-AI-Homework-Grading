@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>F1 端到端流水线总览</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  .fig { width: 1280px; height: 952px; padding: 30px 36px 22px; display: flex; flex-direction: column; }
+  .fig-foot span:first-child { flex: none; }
+  .fig-foot span:last-child { text-align: right; padding-left: 24px; }
+  .body { flex: 1; position: relative; padding-top: 14px; }
+
+  /* 主干骨架 */
+  .row { display: flex; gap: 18px; }
+  .col { display: flex; flex-direction: column; }
+
+  .step-no {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--ink); color: var(--paper-white);
+    font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+    margin-right: 7px; flex: none;
+  }
+  .st-title { display: flex; align-items: center; flex-wrap: wrap; row-gap: 5px; font-size: 15px; font-weight: 700; }
+  .st-title .aux { margin-left: auto; font-weight: 400; font-size: 11.5px; color: var(--ink-soft); }
+
+  /* AI 能力徽章：本图唯一的蓝底实心块，一眼看清哪一环用了什么 AI */
+  .ai-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12.5px; font-weight: 700; letter-spacing: .01em;
+    padding: 3px 10px 4px; margin-left: 9px;
+    background: var(--blue); color: var(--paper-white);
+    box-shadow: 2px 2px 0 rgba(43, 65, 200, .22);
+  }
+  .ai-chip::before {
+    content: "AI"; font-family: var(--font-mono); font-size: 9.5px;
+    letter-spacing: .1em; background: rgba(255,255,255,.22);
+    padding: 1px 4px; border-radius: 2px;
+  }
+  .ai-chip--feishu { background: #0B57C4; box-shadow: 2px 2px 0 rgba(11,87,196,.22); }
+  .ai-chip--human {
+    background: var(--paper-warm); color: var(--ink-mid);
+    border: 1.5px solid var(--ink-faint); box-shadow: none;
+  }
+  .ai-chip--human::before { content: "人"; background: rgba(0,0,0,.07); color: var(--ink-mid); }
+  .chip-legend {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11.5px; color: var(--ink-soft); margin-top: 9px;
+  }
+  .chip-legend .sw { width: 26px; height: 12px; background: var(--blue); flex: none; }
+  .chip-legend .sw2 { width: 26px; height: 12px; background: var(--paper-warm); border: 1.5px solid var(--ink-faint); flex: none; }
+  .st-body { font-size: 12.5px; color: var(--ink-mid); line-height: 1.72; margin-top: 6px; }
+  .st-body b { color: var(--ink); }
+
+  /* 输入源：纸张缩略 */
+  .sheet {
+    width: 62px; height: 80px; background: var(--paper-white);
+    border: 1.5px solid var(--ink); box-shadow: var(--shadow-riso);
+    padding: 7px 6px; flex: none; position: relative;
+  }
+  .sheet i { display: block; height: 2px; background: var(--rule); margin-bottom: 5px; }
+  .sheet i:nth-child(2n) { width: 74%; }
+  .sheet .scrawl { height: 2px; background: var(--blue); opacity: .75; margin-bottom: 5px; width: 60%; }
+  .sheet .lbl {
+    position: absolute; top: -17px; left: 0;
+    font-size: 10px; color: var(--ink-soft); white-space: nowrap;
+    letter-spacing: .04em;
+  }
+  .src { position: relative; padding-top: 17px; flex: none; }
+
+  /* 三阶段 */
+  .stage { display: flex; gap: 9px; }
+  .stg {
+    flex: 1; background: var(--paper-white); border: 1.5px solid var(--blue);
+    box-shadow: var(--shadow-riso-blue); padding: 8px 10px 9px;
+  }
+  .stg h4 { font-size: 12.5px; color: var(--blue); letter-spacing: .01em; }
+  .stg h4 span { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; display: block; color: var(--ink-soft); font-weight: 400; }
+  .stg p { font-size: 11.5px; color: var(--ink-mid); line-height: 1.62; margin-top: 5px; }
+
+  /* Rubric 节点链 */
+  .nodes { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: nowrap; }
+  .node {
+    font-size: 11.5px; padding: 3px 9px; background: var(--paper-warm);
+    border: 1px solid var(--rule); white-space: nowrap;
+  }
+  .node.on { background: var(--blue-lt); border-color: var(--blue); color: var(--blue-deep); font-weight: 700; }
+  .dash { color: var(--ink-faint); font-size: 11px; }
+
+  /* 五因子权重条 */
+  .factors { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+  .fac { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .fac .nm { width: 106px; color: var(--ink-mid); flex: none; }
+  .fac .bar { height: 11px; background: var(--blue); position: relative; }
+  .fac .bar.dim { background: var(--ink-faint); }
+  .fac .wt { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
+  .fac .why { color: var(--ink-soft); font-size: 11px; }
+
+  /* 三色桶 */
+  .buckets { display: flex; flex-direction: column; gap: 7px; }
+  .bkt {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+    border: 1.5px solid; font-size: 12.5px;
+  }
+  .bkt .dot { width: 11px; height: 11px; border-radius: 50%; background: currentColor; flex: none; }
+  .bkt b { font-size: 13px; }
+  .bkt .txt { color: var(--ink-mid); }
+  .bkt.g { border-color: var(--green); background: var(--green-lt); color: var(--green); }
+  .bkt.y { border-color: var(--amber); background: var(--amber-lt); color: #9A5E00; }
+  .bkt.r { border-color: var(--red);   background: var(--red-lt);   color: var(--red); }
+
+  .fence {
+    border-left: 3px solid var(--red); background: var(--red-lt);
+    padding: 7px 10px; font-size: 11.5px; color: var(--ink-mid); line-height: 1.7;
+  }
+  .fence b { color: var(--red); }
+
+  .conn { text-align: center; padding: 3px 0; }
+  .conn .stem-v { height: 12px; }
+  .lane-lbl {
+    font-size: 11px; color: var(--ink-soft); letter-spacing: .06em;
+    background: var(--paper); padding: 0 6px;
+  }
+  .badge-ok {
+    font-size: 10.5px; color: var(--green); border: 1px solid var(--green);
+    background: var(--green-lt); padding: 1px 6px; border-radius: 2px; font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<div class="fig">
+  <div class="fig-head">
+    <span class="fig-num">FIG.4</span>
+    <span class="fig-title">端到端流水线：一页作业从拍照到讲评</span>
+    <span class="fig-sub">对应 §2.3.1 ｜ 七个环节，<b style="color:#2B41C8">五个用到 AI</b>（蓝底标出）｜全链路<b>【已实现】</b></span>
+  </div>
+
+  <div class="body">
+    <!-- ===== 第一行：双入口 ===== -->
+    <div class="row" style="align-items:stretch">
+      <!-- ① 教师答案页 -->
+      <div class="card col" style="width:368px">
+        <div class="st-title"><span class="step-no">1</span>教师答案页 · 建题库<span class="ai-chip">多模态识别 VLM</span></div>
+        <div class="row" style="gap:12px;margin-top:9px;align-items:flex-start">
+          <div class="src">
+            <div class="sheet">
+              <i></i><i></i><i></i><i></i><i></i><i></i>
+              <div class="lbl">教师答案页 · 图片/PDF</div>
+            </div>
+          </div>
+          <div class="st-body" style="margin-top:0;padding-top:17px">
+            VLM 逐题抽取<br>
+            <span class="mono" style="color:var(--blue-deep)">{题号,题干,标准答案,题型,分值}</span><br>
+            卷面未印分值 → <b>按题型推定</b><br>
+            <span class="tag tag--amber" style="margin-top:3px">系统推定 · 教师可改</span>
+          </div>
+        </div>
+        <div style="margin-top:auto;padding-top:9px;font-size:11.5px;color:var(--ink-soft);border-top:1px dashed var(--rule)">
+          无题库也能用：该维<b>留空并标注</b>，权重重归一化，不当 0 分白扣
+        </div>
+      </div>
+
+      <!-- ② 学生作业页 -->
+      <div class="card col" style="flex:1">
+        <div class="st-title">
+          <span class="step-no">2</span>学生作业页 · 整页识别<span class="ai-chip">三阶段 Agent 链路 VLM×3</span>
+          <span class="aux">创新点一 · 把冗余前移到转写层</span>
+        </div>
+        <div class="row" style="gap:12px;margin-top:9px;align-items:stretch">
+          <div class="src">
+            <div class="sheet" style="height:calc(100% - 0px)">
+              <i></i><div class="scrawl"></div><i></i><div class="scrawl" style="width:80%"></div><i></i><div class="scrawl" style="width:45%"></div>
+              <div class="lbl">学生作业页 · 图片/PDF</div>
+            </div>
+          </div>
+          <div class="stage" style="flex:1">
+            <div class="stg">
+              <h4>A 版面解析<span>LAYOUT</span></h4>
+              <p>只列「有哪些题、有哪些手写块」，分散作答各算一块，不合并成大框</p>
+            </div>
+            <div class="stg">
+              <h4>B 内容归属<span>ATTRIBUTION</span></h4>
+              <p>按<b>内容对应</b>定归属（而非空间就近），<b>跨区域</b>接住越界作答</p>
+            </div>
+            <div class="stg">
+              <h4>C 定向复识<span>REFINE · 按需</span></h4>
+              <p>空答 / 单字符 / <b>分式缺分子</b> / 选项落空 / 越界 → 裁图放大重问</p>
+            </div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:9px;align-items:center;gap:8px">
+          <span class="tag tag--blue">转写文本 · 教师可见 · 可编辑 · 可复识</span>
+          <span style="font-size:11.5px;color:var(--ink-soft)">任一阶段失败自动降级回单次调用 ｜ 强模型只做小图复识，不读整页</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 合流 -->
+    <div class="conn" style="display:flex;align-items:center;justify-content:center;gap:10px;padding:9px 0 6px">
+      <div style="height:1px;flex:1;background:var(--rule)"></div>
+      <span class="lane-lbl">按<b>题干相似度</b>对齐题库（不按题号 —— 版式不同也能对上）</span>
+      <div style="height:1px;flex:1;background:var(--rule)"></div>
+    </div>
+    <div class="arrow-down" style="margin-bottom:8px"></div>
+
+    <!-- ===== ③ 整页批改 ===== -->
+    <div class="card">
+      <div class="st-title">
+        <span class="step-no">3</span>整页一次批改<span class="ai-chip">过程级判分 LLM</span>
+        <span class="aux">创新点二 · 过程级证据链</span>
+      </div>
+      <div class="row" style="gap:16px;margin-top:6px;align-items:center">
+        <div style="flex:1">
+          <div class="nodes">
+            <span class="node on">题意理解</span><span class="dash">→</span>
+            <span class="node on">公式选择</span><span class="dash">→</span>
+            <span class="node on">数值代入</span><span class="dash">→</span>
+            <span class="node on">单位检查</span><span class="dash">→</span>
+            <span class="node on">最终答案</span>
+          </div>
+          <div class="st-body">每步输出 <span class="mono">evidence</span>（引用学生作答原文）+ <span class="mono">legible</span>（字迹可辨）；客观题走<b>二值判定硬拦截</b>，不出现过程分中间值</div>
+        </div>
+        <div style="width:286px;border-left:1px dashed var(--rule);padding-left:14px">
+          <div class="kicker" style="margin-bottom:4px">两层错因</div>
+          <div style="font-size:12px;color:var(--ink-mid);line-height:1.7">
+            知识点标签 + <b>十类枚举错因</b><br>
+            <span style="font-size:11px;color:var(--ink-soft)">概念理解 / 公式选错 / 计算错误 / 单位错误 / 审题偏差 / 图形误读 …<b>不许模型自造标签</b></span>
+          </div>
+        </div>
+        <div style="width:178px;border-left:1px dashed var(--rule);padding-left:14px">
+          <div class="kicker" style="margin-bottom:4px">个性化评语</div>
+          <div style="font-size:12px;color:var(--ink-mid);line-height:1.7">先肯定 → 指关键问题 → 给可执行建议</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="conn"><div class="stem-v" style="height:14px"></div></div>
+    <div class="arrow-down" style="margin-bottom:8px"></div>
+
+    <!-- ===== ④ 置信度分流 ===== -->
+    <div class="card" style="border-color:var(--blue)">
+      <div class="st-title">
+        <span class="step-no" style="background:var(--blue)">4</span>置信度五因子 → 红黄绿分流<span class="ai-chip">双模型交叉验证 LLM×2</span>
+        <span class="aux">创新点三 · 把不确定性变成可运营的人机分工</span>
+      </div>
+      <div class="row" style="gap:16px;margin-top:8px;align-items:flex-start">
+        <div style="flex:1">
+          <div class="factors">
+            <div class="fac"><span class="nm">OCR 识别清晰度</span><span class="bar" style="width:88px"></span><span class="wt">×0.25</span><span class="why">防「字没认对却硬判分」</span></div>
+            <div class="fac"><span class="nm">答案匹配度</span><span class="bar" style="width:88px"></span><span class="wt">×0.25</span><span class="why">仅在有题库时计分</span></div>
+            <div class="fac"><span class="nm">Rubric 覆盖度</span><span class="bar" style="width:70px"></span><span class="wt">×0.20</span><span class="why">防「评分点没覆盖全就下结论」</span></div>
+            <div class="fac"><span class="nm">二次批改一致性</span><span class="bar" style="width:70px"></span><span class="wt">×0.20</span><span class="why">程序化比对，比模型自报 confidence 可信</span></div>
+            <div class="fac"><span class="nm">历史教师通过率</span><span class="bar" style="width:35px"></span><span class="wt">×0.10</span><span class="why">每次终审都反向校准这道题</span></div>
+          </div>
+          <div class="fence" style="margin-top:9px">
+            <b>三条后置防线（不占权重、只做否决）：</b>
+            ① 双模型交叉验证，分差 &gt; 满分 15% <b>一票否决转人工</b>；
+            ② <span class="mono">needs_review</span> 五信号命中 → 压住绿灯并<b>点名到题号</b>；
+            ③ 得分率 &lt; 60% 不自动通过
+          </div>
+        </div>
+        <div style="width:300px">
+          <div class="buckets">
+            <div class="bkt g"><span class="dot"></span><b>绿 ≥ 85</b><span class="txt">AI 自动通过 + 抽查</span></div>
+            <div class="bkt y"><span class="dot"></span><b>黄 60~85</b><span class="txt">教师一键确认</span></div>
+            <div class="bkt r"><span class="dot"></span><b>红 &lt; 60</b><span class="txt">转人工精改</span></div>
+          </div>
+          <div style="font-size:11px;color:var(--ink-soft);margin-top:7px;line-height:1.65">
+            测不出的因子按权重<b>重归一化剔除</b>，不当 0 分白扣
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ④ → ⑤ 主流向，同时画出 ⑤ → ④ 的回灌闭环 -->
+    <div style="position:relative;height:60px">
+      <svg width="1208" height="60" style="position:absolute;left:0;top:0">
+        <defs>
+          <marker id="down" viewBox="0 0 10 10" refX="5" refY="9" markerWidth="8" markerHeight="8" orient="auto">
+            <path d="M0,0 L10,0 L5,10 z" fill="#16130E"/>
+          </marker>
+          <marker id="up" viewBox="0 0 10 10" refX="5" refY="9" markerWidth="8" markerHeight="8" orient="auto">
+            <path d="M0,0 L10,0 L5,10 z" fill="#2B41C8"/>
+          </marker>
+        </defs>
+        <!-- 主流向：④ → ⑤（对准 ⑤ 卡片中线） -->
+        <path d="M 228,4 L 228,48" fill="none" stroke="#16130E" stroke-width="2" marker-end="url(#down)"/>
+        <!-- 回灌闭环：⑤ → ④ -->
+        <path d="M 430,54 L 430,10" fill="none" stroke="#2B41C8"
+              stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#up)"/>
+        <text x="446" y="34" fill="#2B41C8" font-size="11.5" font-family="Microsoft YaHei"
+              style="paint-order:stroke;stroke:#F4F1EA;stroke-width:6px">教师终审 → 回灌「历史教师通过率」因子，闭环</text>
+      </svg>
+    </div>
+
+    <!-- ===== ⑤⑥⑦ ===== -->
+    <div class="row" style="align-items:stretch">
+      <div class="card" style="flex:1.28">
+        <div class="st-title"><span class="step-no">5</span>原卷留痕 + 教师终审<span class="ai-chip ai-chip--human">裁决权在教师</span></div>
+        <div class="st-body">
+          学生原图上落 <b style="color:var(--green)">✓</b> / <b style="color:var(--amber)">半勾</b> / <b style="color:var(--red)">✗</b> / 空心圈 + 得分，页顶总分栏，<b>可下载可打印</b><br>
+          改分 / 改错因 / 改评语 → <b style="color:var(--blue)">该题教师通过率回灌置信度因子</b>
+        </div>
+      </div>
+      <div class="arrow-right" style="align-self:center;margin:0 -6px"></div>
+      <div class="card" style="flex:1">
+        <div class="st-title"><span class="step-no">6</span>班级看板<span class="ai-chip">讲评大纲生成 LLM</span></div>
+        <div class="st-body">薄弱点 KPI · 知识点错误率 · 错因分布 · 红黄绿占比<br>学生长期<b>错因画像</b> · <b>讲评课件大纲一键生成</b></div>
+      </div>
+      <div class="card" style="flex:1">
+        <div class="st-title"><span class="step-no">7</span>飞书协同<span class="ai-chip ai-chip--feishu">飞书 AI 字段捷径</span></div>
+        <div class="st-body">多维表格 <b>AI 字段学情台账</b><br>逐行生成错因摘要 + 学习建议<br>机器人<b>审核提醒卡片</b>一键跳转工作台</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fig-foot">
+    <span>智批π · 教师可控的多模态作业批改与错因诊断系统 ｜ 队名：我chovy</span>
+    <span>实测：整页 8 题 23 秒 / 28 题 25 秒 / 20 题 36 秒（2026-08-10 真实链路）</span>
+  </div>
+</div>
+</body>
+</html>

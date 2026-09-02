@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>智批π · 方案配图预览</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { padding: 40px 32px 60px; }
+  .wrap { max-width: 1360px; margin: 0 auto; }
+  h1 { font-family: var(--font-serif); font-size: 32px; letter-spacing: -.02em; }
+  .lead { color: var(--ink-mid); font-size: 14px; margin: 8px 0 28px; line-height: 1.7; }
+  .item { margin-bottom: 42px; }
+  .cap { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; padding-bottom: 7px; border-bottom: 2px solid var(--ink); }
+  .cap .n { font-family: var(--font-mono); font-size: 11px; letter-spacing: .16em; background: var(--ink); color: var(--paper-white); padding: 3px 8px 2px; }
+  .cap .t { font-size: 17px; font-weight: 700; }
+  .cap .m { margin-left: auto; font-size: 12px; color: var(--ink-soft); font-family: var(--font-mono); }
+  .item img { width: 100%; display: block; border: 1.5px solid var(--rule); box-shadow: var(--shadow-riso); }
+  .note { font-size: 12.5px; color: var(--ink-mid); margin-top: 9px; line-height: 1.7; }
+  code { font-family: var(--font-mono); font-size: 12px; background: var(--paper-warm); padding: 1px 5px; border: 1px solid var(--rule-soft); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>智批π · 方案配图预览</h1>
+  <p class="lead">
+    共 6 张（4 静态 + 2 动图），已插入
+    <code>docs/【40强赛】…系统.md</code> 的 §2.3 各小节。
+    源码在 <code>tools/figures/*.html</code>，改完用
+    <code>python render.py shot &lt;html&gt; &lt;out.png&gt; &lt;宽&gt; &lt;高&gt; 2</code> /
+    <code>python render.py frames &lt;html&gt; &lt;out.gif&gt; &lt;宽&gt; &lt;高&gt; &lt;帧数&gt; &lt;fps&gt;</code> 重出。
+  </p>
+
+  <div class="item">
+    <div class="cap"><span class="n">FIG.1</span><span class="t">端到端流水线总览</span><span class="m">§2.3.1 · f1-pipeline.png</span></div>
+    <img src="../../docs/assets/f1-pipeline.png" alt="端到端流水线">
+    <div class="note">双入口 → 三阶段识别 → 整页批改 → 五因子分流 → 教师终审回灌 → 看板与飞书。</div>
+  </div>
+
+  <div class="item">
+    <div class="cap"><span class="n">FIG.2</span><span class="t">三阶段识别链路（动图）</span><span class="m">§2.3.2 · g1-recognize.gif · 52 帧 / 6.5 秒</span></div>
+    <img src="../../docs/assets/g1-recognize.gif" alt="三阶段识别动图">
+    <div class="note">LAYOUT 定位手写块 → ATTRIBUTION 把越界作答跨区域归属回题 3 → REFINE 裁图放大把 <code>x</code> 修正为 <code>1/(x+1)</code>。</div>
+  </div>
+
+  <div class="item">
+    <div class="cap"><span class="n">FIG.3</span><span class="t">过程级证据链</span><span class="m">§2.3.4① · f2-evidence.png</span></div>
+    <img src="../../docs/assets/f2-evidence.png" alt="过程级证据链">
+    <div class="note">原卷批改痕迹 + Rubric 逐节点 evidence + 两层错因 + 三段式评语，6/10 给过程分。</div>
+  </div>
+
+  <div class="item">
+    <div class="cap"><span class="n">FIG.4</span><span class="t">置信度五因子与红黄绿分流（动图）</span><span class="m">§2.3.4② · g2-confidence.gif · 60 帧 / 7.5 秒</span></div>
+    <img src="../../docs/assets/g2-confidence.gif" alt="置信度分流动图">
+    <div class="note">五因子加权 92.4 落绿桶 → 三条防线放行；换一份 89.8 被双模型交叉验证一票否决 → 教师终审回灌。</div>
+  </div>
+
+  <div class="item">
+    <div class="cap"><span class="n">FIG.5</span><span class="t">四类转写失败与处置</span><span class="m">§2.3.6(B) · f3-failures.png</span></div>
+    <img src="../../docs/assets/f3-failures.png" alt="四类转写失败">
+    <div class="note">分式只读分母 / 越界丢失 / 模型幻觉（均已修）+ 潦草选择题（目前无自动解，如实承认）。</div>
+  </div>
+
+  <div class="item">
+    <div class="cap"><span class="n">FIG.6</span><span class="t">飞书 AI 能力集成</span><span class="m">§2.3.5 · f4-feishu.png</span></div>
+    <img src="../../docs/assets/f4-feishu.png" alt="飞书集成">
+    <div class="note">多维表格 AI 字段学情台账 + 机器人审核卡片 + 仪表盘薄弱点；live / 演示双轨与异常自动降级。</div>
+  </div>
+</div>
+</body>
+</html>

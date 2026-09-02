@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>F2 过程级证据链</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  .fig { width: 1280px; height: 666px; padding: 30px 36px 20px; display: flex; flex-direction: column; }
+  .body { flex: 1; display: flex; gap: 18px; padding-top: 15px; }
+
+  .colL { width: 336px; flex: none; display: flex; flex-direction: column; gap: 11px; }
+  .colM { flex: 1; min-width: 0; }
+  .colR { width: 320px; flex: none; display: flex; flex-direction: column; gap: 11px; }
+
+  /* 学生原卷 + 批改痕迹 */
+  .sheet { position: relative; background: #FDFCF8; border: 1.5px solid var(--ink); box-shadow: var(--shadow-riso); padding: 11px 13px 14px; }
+  .sheet .cap { font-size: 9.5px; color: var(--ink-faint); letter-spacing: .09em; border-bottom: 1px solid var(--rule-soft); padding-bottom: 4px; margin-bottom: 9px; }
+  .qtext { font-size: 12.5px; color: var(--ink); }
+  .hw { font-family: "Kaiti SC", KaiTi, "Segoe Script", cursive; color: #2B41C8; font-size: 17px; line-height: 1.7; }
+  .mark { font-family: "Segoe UI", sans-serif; color: var(--red); font-weight: 700; }
+  .score-top {
+    position: absolute; right: 11px; top: 30px; border: 1.6px solid var(--red); color: var(--red);
+    font-family: var(--font-serif); font-size: 20px; font-weight: 700; padding: 1px 9px;
+    transform: rotate(-5deg); background: rgba(250,230,228,.72);
+  }
+  .legend { display: flex; gap: 12px; font-size: 10.5px; color: var(--ink-soft); margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--rule); }
+  .legend b { color: var(--red); font-size: 13px; }
+  .mk2 { width: 19px; height: 17px; vertical-align: -3px; }
+  .mk2 path, .mk2 circle { stroke: #D8332A; stroke-width: 2.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* 节点链 */
+  .chain { position: relative; padding-left: 26px; }
+  .chain::before { content: ""; position: absolute; left: 8px; top: 12px; bottom: 26px; width: 2px; background: var(--rule); }
+  .nd { position: relative; margin-bottom: 9px; }
+  .nd .bullet {
+    position: absolute; left: -26px; top: 9px; width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid var(--rule); background: var(--paper-white);
+    display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700;
+  }
+  .nd.ok  .bullet { border-color: var(--green); color: var(--green); background: var(--green-lt); }
+  .nd.half .bullet { border-color: var(--amber); color: #9A5E00; background: var(--amber-lt); }
+  .nd.no  .bullet { border-color: var(--red); color: var(--red); background: var(--red-lt); }
+
+  .nd .card2 { border: 1.4px solid var(--rule); background: var(--paper-white); padding: 8px 11px; }
+  .nd.ok .card2 { border-left: 3px solid var(--green); }
+  .nd.half .card2 { border-left: 3px solid var(--amber); }
+  .nd.no .card2 { border-left: 3px solid var(--red); }
+  .nd .r1 { display: flex; align-items: baseline; gap: 9px; }
+  .nd .nm { font-size: 13px; font-weight: 700; }
+  .nd .verdict { font-size: 11px; }
+  .nd .pts { margin-left: auto; font-family: var(--font-mono); font-size: 13px; font-weight: 700; }
+  .nd.ok .pts { color: var(--green); } .nd.half .pts { color: #9A5E00; } .nd.no .pts { color: var(--red); }
+  .ev {
+    margin-top: 6px; font-size: 11.5px; color: var(--ink-mid);
+    background: var(--paper-warm); border: 1px dashed var(--rule); padding: 4px 8px;
+    display: flex; align-items: baseline; gap: 7px;
+  }
+  .ev .k { font-family: var(--font-mono); font-size: 10px; color: var(--ink-soft); flex: none; letter-spacing: .04em; }
+  .ev .q { font-family: var(--font-mono); font-size: 12px; color: var(--blue-deep); font-weight: 700; }
+  .ev .note2 { color: var(--ink-soft); font-size: 11px; }
+
+  .total { display: flex; align-items: baseline; gap: 10px; border-top: 2px solid var(--ink); padding-top: 9px; margin-top: 3px; }
+  .total .lb { font-size: 12px; font-weight: 700; }
+  .total .big { font-family: var(--font-serif); font-size: 30px; font-weight: 700; line-height: 1; }
+  .total .say { font-size: 11.5px; color: var(--ink-mid); margin-left: auto; text-align: right; line-height: 1.55; }
+
+  .kv { font-size: 12px; color: var(--ink-mid); line-height: 1.7; }
+  .kv b { color: var(--ink); }
+  .tagrow { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .cmt { font-size: 12px; line-height: 1.72; color: var(--ink-mid); }
+  .cmt .p1 { color: var(--green); } .cmt .p2 { color: var(--red); } .cmt .p3 { color: var(--blue); }
+  .warnbox { border-left: 3px solid var(--amber); background: var(--amber-lt); padding: 8px 11px; font-size: 11.5px; line-height: 1.65; color: var(--ink-mid); }
+  .warnbox b { color: #9A5E00; }
+  .hd3 { font-size: 12.5px; font-weight: 700; margin-bottom: 5px; display: flex; align-items: center; gap: 7px; }
+  .hd3 .n { font-family: var(--font-mono); font-size: 10px; background: var(--ink); color: var(--paper-white); padding: 1px 5px; }
+</style>
+</head>
+<body>
+<div class="fig">
+  <div class="fig-head">
+    <span class="fig-num">FIG.7</span>
+    <span class="fig-title">过程级证据链：每一步判分，都指得出卷面上的哪一行</span>
+    <span class="fig-sub">对应 §2.3.4 ① ｜【已实现】</span>
+  </div>
+
+  <div class="body">
+    <!-- 左：学生原卷 + 批改痕迹 -->
+    <div class="colL">
+      <div class="sheet">
+        <div class="cap">学生原卷 · 系统自动叠加批改痕迹（可下载可打印）</div>
+        <div class="score-top">6 / 10</div>
+        <div class="qtext">1. 解方程 <b>x² − 5x + 6 = 0</b>（10 分）</div>
+        <div class="hw" style="margin-top:7px">
+          解：(x−2)(x−3)=0 <svg class="mk2" viewBox="0 0 18 16"><path d="M2,8.5 L6.5,13 L16,2"/></svg><br>
+          　　x=2 <svg class="mk2" viewBox="0 0 18 16"><path d="M6.5,13 L16,2"/></svg>
+          <span class="mark" style="font-size:12px;font-family:var(--font-mono)">−4</span>
+        </div>
+        <div class="legend">
+          <span><svg class="mk2" viewBox="0 0 18 16"><path d="M2,8.5 L6.5,13 L16,2"/></svg> 正确</span>
+          <span><svg class="mk2" viewBox="0 0 18 16"><path d="M6.5,13 L16,2"/></svg> 半勾 · 部分给分</span>
+          <span><svg class="mk2" viewBox="0 0 18 16"><path d="M3.5,3 L14.5,13 M14.5,3 L3.5,13"/></svg> 错误</span>
+          <span><svg class="mk2" viewBox="0 0 18 16"><circle cx="9" cy="8" r="5.6"/></svg> 空答</span>
+        </div>
+      </div>
+
+      <div class="card card--soft">
+        <div class="hd3"><span class="n">对比</span>常规自动批改会怎么判</div>
+        <div class="kv">
+          「答案不全 → <b style="color:var(--red)">判 0 分</b>，评语：继续加油」<br>
+          <span style="font-size:11.5px;color:var(--ink-soft)">学生只知道错了，不知道错在<b>哪一步</b>；老师不知道该不该信这个 0 分。</span>
+        </div>
+      </div>
+
+      <div class="card" style="border-color:var(--blue)">
+        <div class="hd3"><span class="n" style="background:var(--blue)">机制</span>字迹读不清怎么办</div>
+        <div class="kv" style="font-size:11.5px">
+          该步 <span class="mono">legible=false</span> → 系统如实标注<b>「字迹难辨」</b>并<b>压低置信度转人工</b>，
+          <b style="color:var(--blue)">而不是猜一个分数</b>。
+        </div>
+      </div>
+
+      <div style="margin-top:auto;border-top:2px solid var(--ink);padding-top:9px">
+        <div style="font-family:var(--font-serif);font-size:15px;font-weight:700;line-height:1.5">
+          判定依据<b style="color:var(--blue)">可回溯</b>　教师<b style="color:var(--blue)">可核实</b>　学生<b style="color:var(--blue)">可申诉</b>
+        </div>
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;line-height:1.6">
+          这三件事成立，老师才敢把判分权交出去 —— 这就是「教师可控」的技术前提。
+        </div>
+      </div>
+    </div>
+
+    <!-- 中：Rubric 节点链 -->
+    <div class="colM">
+      <div class="hd3" style="margin-bottom:9px">
+        <span class="n">Rubric</span><span style="white-space:nowrap">逐节点判分 · 每步输出 <span class="mono" style="font-size:11px">evidence</span>（引用学生作答原文）</span>
+      </div>
+
+      <div class="chain">
+        <div class="nd ok">
+          <div class="bullet">✓</div>
+          <div class="card2">
+            <div class="r1"><span class="nm">解法选择</span><span class="verdict" style="color:var(--green)">因式分解法，选对</span><span class="pts">2 / 2</span></div>
+            <div class="ev"><span class="k">evidence</span><span class="q">「(x−2)(x−3)=0」</span></div>
+          </div>
+        </div>
+
+        <div class="nd ok">
+          <div class="bullet">✓</div>
+          <div class="card2">
+            <div class="r1"><span class="nm">因式分解</span><span class="verdict" style="color:var(--green)">分解正确</span><span class="pts">3 / 3</span></div>
+            <div class="ev"><span class="k">evidence</span><span class="q">「(x−2)(x−3)=0」</span><span class="note2">系数与常数项均对</span></div>
+          </div>
+        </div>
+
+        <div class="nd half">
+          <div class="bullet">◐</div>
+          <div class="card2">
+            <div class="r1"><span class="nm">求出两个根</span><span class="verdict" style="color:#9A5E00">步骤缺失 —— 只写出一个根</span><span class="pts">1 / 3</span></div>
+            <div class="ev"><span class="k">evidence</span><span class="q">「x=2」</span><span class="note2">卷面上没有 x=3 这一行</span></div>
+          </div>
+        </div>
+
+        <div class="nd no">
+          <div class="bullet">✗</div>
+          <div class="card2">
+            <div class="r1"><span class="nm">结论完整性</span><span class="verdict" style="color:var(--red)">结论不完整</span><span class="pts">0 / 2</span></div>
+            <div class="ev"><span class="k">evidence</span><span class="q">「x=2」</span><span class="note2">应为 x₁=2，x₂=3</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="total">
+        <span class="lb">合计</span>
+        <span class="big">6 <span style="font-size:16px;color:var(--ink-soft)">/ 10</span></span>
+        <span class="say">
+          <b>给过程分，而不是「答案不全判 0」</b><br>
+          对的两步全给（2+3），漏根一步<b>保留部分分</b>，只在真正错的那一步扣到底
+        </span>
+      </div>
+    </div>
+
+    <!-- 右：错因 + 评语 + 硬拦截 -->
+    <div class="colR">
+      <div class="card">
+        <div class="hd3"><span class="n">两层错因</span></div>
+        <div class="kv" style="font-size:11.5px">第一层 · 知识点标签</div>
+        <div class="tagrow"><span class="tag tag--ink">一元二次方程求解</span></div>
+        <div class="kv" style="font-size:11.5px;margin-top:8px">第二层 · <b>十类枚举错因</b>（不许模型自造）</div>
+        <div class="tagrow">
+          <span class="tag tag--amber">步骤缺失</span>
+          <span class="tag tag--ink" style="opacity:.42">概念理解</span>
+          <span class="tag tag--ink" style="opacity:.42">公式选错</span>
+          <span class="tag tag--ink" style="opacity:.42">计算错误</span>
+          <span class="tag tag--ink" style="opacity:.42">单位错误</span>
+          <span class="tag tag--ink" style="opacity:.42">审题偏差</span>
+          <span class="tag tag--ink" style="opacity:.42">图形误读</span>
+          <span class="tag tag--ink" style="opacity:.42">…</span>
+        </div>
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:8px;line-height:1.6">
+          学生画像跨题聚合这一层，才答得出「<b>是概念不懂，还是计算粗心</b>」
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hd3"><span class="n">评语</span>个性化 · 三段式</div>
+        <div class="cmt">
+          <span class="p1">因式分解这一步做得很干净，说明你对十字相乘已经熟练了。</span>
+          <span class="p2">问题出在最后一步：(x−2)(x−3)=0 意味着<b>两个因式都可以为零</b>，你只写了 x=2，漏掉了 x=3。</span>
+          <span class="p3">下次做完记得回头数一数：几次方程，就该有几个根。</span>
+        </div>
+        <div style="display:flex;gap:9px;margin-top:8px;font-size:10.5px;color:var(--ink-soft)">
+          <span><b style="color:var(--green)">先肯定</b></span>
+          <span><b style="color:var(--red)">指关键问题</b></span>
+          <span><b style="color:var(--blue)">给可执行建议</b></span>
+        </div>
+      </div>
+
+      <div class="warnbox">
+        <b>客观题硬拦截</b>（实测踩坑后加的）：选择 / 填空 / 判断题若拿到「步骤缺失」「过程不规范」这类
+        <b>步骤扣分会被自动清除</b>，得分按 correct / wrong <b>二值修正</b>，不允许出现过程分中间值。
+        <span style="color:var(--ink-soft)">—— 填空题被误扣步骤分，是我们在真实作业上发现并修掉的问题。</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="fig-foot">
+    <span>智批π · 教师可控的多模态作业批改与错因诊断系统 ｜ 队名：我chovy</span>
+    <span>示例题目取自 §2.3.4 ①；判分节点、evidence 字段与十类错因标签均为系统真实输出结构</span>
+  </div>
+</div>
+</body>
+</html>

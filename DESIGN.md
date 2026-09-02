@@ -663,6 +663,8 @@ screen
 |------|------|
 | 2026-08-07 | 初版：调研沉淀；**不改业务代码**；保留 Riso 暖纸与分流色；收敛软件区衬线；补齐四态与 radius |
 | 2026-08-08 | 执行 §13 回写表：`design-mock/` 迁入 `demo/static/**`。Hero 改 §9.1 双栏；页眉由「kicker + 折号」改紧凑 `.toolbar > h3 + .sub`；文件夹改扁平夹（§6.6）；口令门重绘（§9.7）。新增 `.toast` 与接口原文折叠块。**8 处同名不同义的类**统一以新稿为准，现网侧改名让路：`.bar`→图表行 `.bar-row`、`.evidence` 归步骤容器（引文改 `.step__quote`）、`.meter` 归轨道本身（刻度改兄弟节点 `.meter__ticks`）、`.swatch` 归 Hero 色条（图例改 `.swatch-i`）、`.split`→`.recog-split`、`.stamp--green/yellow/red`→`--g/--y/--r`（业务层仍只认 green/yellow/red，靠 JS 里的 `STATUS_STAMP` 映射）。自检脚本见 `demo/tools/ui_check_{shell,screens}.js` |
+| 2026-08-11 | 题库详情（「查看/改分值」展开区）修版面：`.bank-q__score` 的 `width:66px` 被**后定义**的 `.input--sm { width:100% }` 盖掉（同为单类选择器，后者胜），再叠上 `flex:0 0 auto` 不收缩，分值输入框独占整行——题干被挤到一字一行、页面横向溢出。宽度改用 `flex-basis
+| 2026-08-12 | 内置样例换成三科真实作业（四夹：语文/数学/英语 + 题库·教师答案页，38 份）。夹内清单按 `kind` 分形态渲染：内置学生页给「加入待批清单」、内置答案页给勾选 + 「用这份建题库」（题库夹再按学科分节 + 合并建库工具条）、本会话上传件只读。删除 `selectSample()` / `useSampleInstead()` / `#use-sample` / `data-sample` 与首屏拼贴的样例高亮；**遗留的 `markPlate(null)` 孤儿调用导致「全部批改」整个抛 ReferenceError**（点了没反应，控制台外无任何痕迹）——删函数时要连调用点一起搜。批改留痕改为跟着学生作答走：记号（勾/半勾/叉/圈）紧贴 `answer_box` 右侧、大小随作答行高在 `[base*0.5, base*1.9]` 内伸缩，不再画白底方框贴纸；密排行距下加「右侧略上/略下」两档候选，右缘放不下改画左侧。新增自检 `tools/ui_check_builtin.js`（四夹 → 夹内清单 → 加入待批清单全链路，两视口 `bad:[]`） |`（`flex:0 0 66px`）定死，不受后续同特异性规则影响。**规则：给带 `.input--sm` 的元素定宽，用 `flex-basis` 或提高特异性，别写 `width`。** 同时 `#bank-detail` 移出 `#bank-box`——`renderBanks()` 重写 `#bank-box` 的 innerHTML，改一次分值就把展开的题目列表连同滚动位置清空 |
 
 ---
 

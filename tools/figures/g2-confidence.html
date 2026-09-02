@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>G2 置信度五因子与红黄绿分流</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: var(--paper); }
+  .frame { position: relative; width: 960px; height: 580px; background: var(--paper); overflow: hidden; padding: 18px 22px 14px; }
+  .hd { display: flex; align-items: baseline; gap: 10px; border-bottom: 2px solid var(--ink); padding-bottom: 7px; }
+  .hd .n { font-family: var(--font-mono); font-size: 11px; letter-spacing: .16em; background: var(--ink); color: var(--paper-white); padding: 2px 7px 1px; }
+  .hd .t { font-family: var(--font-serif); font-size: 21px; font-weight: 700; }
+  .hd .s { margin-left: auto; font-size: 11.5px; color: var(--ink-soft); }
+
+  .main { display: flex; gap: 16px; margin-top: 12px; }
+  .lft { width: 452px; flex: none; }
+  .rgt { flex: 1; display: flex; flex-direction: column; gap: 9px; }
+
+  .box { border: 1.5px solid var(--ink); background: var(--paper-white); box-shadow: var(--shadow-riso); }
+  .box .ttl { font-size: 12px; font-weight: 700; padding: 6px 11px; border-bottom: 1px solid var(--rule); display: flex; align-items: center; gap: 8px; }
+  .box .ttl .who { margin-left: auto; font-size: 10.5px; font-weight: 400; color: var(--ink-soft); font-family: var(--font-mono); }
+
+  /* 因子表 */
+  .fac { display: flex; align-items: center; gap: 7px; padding: 4px 11px; font-size: 11.5px; }
+  .fac .nm { width: 92px; flex: none; color: var(--ink-mid); }
+  .fac .track { flex: 1; height: 13px; background: var(--paper-warm); border: 1px solid var(--rule-soft); position: relative; }
+  .fac .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--blue); }
+  .fac .val { width: 26px; text-align: right; font-family: var(--font-mono); font-size: 11px; flex: none; }
+  .fac .wt  { width: 34px; text-align: right; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-soft); flex: none; }
+  .fac .ct  { width: 40px; text-align: right; font-family: var(--font-mono); font-size: 11px; color: var(--blue-deep); flex: none; font-weight: 700; }
+  .fhead { display: flex; gap: 7px; padding: 3px 11px 2px; font-size: 9.5px; color: var(--ink-faint); letter-spacing: .05em; }
+  .fhead .nm { width: 92px; flex: none; } .fhead .track { flex: 1; } .fhead .val { width: 26px; text-align: right; }
+  .fhead .wt { width: 34px; text-align: right; } .fhead .ct { width: 40px; text-align: right; }
+
+  .sum { display: flex; align-items: baseline; gap: 9px; padding: 7px 11px; border-top: 1px dashed var(--rule); }
+  .sum .lb { font-size: 11.5px; color: var(--ink-mid); }
+  .sum .big { font-family: var(--font-serif); font-size: 32px; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+  .sum .unit { font-size: 11px; color: var(--ink-soft); }
+
+  /* 刻度 */
+  .scale { position: relative; height: 34px; margin: 13px 11px 6px; }
+  .scale .seg { position: absolute; top: 12px; height: 11px; }
+  .scale .r { left: 0;    width: 60%; background: var(--red-lt);   border: 1px solid var(--red); }
+  .scale .y { left: 60%;  width: 25%; background: var(--amber-lt); border: 1px solid var(--amber); }
+  .scale .g { left: 85%;  width: 15%; background: var(--green-lt); border: 1px solid var(--green); }
+  .scale .tick { position: absolute; top: 25px; font-size: 9px; color: var(--ink-soft); font-family: var(--font-mono); transform: translateX(-50%); }
+  .needle { position: absolute; top: 2px; width: 2px; height: 28px; background: var(--ink); }
+  .needle::before { content: ""; position: absolute; left: -5px; top: -6px; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid var(--ink); }
+
+  /* 三色桶 */
+  .bkts { display: flex; flex-direction: column; gap: 5px; padding: 4px 11px 9px; }
+  .bk { display: flex; align-items: center; gap: 8px; padding: 5px 9px; border: 1.4px solid var(--rule); background: var(--paper-warm); font-size: 11.5px; color: var(--ink-faint); }
+  .bk .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; flex: none; }
+  .bk b { font-size: 12px; }
+  .bk.on.g { border-color: var(--green); background: var(--green-lt); color: var(--green); font-weight: 700; box-shadow: 2px 2px 0 rgba(31,122,76,.2); }
+  .bk.on.y { border-color: var(--amber); background: var(--amber-lt); color: #9A5E00; font-weight: 700; box-shadow: 2px 2px 0 rgba(222,138,11,.2); }
+  .bk.on.r { border-color: var(--red);   background: var(--red-lt);   color: var(--red);   font-weight: 700; box-shadow: 2px 2px 0 rgba(216,51,42,.2); }
+  .bk.dead { opacity: .34; text-decoration: line-through; }
+
+  /* 后置防线 */
+  .fence { padding: 5px 11px 8px; display: flex; flex-direction: column; gap: 4px; }
+  .fl { display: flex; align-items: flex-start; gap: 7px; font-size: 11px; color: var(--ink-mid); line-height: 1.45; }
+  .fl .mk { width: 15px; height: 15px; flex: none; border: 1.2px solid var(--rule); display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--ink-faint); background: var(--paper-warm); }
+  .fl.pass .mk { border-color: var(--green); color: var(--green); background: var(--green-lt); font-weight: 700; }
+  .fl.fail .mk { border-color: var(--red); color: var(--red); background: var(--red-lt); font-weight: 700; }
+  .fl.fail { color: var(--red); font-weight: 700; }
+  .fl .num { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-soft); }
+
+  /* 印章 */
+  .stamp {
+    position: absolute; border: 2.5px solid var(--red); color: var(--red);
+    font-family: var(--font-serif); font-size: 21px; font-weight: 700; letter-spacing: .08em;
+    padding: 5px 15px; transform: rotate(-7deg); background: rgba(250,230,228,.86);
+    box-shadow: 0 6px 22px rgba(216,51,42,.22); z-index: 40; text-align: center; line-height: 1.25;
+  }
+  .stamp small { display: block; font-family: var(--font-sans); font-size: 10px; letter-spacing: .02em; font-weight: 400; }
+
+  .note { border-left: 3px solid var(--blue); background: var(--paper-white); padding: 7px 11px; font-size: 12px; color: var(--ink-mid); line-height: 1.6; min-height: 54px; }
+  .note b { color: var(--ink); } .note .hl { color: var(--blue); font-weight: 700; }
+  .note.red { border-color: var(--red); } .note.red .hl { color: var(--red); }
+  .note.green { border-color: var(--green); } .note.green .hl { color: var(--green); }
+  .mini { font-size: 10.5px; color: var(--ink-soft); }
+
+  .job {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px;
+    flex: none; white-space: nowrap;
+    border: 1px solid var(--ink); background: var(--paper-warm); padding: 1px 7px;
+    font-family: var(--font-mono);
+  }
+  .foot { position: absolute; left: 22px; right: 22px; bottom: 11px; display: flex; justify-content: space-between;
+          font-size: 10.5px; color: var(--ink-soft); border-top: 1px solid var(--rule); padding-top: 6px; }
+  .prog { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--blue); }
+</style>
+</head>
+<body>
+<script>
+const W = 960, TOTAL = 60;
+const cl = (v, a, b) => Math.max(a, Math.min(b, v));
+const p = (f, t0, d) => cl((f - t0) / d, 0, 1);
+const ease = t => 1 - Math.pow(1 - t, 3);
+
+/* 五因子（分值为示意拆解；作业 A 合计 92.4，对应 §2.3.6 实测数学卷的置信度） */
+const FACTORS = [
+  { nm: 'OCR 识别清晰度',  w: .25, why: '防「字没认对却硬判分」' },
+  { nm: '答案匹配度',      w: .25, why: '仅在有题库时计分' },
+  { nm: 'Rubric 覆盖度',   w: .20, why: '防「评分点没覆盖全就下结论」' },
+  { nm: '二次批改一致性',  w: .20, why: '独立复批一次，程序化比对' },
+  { nm: '历史教师通过率',  w: .10, why: '教师每次终审反向校准' },
+];
+const JOB_A = [95, 96, 90, 91, 84];   // → 92.35 ≈ 92.4
+const JOB_B = [93, 94, 88, 86, 82];   // → 89.75 ≈ 89.8
+const sumOf = v => v.reduce((s, x, i) => s + x * FACTORS[i].w, 0);
+
+function phaseOf(f) {
+  if (f < 4)  return 'intro';
+  if (f < 20) return 'measure';
+  if (f < 26) return 'score';
+  if (f < 35) return 'fence';
+  if (f < 40) return 'switch';
+  if (f < 50) return 'veto';
+  if (f < 57) return 'reflow';
+  return 'end';
+}
+
+function frameHTML(f) {
+  const ph = phaseOf(f);
+  const isB = f >= 36;
+  const vals = isB ? JOB_B : JOB_A;
+  const total = sumOf(vals);
+
+  /* 逐因子测量：A 每 3 帧点亮一条；B 一次性给出 */
+  const shown = FACTORS.map((_, i) => isB ? 1 : ease(p(f, 5 + i * 3, 2.6)));
+  const live = shown.reduce((s, a, i) => s + vals[i] * FACTORS[i].w * a, 0);
+  const score = ph === 'intro' ? 0 : (isB ? total : live);
+
+  /* 回灌：历史教师通过率被教师终审下调 */
+  const reflowing = f >= 53;
+  const dispVals = vals.slice();
+  if (reflowing) dispVals[4] = 79;
+
+  const rows = FACTORS.map((fc, i) => {
+    const a = shown[i];
+    const v = dispVals[i];
+    const hot = reflowing && i === 4;
+    return `<div class="fac" style="opacity:${.25 + .75 * a}">
+      <span class="nm" ${hot ? 'style="color:#2B41C8;font-weight:700"' : ''}>${fc.nm}</span>
+      <span class="track"><span class="fill" style="width:${v * a}%;${hot ? 'background:#2B41C8' : ''}"></span></span>
+      <span class="val" ${hot ? 'style="color:#2B41C8;font-weight:700"' : ''}>${a > .5 ? v : '–'}</span>
+      <span class="wt">×${fc.w.toFixed(2)}</span>
+      <span class="ct">${a > .5 ? (v * fc.w).toFixed(2) : ''}</span>
+    </div>`;
+  }).join('');
+
+  /* 刻度指针 */
+  const needle = `<div class="needle" style="left:${cl(score, 0, 100)}%"></div>`;
+
+  /* 分桶：先按分数落桶，再由后置防线否决 */
+  const vetoed = ph === 'veto' && f >= 43 || ph === 'reflow' || ph === 'end';
+  let hit = score >= 85 ? 'g' : score >= 60 ? 'y' : 'r';
+  if (isB && vetoed) hit = 'r';
+  const showBuckets = ph !== 'intro' && ph !== 'measure' || f >= 17;
+  const greenDead = isB && vetoed;
+
+  const bkts = `
+    <div class="bk g ${hit === 'g' && showBuckets ? 'on' : ''} ${greenDead ? 'dead' : ''}"><span class="dot"></span><b>绿 ≥ 85</b> AI 自动通过 + 抽查</div>
+    <div class="bk y ${hit === 'y' && showBuckets ? 'on' : ''}"><span class="dot"></span><b>黄 60~85</b> 教师一键确认</div>
+    <div class="bk r ${hit === 'r' && showBuckets ? 'on' : ''}"><span class="dot"></span><b>红 &lt; 60</b> 转人工精改</div>`;
+
+  /* 三条后置防线 */
+  const fenceOn = t => (ph === 'fence' || ph === 'veto' || ph === 'reflow' || ph === 'end') && f >= t;
+  const t0 = isB ? 40 : 26;
+  const f1fail = isB && f >= 42;
+  const fence = `
+    <div class="fl ${fenceOn(t0) ? (f1fail ? 'fail' : 'pass') : ''}">
+      <span class="mk">${fenceOn(t0) ? (f1fail ? '✗' : '✓') : ''}</span>
+      <span>① 双模型交叉验证：分差 ${fenceOn(t0) ? `<span class="num">${isB ? '18%' : '4%'}</span>` : '<span class="num">…</span>'} ${
+        fenceOn(t0) ? (f1fail ? '&gt; 满分 15% → <b>一票否决，转人工</b>' : '≤ 满分 15%，放行') : ''}</span>
+    </div>
+    <div class="fl ${fenceOn(t0 + 3) ? 'pass' : ''}">
+      <span class="mk">${fenceOn(t0 + 3) ? '✓' : ''}</span>
+      <span>② <span class="num">needs_review</span> 五信号：${fenceOn(t0 + 3) ? '未命中（命中则压住绿灯并点名到题号）' : '…'}</span>
+    </div>
+    <div class="fl ${fenceOn(t0 + 5) ? 'pass' : ''}">
+      <span class="mk">${fenceOn(t0 + 5) ? '✓' : ''}</span>
+      <span>③ 得分率 ${fenceOn(t0 + 5) ? `<span class="num">${isB ? '88%' : '93%'}</span> ≥ 60%，放行` : '…'}</span>
+    </div>`;
+
+  /* 印章 */
+  let stamp = '';
+  if (isB && f >= 44) {
+    const a = ease(p(f, 44, 2.5)) * (1 - p(f, 50, 3));   // 教师接手时印章淡出
+    stamp = `<div class="stamp" style="left:112px;top:428px;opacity:${a};transform:rotate(-7deg) scale(${1.5 - .5 * a})">
+      一票否决 · 转人工<small>分数够高 ≠ 可以放行</small></div>`;
+  }
+
+  /* 回灌卡片 */
+  let reflow = '';
+  if (ph === 'reflow' || ph === 'end') {
+    const a = ease(p(f, 50, 2.5));
+    reflow = `<div style="position:absolute;left:22px;bottom:44px;width:916px;opacity:${a}">
+      <div class="box" style="border-color:var(--blue);display:flex;align-items:center;gap:12px;padding:8px 12px">
+        <span class="job" style="border-color:var(--blue);color:var(--blue-deep)">教师终审</span>
+        <span style="flex:1;font-size:12px;color:var(--ink-mid);line-height:1.55">
+          改分 / 改错因 / 改评语 <b>→ 该题「历史教师通过率」回灌</b>
+          <span class="mono" style="color:${reflowing ? '#2B41C8' : '#857B6C'};font-weight:700">82 → ${reflowing ? '79' : '…'}</span><br>
+          <span class="mini">下一次这道题更容易被要求人工复核 —— 系统被老师校准，而不是老师被系统牵走</span></span>
+        <span style="flex:none;font-size:11px;color:var(--blue);font-weight:700;white-space:nowrap">裁决权始终在教师</span>
+      </div></div>`;
+  }
+
+  const NOTE = {
+    intro:   ['', '一份作业批完了，真正的问题才开始：<b>这份判分，该不该让 AI 直接放行？</b><br><span class="mini">置信度不是模型自己报的 confidence —— 那玩意儿读错时和读对时一样自信。</span>'],
+    measure: ['blue', '<span class="hl">五个因子各自独立测量</span>，加权求和。<br>测不出的因子按权重<b>重归一化剔除</b>（如无题库时的答案匹配度），<b>不当 0 分白扣</b>。'],
+    score:   ['green', '合计 <span class="hl">92.4</span> → 落入<b>绿桶</b>：AI 自动通过 + 抽查。<br><span class="mini">但分数落桶只是第一关 —— 还要过三条后置防线。</span>'],
+    fence:   ['green', '三条后置防线<b>不占权重、只做否决</b>：全部通过，这份才真的自动放行。<br><span class="mini">教师这一晚只需要精改黄红桶 + 抽查绿桶。</span>'],
+    switch:  ['blue', '换一份作业 —— <b>同样是高分</b>，看看会发生什么。'],
+    veto:    ['red', '双模型交叉验证分差 <span class="hl">18% &gt; 满分 15%</span> → <b>一票否决，绿灯作废，转人工</b>。<br><span class="mini">这就是「后置防线」的意义：它不参与打分，只负责把没把握的挡回来。</span>'],
+    reflow:  ['blue', '教师终审的每一次改动，都<span class="hl">反向校准这道题以后的可信度</span> —— 闭环在这里合上。'],
+    end:     ['green', '<b>红黄绿分流的本质不是让 AI 更聪明，而是让 AI 学会承认自己不确定。</b><br><span class="mini">把有把握的自动放行，把没把握的明确交还给人 —— 这就是「教师可控」四个字的实际含义。</span>'],
+  }[ph];
+
+  const jobTag = isB
+    ? '<span class="job" style="border-color:var(--red);color:var(--red)">作业 B · 示例</span>'
+    : '<span class="job">作业 A · 数学 8 题（§2.3.6 实测卷）</span>';
+
+  return `<div class="frame">
+    <div class="hd">
+      <span class="n">FIG.8 · 动图</span>
+      <span class="t">置信度五因子 → 红黄绿分流</span>
+      <span class="s">对应 §2.3.4 ② ｜【已实现】</span>
+    </div>
+
+    <div class="main">
+      <div class="lft">
+        <div class="box">
+          <div class="ttl">置信度五因子 · 真实计算 <span class="who">confidence.py</span></div>
+          <div class="fhead"><span class="nm">因子</span><span class="track"></span><span class="val">实测</span><span class="wt">权重</span><span class="ct">贡献</span></div>
+          ${rows}
+          <div class="sum">
+            <span class="lb">加权合计</span>
+            <span class="big" style="color:${hit === 'g' ? 'var(--green)' : hit === 'y' ? '#9A5E00' : 'var(--red)'}">${score.toFixed(1)}</span>
+            <span class="unit">/ 100</span>
+            <span style="margin-left:auto">${jobTag}</span>
+          </div>
+        </div>
+        <div class="mini" style="margin-top:7px;line-height:1.6">
+          「二次批改一致性」= 同 prompt <b>独立复批一次</b>再程序化比对，<b>比模型自报的
+          confidence 可信得多</b>；测不出的因子按权重重归一化剔除。
+        </div>
+        <div class="card card--soft" style="margin-top:9px;padding:9px 11px">
+          <div class="kicker" style="margin-bottom:5px">两个常被误解的点</div>
+          <div style="font-size:11.5px;color:var(--ink-mid);line-height:1.7">
+            · 置信度 <b>≠ 判分正确率</b> —— 它衡量的是「这份能不能<b>自动放行</b>」<br>
+            · 分流全绿 <b>≠ 判分全对</b> —— 实测数学卷全绿，教师备注仍点名<br>
+            <span style="padding-left:11px">「第 2 题、第 7 题…建议重点复核」，把可疑处交给人</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="rgt">
+        <div class="box">
+          <div class="ttl">分流刻度</div>
+          <div class="scale">
+            <div class="seg r"></div><div class="seg y"></div><div class="seg g"></div>
+            <span class="tick" style="left:0">0</span>
+            <span class="tick" style="left:60%">60</span>
+            <span class="tick" style="left:85%">85</span>
+            <span class="tick" style="left:100%">100</span>
+            ${needle}
+          </div>
+          <div class="bkts">${bkts}</div>
+        </div>
+        <div class="box">
+          <div class="ttl">三条后置防线 <span class="who">不占权重 · 只做否决</span></div>
+          <div class="fence">${fence}</div>
+        </div>
+        <div class="note ${NOTE[0]}">${NOTE[1]}</div>
+      </div>
+    </div>
+
+    ${stamp}
+    ${reflow}
+
+    <div class="foot">
+      <span>智批π ｜ 阈值：绿 ≥85 自动通过 + 抽查　黄 60~85 教师一键确认　红 &lt;60 转人工</span>
+      <span>${ {intro:'待分流', measure:'因子测量中', score:'落桶', fence:'后置防线检查', switch:'换一份作业',
+                 veto:'一票否决', reflow:'教师终审回灌', end:'闭环'}[ph] }</span>
+    </div>
+    <div class="prog" style="width:${(f + 1) / TOTAL * W}px"></div>
+  </div>`;
+}
+
+const q = new URLSearchParams(location.search);
+const from = +(q.get('from') || 0), to = +(q.get('to') || TOTAL);
+document.body.innerHTML = Array.from({ length: to - from }, (_, i) => frameHTML(from + i)).join('');
+</script>
+</body>
+</html>

@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>G1 三阶段识别链路</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: var(--paper); }
+  .frame {
+    position: relative; width: 960px; height: 580px;
+    background: var(--paper); overflow: hidden;
+    padding: 18px 22px 14px;
+  }
+  .hd { display: flex; align-items: baseline; gap: 10px; border-bottom: 2px solid var(--ink); padding-bottom: 7px; }
+  .hd .n { font-family: var(--font-mono); font-size: 11px; letter-spacing: .16em; background: var(--ink); color: var(--paper-white); padding: 2px 7px 1px; }
+  .hd .t { font-family: var(--font-serif); font-size: 21px; font-weight: 700; }
+  .hd .s { margin-left: auto; font-size: 11.5px; color: var(--ink-soft); }
+
+  .stage-bar { display: flex; gap: 7px; margin: 11px 0 9px; }
+  .pill {
+    flex: 1; border: 1.5px solid var(--rule); background: var(--paper-warm);
+    padding: 5px 9px; font-size: 12px; color: var(--ink-faint);
+    display: flex; align-items: center; gap: 7px;
+  }
+  .pill .k { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; }
+  .pill.on { border-color: var(--blue); background: var(--blue-lt); color: var(--blue-deep); font-weight: 700; box-shadow: var(--shadow-riso-blue); }
+  .pill.done { border-color: var(--green); background: var(--green-lt); color: var(--green); }
+
+  .stagearea { display: flex; gap: 16px; }
+
+  /* ---- 作业页 ---- */
+  .paper-sheet {
+    position: relative; width: 388px; height: 424px; flex: none;
+    background: #FDFCF8; border: 1.5px solid var(--ink);
+    box-shadow: var(--shadow-riso); padding: 12px 14px;
+  }
+  .ph { font-size: 9.5px; color: var(--ink-faint); letter-spacing: .1em; border-bottom: 1px solid var(--rule-soft); padding-bottom: 4px; }
+  .q { position: absolute; font-size: 11.5px; color: var(--ink-mid); line-height: 1.5; }
+  .q b { color: var(--ink); font-weight: 700; }
+  .hw {
+    position: absolute; font-family: "Kaiti SC", KaiTi, "Segoe Script", cursive;
+    color: #2B41C8; font-size: 15px; line-height: 1.25; letter-spacing: .02em;
+  }
+  .figbox {
+    position: absolute; border: 1px solid var(--rule); background: var(--paper-warm);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9.5px; color: var(--ink-faint);
+  }
+  .frac { display: inline-block; text-align: center; vertical-align: middle; font-size: 13px; line-height: 1.1; }
+  .frac .nu { border-bottom: 1.4px solid currentColor; padding: 0 3px; display: block; }
+  .frac .de { padding: 0 3px; display: block; }
+
+  /* 识别框 */
+  .bx { position: absolute; border: 1.6px dashed var(--blue); background: rgba(43,65,200,.055); }
+  .bx .cap {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    left: calc(100% + 5px); font-family: var(--font-mono);
+    font-size: 9px; color: var(--paper-white); background: var(--blue);
+    padding: 1px 5px; white-space: nowrap; letter-spacing: .04em;
+  }
+  .bx.left .cap { left: auto; right: calc(100% + 5px); }
+  .bx.below .cap { left: -1px; top: calc(100% + 3px); transform: none; }
+  .bx.warn { border-color: var(--red); background: rgba(216,51,42,.07); }
+  .bx.warn .cap { background: var(--red); }
+  .bx.ok { border-style: solid; border-color: var(--green); background: rgba(31,122,76,.06); }
+  .bx.ok .cap { background: var(--green); }
+
+  /* ---- 右栏 ---- */
+  .side { flex: 1; display: flex; flex-direction: column; gap: 9px; }
+  .say {
+    border-left: 3px solid var(--blue); background: var(--paper-white);
+    padding: 8px 11px; font-size: 12.5px; color: var(--ink-mid); line-height: 1.65; min-height: 62px;
+  }
+  .say b { color: var(--ink); }
+  .say .hl { color: var(--blue); font-weight: 700; }
+  .say.red { border-color: var(--red); }
+  .say.red .hl { color: var(--red); }
+  .say.green { border-color: var(--green); }
+  .say.green .hl { color: var(--green); }
+
+  .panel { border: 1.5px solid var(--ink); background: var(--paper-white); box-shadow: var(--shadow-riso); flex: 1; display: flex; flex-direction: column; }
+  .panel .ttl {
+    font-size: 11.5px; font-weight: 700; padding: 6px 11px;
+    border-bottom: 1px solid var(--rule); display: flex; align-items: center; gap: 7px;
+  }
+  .panel .ttl .badge { margin-left: auto; font-size: 10px; font-weight: 400; color: var(--blue); border: 1px solid var(--blue); background: var(--blue-lt); padding: 0 5px; border-radius: 2px; }
+  .rows { padding: 7px 11px; display: flex; flex-direction: column; gap: 6px; }
+  .rw { font-size: 11.5px; display: flex; gap: 8px; align-items: flex-start; line-height: 1.5; }
+  .rw .qn { font-family: var(--font-mono); color: var(--ink-soft); flex: none; font-size: 11px; padding-top: 1px; }
+  .rw .tx { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink); }
+  .rw .tx.bad { color: var(--red); text-decoration: underline wavy var(--red) 1px; text-underline-offset: 3px; }
+  .rw .tx.fixed { color: var(--green); }
+  .rw .add { color: var(--green); }
+  .mini { font-size: 10.5px; color: var(--ink-soft); }
+
+  /* 放大复识卡片 */
+  .zoom {
+    position: absolute; border: 2px solid var(--red); background: var(--paper-white);
+    box-shadow: 0 10px 30px rgba(22,19,14,.22); padding: 9px 12px; z-index: 30;
+  }
+  .zoom .zh { font-size: 10px; font-family: var(--font-mono); color: var(--red); letter-spacing: .06em; margin-bottom: 5px; }
+  .zoom .zbody { display: flex; align-items: center; gap: 13px; }
+  .zoom .big { font-family: "Kaiti SC", KaiTi, cursive; color: #2B41C8; font-size: 26px; }
+  .zoom .arw { color: var(--ink-faint); font-size: 15px; }
+  .zoom .res { font-family: var(--font-mono); font-size: 13px; }
+
+  .foot { position: absolute; left: 22px; right: 22px; bottom: 11px;
+          display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ink-soft);
+          border-top: 1px solid var(--rule); padding-top: 6px; }
+  .prog { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--blue); }
+</style>
+</head>
+<body>
+<script>
+const W = 960, H = 580, TOTAL = 52;
+const cl = (v, a, b) => Math.max(a, Math.min(b, v));
+const p = (f, t0, dur) => cl((f - t0) / dur, 0, 1);   // 0→1 进度
+const ease = t => 1 - Math.pow(1 - t, 3);
+
+/* 手写块：作业页内坐标 */
+const BOXES = [
+  { id: 'b1', x: 16,  y: 62,  w: 176, h: 32, cap: 'block#1',  t: 4  },
+  { id: 'b2', x: 16,  y: 152, w: 62,  h: 44, cap: 'block#2',  t: 6  },
+  { id: 'b3', x: 16,  y: 250, w: 148, h: 26, cap: 'block#3',  t: 8  },
+  { id: 'b4', x: 208, y: 300, w: 158, h: 30, cap: 'block#4',  t: 10, side: 'left' },
+];
+
+function phaseOf(f) {
+  if (f < 4)  return 0;                 // 原图
+  if (f < 16) return 1;                 // LAYOUT
+  if (f < 30) return 2;                 // ATTRIBUTION
+  if (f < 46) return 3;                 // REFINE
+  return 4;                             // 收尾
+}
+
+const SAY = {
+  0: ['', '<b>整页原图</b>：一次识别一整页，不是一题一题喂。<br><span class="mini">常规做法到这一步就直接 OCR 出全文，转写错了没人知道。</span>'],
+  1: ['A', '只做一件事：<span class="hl">列出这一页有哪些题、有哪些手写块</span>。<br>一道题的作答分散在几处就<b>各算一块</b>，不合并成大框。<br><span class="mini">反幻觉规则：只列纸上真的看得见的笔迹。</span>'],
+  2: ['B', '按<span class="hl">内容对应关系</span>决定每块手写属于哪道题 —— <b>不是空间就近</b>。<br>block#4 写在题 3 的作答区之外，<span class="hl">跨区域归属回题 3</span>。<br><span class="mini">就近归属会把它判给别的题，或整段丢失（实测：判 2/6）。</span>'],
+  3: ['C', '<span class="hl">fraction_mismatch</span> 触发：小问数与分数线数对不上 —— block#2 疑似<b>只读到分母</b>。<br>裁出局部<b>放大图单独再问一次</b>，就地修正转写。<br><span class="mini">这一类最隐蔽：长度正常、归属把握高、没越界，旧触发条件一条都不亮。</span>'],
+  4: ['✓', '转写结果<span class="hl">教师可见、可编辑、可复识</span> —— 才进入批改。<br><b>冗余必须放在转写层</b>：转写错了，评分层再怎么冗余都发现不了。<br><span class="mini">任一阶段失败自动降级回单次调用；强模型只做小图复识，不读整页。</span>'],
+};
+
+function frameHTML(f) {
+  const ph = phaseOf(f);
+  const sheetIn = ease(p(f, 0, 3));
+
+  /* ---- 识别框 ---- */
+  let boxes = '';
+  if (ph >= 1) {
+    for (const b of BOXES) {
+      const a = ease(p(f, b.t, 2.5));
+      if (a <= 0) continue;
+      let kind = '', cap = b.cap, extra = b.side || '';
+      if (ph >= 2 && b.id === 'b4') { kind = 'ok'; cap = '→ 题 3 · 越界'; }
+      else if (ph >= 2) { kind = 'ok'; cap = '→ 题 ' + b.cap.slice(-1); }
+      if (ph === 3 && b.id === 'b2' && f >= 30) { kind = 'warn'; cap = 'fraction_mismatch'; extra = 'below'; }
+      if (ph === 4 && b.id === 'b2') { kind = 'ok'; cap = '→ 题 2 · 已修正'; }
+      if (ph === 3 && b.id !== 'b2') cap = '';        // 复识阶段只聚焦被复识的那一块
+      const sc = 0.92 + 0.08 * a;
+      boxes += `<div class="bx ${kind} ${extra}" style="left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px;
+                opacity:${a};transform:scale(${sc});transform-origin:center">
+                  ${cap ? `<span class="cap">${cap}</span>` : ''}</div>`;
+    }
+  }
+
+  /* ---- 归属连线（作业页内 SVG） ---- */
+  let links = '';
+  if (ph >= 2) {
+    const L = [
+      { d: 'M 100,62 C 100,44 60,44 40,44',   t: 16 },   // block1 → 题1
+      { d: 'M 46,152 C 46,138 44,138 34,136', t: 18 },   // block2 → 题2
+      { d: 'M 90,250 C 90,238 60,236 36,234', t: 20 },   // block3 → 题3
+      { d: 'M 208,314 C 150,314 96,300 40,242', t: 23, hot: 1 },  // block4 → 题3（跨区域）
+    ];
+    const paths = L.map(l => {
+      const a = p(f, l.t, 3.2);
+      if (a <= 0) return '';
+      return `<path d="${l.d}" fill="none" stroke="${l.hot ? '#1F7A4C' : '#2B41C8'}"
+              stroke-width="${l.hot ? 2.2 : 1.4}" stroke-dasharray="300" stroke-dashoffset="${300 - 300 * ease(a)}"
+              marker-end="url(#a${l.hot ? 'g' : 'b'})" opacity=".9"/>`;
+    }).join('');
+    const tagA = p(f, 24, 3);
+    links = `<svg style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:12">
+      <defs>
+        <marker id="ab" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2B41C8"/></marker>
+        <marker id="ag" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1F7A4C"/></marker>
+      </defs>${paths}
+      ${tagA > 0 ? `<g opacity="${tagA}"><rect x="196" y="336" width="128" height="17" fill="#E2F0E8" stroke="#1F7A4C" stroke-width="1"/>
+      <text x="260" y="348" font-size="10" fill="#1F7A4C" font-family="Microsoft YaHei" text-anchor="middle" font-weight="bold">越界作答 · 按内容归属</text></g>` : ''}
+    </svg>`;
+  }
+
+  /* ---- 放大复识卡片 ---- */
+  let zoom = '';
+  if (ph === 3 && f >= 33) {
+    const a = ease(p(f, 33, 3));
+    const fixed = f >= 38;
+    zoom = `<div class="zoom" style="left:142px;top:146px;width:222px;opacity:${a};transform:scale(${0.86 + 0.14 * a});transform-origin:0 0">
+      <div style="position:absolute;left:-9px;top:16px;width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;border-right:9px solid var(--red)"></div>
+      <div class="zh">REFINE · 裁图放大 · 独立重问</div>
+      <div class="zbody">
+        <span class="big"><span class="frac"><span class="nu">1</span><span class="de">x+1</span></span></span>
+        <span class="arw">→</span>
+        <span class="res">${fixed
+          ? '<b style="color:#1F7A4C">1/(x+1)</b><br><span style="font-size:10px;color:#857B6C">原读作 <b style="color:#D8332A">x</b> · 漏掉分子</span>'
+          : '<span style="color:#857B6C">读取中…</span>'}</span>
+      </div>
+    </div>`;
+  }
+
+  /* ---- 转写面板 ---- */
+  const rowShow = t => p(f, t, 2) > 0 ? '' : 'visibility:hidden';
+  const layoutNote = '<div class="mini">已列出 <b style="color:#2B41C8">4</b> 个手写块 —— 分散作答各算一块，<b>不合并成大框</b><br><span style="color:var(--ink-faint)">此阶段只定位，不产出转写</span></div>';
+  const q2fixed = f >= 38;
+  const q3full = ph >= 2 && f >= 25;
+  const rows = `
+    <div class="rw" style="${rowShow(16)}"><span class="qn">题1</span><span class="tx">(x-2)(x-3)=0 ；x=2</span></div>
+    <div class="rw" style="${rowShow(18)}"><span class="qn">题2</span><span class="tx ${q2fixed ? 'fixed' : (ph >= 3 ? 'bad' : '')}">${q2fixed ? '1/(x+1)' : 'x'}</span>${
+      q2fixed ? '<span class="mini" style="margin-left:auto;color:#1F7A4C">已修正 · 标待复核</span>'
+              : (ph >= 3 ? '<span class="mini" style="margin-left:auto;color:#D8332A">只读到分母</span>' : '')}</div>
+    <div class="rw" style="${rowShow(20)}"><span class="qn">题3</span><span class="tx">解：AM=25，MD=5${
+      q3full ? '<br><span class="add">AD=√(AM²-MD²)=50√3　← 越界块归属回来</span>' : ''}</span></div>`;
+
+  const say = SAY[ph];
+  const sayCls = ph === 3 ? 'say red' : (ph === 4 ? 'say green' : 'say');
+
+  return `<div class="frame">
+    <div class="hd">
+      <span class="n">FIG.5 · 动图</span>
+      <span class="t">三阶段识别：把冗余前移到「转写层」</span>
+      <span class="s">对应 §2.3.2 ｜【已实现】</span>
+    </div>
+
+    <div class="stage-bar">
+      <div class="pill ${ph === 1 ? 'on' : ph > 1 ? 'done' : ''}">A 版面解析 <span class="k">LAYOUT</span></div>
+      <div class="pill ${ph === 2 ? 'on' : ph > 2 ? 'done' : ''}">B 内容归属 <span class="k">ATTRIBUTION</span></div>
+      <div class="pill ${ph === 3 ? 'on' : ph > 3 ? 'done' : ''}">C 定向复识 <span class="k">REFINE · 按需</span></div>
+    </div>
+
+    <div class="stagearea">
+      <div class="paper-sheet" style="opacity:${sheetIn}">
+        <div class="ph">初二数学 · 学生作业页（真实卷面示意）</div>
+
+        <div class="q" style="left:14px;top:40px">1. 解方程 <b>x²-5x+6=0</b></div>
+        <div class="hw" style="left:22px;top:64px">(x-2)(x-3)=0　x=2</div>
+
+        <div class="q" style="left:14px;top:130px">2. 化简 <b>1/(x+1) - 1/(x-1)</b></div>
+        <div class="hw" style="left:22px;top:154px">
+          <span class="frac" style="font-size:15px"><span class="nu">1</span><span class="de">x+1</span></span>
+        </div>
+
+        <div class="q" style="left:14px;top:228px">3. 如图，AM=25，MD=5，求 <b>AD</b></div>
+        <div class="hw" style="left:22px;top:252px">解：AM=25，MD=5</div>
+        <div class="figbox" style="left:246px;top:222px;width:118px;height:66px">［几何插图］</div>
+
+        <div class="hw" style="left:214px;top:302px;font-size:13.5px">AD=√(AM²-MD²)</div>
+        <div class="hw" style="left:214px;top:318px;font-size:13.5px">　　=50√3</div>
+
+        <div class="q" style="left:14px;top:352px;color:var(--ink-faint);font-size:10.5px">
+          ↑ 学生写不下，把结论写到了题 3 作答区<b>之外</b>的空白处</div>
+
+        ${boxes}
+        ${links}
+        ${zoom}
+      </div>
+
+      <div class="side">
+        <div class="${sayCls}">
+          ${say[0] ? `<b style="font-size:13px">阶段 ${say[0]}</b>　` : ''}${say[1]}
+        </div>
+        <div class="panel">
+          <div class="ttl">转写文本
+            <span class="badge">教师可见 · 可编辑 · 可复识</span>
+          </div>
+          <div class="rows">${ph === 0 ? '<div class="mini" style="color:var(--ink-faint)">等待识别…</div>' : (ph === 1 ? layoutNote : rows)}</div>
+          <div style="margin-top:auto;padding:7px 11px;border-top:1px dashed var(--rule)" class="mini">
+            ${ph >= 4
+              ? '<b style="color:#1F7A4C">转写确认后才进入批改</b> —— 教师看得到、改得动、可再复识一次'
+              : 'REFINE 触发条件：空答 / 单字符 / <b>分式缺分子</b> / 选择题落不到选项 / 越界 / 低归属置信'}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <span>智批π ｜ 实测结论：视觉大模型评分错误约 <b>87% 源于转写失败</b>（arXiv:2605.19043），本方案据此把冗余前移</span>
+      <span>${['整页原图', 'A 版面解析', 'B 内容归属', 'C 定向复识', '转写完成'][ph]}</span>
+    </div>
+    <div class="prog" style="width:${(f + 1) / TOTAL * W}px"></div>
+  </div>`;
+}
+
+const q = new URLSearchParams(location.search);
+const from = +(q.get('from') || 0), to = +(q.get('to') || TOTAL);
+document.body.innerHTML = Array.from({ length: to - from }, (_, i) => frameHTML(from + i)).join('');
+</script>
+</body>
+</html>

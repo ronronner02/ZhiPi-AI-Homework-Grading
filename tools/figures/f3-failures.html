@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>F3 四类转写失败与处置</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  .fig { width: 1280px; height: 826px; padding: 30px 36px 20px; display: flex; flex-direction: column; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 15px; }
+
+  .cse { border: 1.5px solid var(--ink); background: var(--paper-white); box-shadow: var(--shadow-riso); display: flex; flex-direction: column; }
+  .cse.fatal { border-color: var(--red); box-shadow: 3px 3px 0 rgba(216,51,42,.16); }
+  .chd { display: flex; align-items: center; gap: 9px; padding: 7px 12px; border-bottom: 1.5px solid var(--ink); background: var(--paper-warm); }
+  .cse.fatal .chd { border-bottom-color: var(--red); background: var(--red-lt); }
+  .chd .no { font-family: var(--font-mono); font-size: 12px; font-weight: 700; background: var(--ink); color: var(--paper-white); padding: 1px 7px; }
+  .cse.fatal .chd .no { background: var(--red); }
+  .chd .nm { font-size: 14.5px; font-weight: 700; }
+  .chd .risk { margin-left: auto; font-size: 10.5px; font-weight: 700; border: 1px solid; padding: 1px 7px; border-radius: 999px; }
+  .risk.hi { color: var(--red); background: var(--red-lt); border-color: var(--red); }
+  .risk.mid { color: #9A5E00; background: var(--amber-lt); border-color: var(--amber); }
+
+  .sec { padding: 8px 12px; font-size: 12px; color: var(--ink-mid); line-height: 1.62; }
+  .sec + .sec { border-top: 1px dashed var(--rule); }
+  .sec .lb { font-size: 10px; letter-spacing: .16em; color: var(--ink-soft); font-weight: 700; display: block; margin-bottom: 4px; }
+  .sec b { color: var(--ink); }
+
+  /* 卷面 → 转写 对照 */
+  .cmp { display: flex; align-items: center; gap: 9px; margin: 3px 0 5px; flex-wrap: wrap; }
+  .pen {
+    font-family: "Kaiti SC", KaiTi, "Segoe Script", cursive; color: #2B41C8; font-size: 17px;
+    border: 1px solid var(--rule); background: #FDFCF8; padding: 2px 9px;
+  }
+  .to { color: var(--ink-faint); font-size: 13px; }
+  .read { font-family: var(--font-mono); font-size: 13.5px; padding: 3px 9px; border: 1px solid; }
+  .read.bad  { color: var(--red);   background: var(--red-lt);   border-color: var(--red); font-weight: 700; }
+  .read.good { color: var(--green); background: var(--green-lt); border-color: var(--green); font-weight: 700; }
+  .cmp .tip { font-size: 10.5px; color: var(--ink-soft); }
+
+  .why { background: var(--paper-warm); border-left: 3px solid var(--amber); padding: 6px 10px; font-size: 11.5px; line-height: 1.6; margin-top: 4px; }
+  .why.fatal { border-left-color: var(--red); background: var(--red-lt); }
+  .why b { color: var(--red); }
+
+  .res { margin-top: auto; padding: 8px 12px; border-top: 1.5px solid var(--ink); background: var(--green-lt); font-size: 12px; color: var(--ink); display: flex; align-items: center; gap: 8px; line-height: 1.55; }
+  .res .ic { font-size: 14px; font-weight: 700; color: var(--green); flex: none; }
+  .res.no { background: var(--red-lt); border-top-color: var(--red); }
+  .res.no .ic { color: var(--red); }
+
+  .mono2 { font-family: var(--font-mono); font-size: 11.5px; }
+  .quote {
+    margin-top: 14px; border: 2px solid var(--ink); background: var(--paper-white);
+    padding: 12px 18px; display: flex; align-items: center; gap: 16px; box-shadow: var(--shadow-riso);
+  }
+  .quote .mark { font-family: var(--font-serif); font-size: 44px; line-height: .8; color: var(--riso-blue, #2B41C8); flex: none; }
+  .quote .txt { font-family: var(--font-serif); font-size: 17px; font-weight: 700; line-height: 1.55; }
+  .quote .src { margin-left: auto; font-size: 11px; color: var(--ink-soft); text-align: right; flex: none; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="fig">
+  <div class="fig-head">
+    <span class="fig-num">FIG.10</span>
+    <span class="fig-title">四类转写失败：真实作业上撞出来的，以及我们各自怎么处置</span>
+    <span class="fig-sub">对应 §2.3.6（B）｜每一条都由真实作业照片触发，非构造</span>
+  </div>
+
+  <div class="grid">
+    <!-- ① 分式 -->
+    <div class="cse">
+      <div class="chd">
+        <span class="no">01</span><span class="nm">分式只读到分母</span>
+        <span class="risk hi">最隐蔽</span>
+      </div>
+      <div class="sec">
+        <span class="lb">真实现象</span>
+        <div class="cmp">
+          <span class="pen">1/(x+1)</span><span class="to">读成 →</span><span class="read bad">x</span>
+          <span class="pen">1/(b−a)</span><span class="to">读成 →</span><span class="read bad">b−a</span>
+        </div>
+        <div class="why fatal">
+          长度正常、归属把握高、没越界 —— <b>原有复识触发条件一条都不亮</b>，
+          结果是<b>判错分还带着满置信度绿灯通过</b>。
+        </div>
+      </div>
+      <div class="sec">
+        <span class="lb">处置</span>
+        prompt 增加分式书写规则 + 新增 <span class="mono2">fraction_mismatch</span> 触发条件
+        （<b>按小问数比对卷面分数线条数</b>，对不上就裁图放大重问）
+      </div>
+      <div class="res">
+        <span class="ic">✓</span>
+        <span>两处<b>都修好</b>；且因转写被改写而<b>标记待复核 → 不自动通过</b></span>
+      </div>
+    </div>
+
+    <!-- ② 越界 -->
+    <div class="cse">
+      <div class="chd">
+        <span class="no">02</span><span class="nm">越界作答整段丢失</span>
+        <span class="risk mid">高频</span>
+      </div>
+      <div class="sec">
+        <span class="lb">真实现象</span>
+        <div class="cmp">
+          <span class="pen">AD=√(AM²−MD²)=50√3</span>
+          <span class="tip">写不下，写到了旁边空白处</span>
+        </div>
+        <div class="why">
+          按空间就近归属 → <b>整段丢失</b>，这道 6 分题被判 <b class="mono2">2 / 6</b>。
+          学生做对了，分没了。
+        </div>
+      </div>
+      <div class="sec">
+        <span class="lb">处置</span>
+        <b>LAYOUT</b> 把手写块拆细（分散作答各算一块，不合并成大框）+
+        <b>ATTRIBUTION</b> 按内容对应关系跨区域归属
+      </div>
+      <div class="res">
+        <span class="ic">✓</span>
+        <span>归属回来，判 <b class="mono2">6 / 6</b> —— 这正是三阶段链路要解决的问题</span>
+      </div>
+    </div>
+
+    <!-- ③ 幻觉 -->
+    <div class="cse">
+      <div class="chd">
+        <span class="no">03</span><span class="nm">模型幻觉出不存在的作答</span>
+        <span class="risk hi">最危险</span>
+      </div>
+      <div class="sec">
+        <span class="lb">真实现象</span>
+        <div class="cmp">
+          <span class="pen" style="color:var(--ink-faint);font-family:var(--font-sans);font-size:12px">［空白 + 印刷插图，无任何笔迹］</span>
+          <span class="to">模型却写出 →</span>
+          <span class="read bad">解：tan30°=OC/AC…</span>
+        </div>
+        <div class="why fatal">
+          <b>幻觉比读错危险得多</b>：读得通、格式对、置信度高，
+          <b>没有任何后置信号能发现</b>。
+        </div>
+      </div>
+      <div class="sec">
+        <span class="lb">处置</span>
+        LAYOUT 与 ATTRIBUTION <b>各加一条反幻觉规则</b>：「只列纸上真的看得见的笔迹」
+        「图上没有的字不要写进 answer，空着就填空字符串」
+      </div>
+      <div class="res">
+        <span class="ic">✓</span>
+        <span>编造的大框变回<b>纸上真实存在的两个小块</b>，与原图一致</span>
+      </div>
+    </div>
+
+    <!-- ④ 潦草选择题：没有自动解 -->
+    <div class="cse fatal">
+      <div class="chd">
+        <span class="no">04</span><span class="nm">潦草选择题读错，且模型极度自信</span>
+        <span class="risk hi">目前无自动解</span>
+      </div>
+      <div class="sec">
+        <span class="lb">真实现象</span>
+        <div class="cmp">
+          <span class="pen" style="font-size:20px">D</span><span class="to">读成 →</span><span class="read bad">B</span>
+          <span class="tip">裁图放大<b>独立复识 5 次全部仍是 B</b></span>
+        </div>
+        <div class="why fatal">
+          每一次都报 <span class="mono2">legible=true</span>、<span class="mono2">confidence=1.0</span> ——
+          <b>模型读错的时候，和读对的时候一样自信</b>。
+        </div>
+      </div>
+      <div class="sec">
+        <span class="lb">我们的结论</span>
+        <b>这类检测层抓不到，不要再加检测层。</b>
+        换强模型档位能读对（<span class="mono2">D（保持不变）</span>），并保留<b>「教师看转写」</b>这条最终防线。
+      </div>
+      <div class="res no">
+        <span class="ic">!</span>
+        <span>已加<b>「强模型重读」</b>入口；<b>如实承认</b>：自报置信度、多读一致性、双模型交叉验证 —— <b>对这一类全部失效</b></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="quote">
+    <span class="mark">“</span>
+    <span class="txt">一个 AI 系统真正的成熟度，不在于它宣称能解决什么，<br>而在于它<span style="color:#2B41C8">知道自己解决不了什么</span>，并且把那部分<span style="color:#2B41C8">明确交还给人</span>。</span>
+    <span class="src">这正是「教师可控」四个字的实际含义<br>—— 也是红黄绿分流存在的理由</span>
+  </div>
+
+  <div class="fig-foot" style="margin-top:12px">
+    <span>智批π · 教师可控的多模态作业批改与错因诊断系统 ｜ 队名：我chovy</span>
+    <span>学术实证：视觉大模型评分错误约 87% 源于转写失败（arXiv:2605.19043）—— 我们在真实作业上亲自验证并付出了代价</span>
+  </div>
+</div>
+</body>
+</html>

@@ -47,7 +47,7 @@ ZHIPI_SKIP_DOTENV=1 py -3 app.py     # 强制离线演示模式
 ## 架构
 
 ```text
-              浏览器（单页前端，原生 HTML/CSS/JS，零外部请求，完全离线）
+              浏览器（单页前端，原生 HTML/CSS/JS，零外部请求）
                  static/index.html · css/{tokens,app}.css
                  static/js/{icons,motion,app}.js
                                           │  HTTP / JSON
@@ -55,9 +55,17 @@ ZHIPI_SKIP_DOTENV=1 py -3 app.py     # 强制离线演示模式
 ┌──────────────────────────── app.py （FastAPI） ────────────────────────────┐
 │  GET /（读 static/index.html）  ·  /static/* （StaticFiles 挂载）           │
 │  GET /api/submissions  ·  POST /api/grade                                   │
-│  GET /api/sample-images（/{name}）  ·  POST /api/recognize-image            │
-│  POST /api/grade-image  ·  GET /api/grade-progress （图片批改链路）          │
+│  GET /api/demo-pages（/file/{id} · /thumb/{id}）  ·  POST /api/recognize-image │
+│  POST /api/grade-image  ·  GET /api/grade-progress （单题批改链路）          │
+│  ── 整页链路（两个入口）─────────────────────────────────────────────────  │
+│  POST /api/upload-pages          图片 / PDF → 拆页留底，返回 page_id        │
+│  GET  /api/page/{page_id}        取页图（?marked=1 取带批改痕迹的版本）      │
+│  POST /api/bank/build            教师答案页 → 本次会话题库                  │
+│  GET  /api/bank/list  ·  GET/DELETE /api/bank/{id}  ·  POST .../score       │
+│  POST /api/grade-page            整页一次批改 + 题库对齐 + 原图留痕         │
+│  ───────────────────────────────────────────────────────────────────────    │
 │  GET /api/teacher/results  ·  POST /api/teacher/review                      │
+│  GET /api/folders（/{id} · /active · /{id}/grade） 作业文件夹                │
 │  GET /api/analytics/class  ·  GET /api/students                             │
 │  GET /api/analytics/student/{id}  ·  GET /api/lecture-outline               │
 │  POST /api/feishu/push  ·  POST /api/feishu/sync-base （§13.2 飞书集成）     │
@@ -66,22 +74,29 @@ ZHIPI_SKIP_DOTENV=1 py -3 app.py     # 强制离线演示模式
                 │                                              │
                 ▼  pipeline（批改流水线）                       ▼  状态分层
    ┌───────────────────────────────────────────┐   ┌────────────────────────┐
-   │ ocr.py        手写识别双引擎：多模态大模型 │   │ GRADED  AI 基线（全局   │
-   │               （VLM）/ 离线感知哈希样例匹配│   │         共享、只读）    │
-   │ grader.py     Rubric 逐步判分 + 证据链    │   │ session_store.py       │
-   │               （规则引擎 / LLM 分支），   │   │   教师终审 + 上传件     │
-   │               二次批改一致性、双模型交叉验证│   │   按浏览器会话隔离      │
-   │ confidence.py §9.7 置信度加权 + 红黄绿分流 │   │ guard.py 口令/限流/配额 │
-   │ analytics.py  班级学情聚合 + 学生错因画像 │   └────────────────────────┘
+   │ pdfpage.py    PDF → 每页 JPEG（150 DPI）  │   │ GRADED  AI 基线（全局   │
+   │ ocr.py        手写识别：多模态大模型（VLM）│   │         共享、只读）    │
+   │               三阶段 版面→归属→定向复识；  │   │ session_store.py       │
+   │               另有教师答案页专用 prompt    │   │   教师终审 + 上传件     │
+   │ bank.py       答案页建库 / 分值推定 /      │   │   + 题库，按会话隔离    │
+   │               题干相似度对齐（不按题号）   │   │ pagestore.py           │
+   │ pagegrader.py 整页一次批改（逐题判分）     │   │   页图 + 痕迹图，       │
+   │ marks.py      在学生原图上画 ✓/✗/得分     │   │   按会话隔离 + LRU      │
+   │ grader.py     Rubric 逐步判分 + 证据链    │   │ guard.py 口令/限流/配额 │
+   │               二次批改一致性、双模型交叉验证│  └────────────────────────┘
+   │ confidence.py §9.7 置信度加权 + 红黄绿分流 │
+   │ analytics.py  班级学情聚合 + 学生错因画像 │
    │               + 讲评课件大纲生成          │
+   │ folders.py    作业文件夹（会话内分组）     │
    │ feishu.py     飞书互动卡片 / 多维表格台账 │
    └───────────────────────┬───────────────────┘
                            ▼  data（内置样例）
               questions.json    3 道题（数学 / 物理 / 英语）
               submissions.json  11 份作答（覆盖绿 / 黄 / 红全部分流场景）
               history.json      3 名学生的模拟历史错因（画像时间线用）
-              sample_images/    11 张程序合成仿手写作业照片 + manifest.json
-                                （tools/gen_sample_images.py 生成）
+              demo_pages/       38 份真实作业照片（学生页 19 + 教师答案页 19）
+                                + manifest.json + thumbs/
+                                （tools/pack_demo_pages.py 打包，--check 校验）
 ```
 
 ## mock / LLM 模式切换
@@ -97,8 +112,8 @@ ZHIPI_SKIP_DOTENV=1 py -3 app.py     # 强制离线演示模式
 
 | 引擎 | 触发条件 | 说明 |
 | ---- | -------- | ---- |
-| **sample-match（默认）** | 不设 `ZHIPI_VLM_API_KEY` | 对上传图片计算 SHA-256 + dHash 感知哈希，与 11 张内置样例图片比对，命中返回该样例的预置标准转写；完全离线可演示。 |
-| **vlm（可选）** | 设置 `ZHIPI_VLM_API_KEY` | OpenAI 兼容多模态大模型（默认阿里云百炼 `qwen-vl-max`）转写手写文字/公式/英文并自评卷面清晰度，可识别**任意**上传的作业照片；调用失败且命中内置样例时自动降级 sample-match。 |
+| **vlm（唯一识别引擎）** | 设置 `ZHIPI_VLM_API_KEY` | OpenAI 兼容多模态大模型（默认阿里云百炼 `qwen-vl-max`）。整页走三阶段：版面解析 → 内容归属（可跨区域归属越界作答）→ 定向复识（对可疑题裁图放大重读）。可识别**任意**上传的作业照片。 |
+| **不可用（未配密钥 / 额度用尽）** | 不设 `ZHIPI_VLM_API_KEY`，或触发日配额 | 识别接口如实返回 `engine:"none"` 与原因，页面直说不可用并指路可看的三屏。**没有离线兜底**——内置样例已换成真实作业原件，没有预置转写可以返回，假降级只会让人误以为跑通了。 |
 
 **可靠性机制**（llm 模式下生效，异常静默跳过，保证 Demo 不中断）：
 
@@ -121,12 +136,14 @@ python -m uvicorn app:app --port 8010
 ```
 
 结果 JSON 中的 `"mode"` 字段标明本次实际使用的是 `mock` 还是 `llm`，
-`"recognition_engine"` 字段标明识别引擎是 `vlm` 还是 `sample-match`。
+`"recognition_engine"` 字段标明识别引擎（`vlm`；识别不可用时为 `none` 并附原因）。
 
 ## 页面功能（4 个 Tab）
 
-1. **① 拍照提交**：点选 11 张内置仿手写样例图库，或上传本地作业照片（PNG / JPG / WebP，≤ 8MB）→ 手写识别（展示识别引擎、卷面清晰度、命中样例 / 自动判题徽章）→ 转写文本预览（**VLM 模式下可直接修正转写再批改**，体现教师可控；样例匹配模式为预置标准转写，只读）→ 点「提交批改」。**多选或拖入 ≥2 张会自动进入批量流水线**：串行识别 + 批改，进度条与逐张状态，完成后一键去工作台按红黄绿审核。
-2. **② 批改结果**：总分、置信度、红黄绿分流；逐批改节点展示对错（✓ 全对 / △ 部分 / ✗ 错）、每步得分、错因标签、知识点，以及**证据链**（引用学生作答原文片段作为判断依据，字迹难辨步骤显式提醒人工复核）；置信度五因子明细（测不出的一维明示「无题库 · 权重已重归一化」，不静默略过）；被双模型交叉验证判为分歧、强制转人工的作答会说明原因；个性化评语与教师备注。
+1. **① 拍照提交**：分**两个入口**——
+   - **教师页 · 建题库（可选，先做）**：上传教师答案页（PNG / JPG / WebP / **PDF**，PDF 自动按页拆开），系统逐题抽出 `{题号, 题干, 标准答案, 题型, 分值}` 建成本次会话的题库。卷面没印分值的题按题型推定（选择填空 2 分、翻译 4 分、解答 6 分），界面标注「系统推定」且**教师可逐题改**。建了题库，置信度里的「答案匹配度」这一维才有基准可算；
+   - **学生页 · 上传批改**：从内置样例夹（语文 / 数学 / 英语）点「加入待批清单」，或上传本地作业（PNG / JPG / WebP / **PDF**，≤ 8MB）→ 作业先进**待批清单**可改名（名称即学生名）→ 手写识别（识别引擎、卷面清晰度、学科归类徽章；一页多题时列出每道题）→ 转写文本预览（**VLM 模式下可直接修正转写再批改**）→ 点「**批改整页**」：一次大模型调用批完整页全部题目，并按题干相似度对齐题库逐题比对。多页 PDF 会先出页面缩略图供选页。**多选或拖入 ≥2 份会自动进入批量流水线**：串行识别 + 整页批改，进度条与逐份状态。
+2. **② 批改结果**：最上方是**批改痕迹图**——学生自己那张作业原件，每题旁叠加 ✓ / 半勾 / ✗ / 空心圈与「得分/满分」，页顶一条总分栏，可下载；记号按识别到的题目坐标落笔，定位不到的题画在页边并标注题号，**有几道定位到了如实写在图下**。往下是逐题得分表、总分与置信度、红黄绿分流；逐批改节点展示对错、每步得分、错因标签、知识点，以及**证据链**（引用学生作答原文片段作为判断依据）；置信度五因子明细（测不出的一维明示「无题库 · 权重已重归一化」，不静默略过）；被双模型交叉验证判为分歧、强制转人工的作答会说明原因；个性化评语与教师备注。
 3. **③ 教师工作台**：全部作答红黄绿审核列表（学生 / 题目 / AI 分 / 置信度 / 状态 / 错因）；绿色可「抽查通过」，全部可「确认」或打开**终审弹窗**——改分（0 ~ 满分校验）、错因标签多选改判（§6.11 十类枚举）、评语修订；提交后显示「该题教师通过率因子回灌」提示，同题未终审作答的置信度实时重算；llm 模式下轮询展示「已批改 x / y」批改进度。
 4. **④ 班级看板**：参与作答 / 平均得分率 / 薄弱点 KPI，红黄绿占比，知识点错误率与错因分布条形图（纯 div + CSS 宽度），下节课讲评建议；「讲评课件大纲」一键生成 Markdown（共性错因 + 匿名典型错例证据 + 分层任务 + 5 分钟复测建议）并可**一键复制为课件底稿**（粘贴至希沃白板、飞书文档等备课环境）；「学生个人错因画像」下拉选学生，展示跨题聚合、错因演变时间线（历史为**模拟数据**，界面已标注）与趋势判断；底部「飞书协同」区提供 **推送飞书审核提醒卡片** 与 **同步飞书多维表格学情台账** 两个按钮（详见下方「飞书集成」）。
 
@@ -144,10 +161,18 @@ python -m uvicorn app:app --port 8010
 | GET  | `/` | — | 单页前端（读 `static/index.html`，静态资源挂在 `/static/*`） |
 | GET  | `/api/submissions` | — | 列出 11 份内置作答（含转写预览与清晰度） |
 | POST | `/api/grade` | `submission_id` | 对内置作答走批改流水线，返回过程级批改 JSON |
-| GET  | `/api/sample-images` | — | 内置手写样例图库清单（含 `vlm_configured` 标记） |
-| GET  | `/api/sample-images/{name}` | 路径参数 `name`（仅允许清单内文件名，防路径穿越） | 返回样例图片 PNG |
-| POST | `/api/recognize-image` | `image_base64`、`mime`（图片 ≤ 8MB） | 手写识别：VLM 或离线样例匹配；返回 `engine` / `text` / `clarity`，命中样例附 `matched_submission_id`，未命中时按相似度自动判题附 `question_id` |
-| POST | `/api/grade-image` | 命中样例：`matched_submission_id`；任意上传：`question_id` + `ocr_text` + `ocr_clarity`（需 LLM/VLM 凭据） | 图片批改：样例复用既有流水线；任意上传走临时批改（无预置标注，置信度因子冷启动推导） |
+| GET  | `/api/demo-pages` | — | 内置样例清单，按四个夹分组（语文 / 数学 / 英语 / 题库·教师答案页），每条含 `url` / `thumb` / `pairs_with`（配对的答案页或学生页）+ `vlm_configured` 标记 |
+| GET  | `/api/demo-pages/file/{item_id}` | 路径参数 `item_id`（manifest 白名单，防路径穿越） | 取内置样例原件（JPEG / PDF）。前端取回字节包成 `File`，与体验者自己上传的作业走同一条链路 |
+| GET  | `/api/demo-pages/thumb/{item_id}` | 同上 | 夹内清单用的小图（长边 320，打包时预生成） |
+| POST | `/api/recognize-image` | 二选一：`page_id`（`/api/upload-pages` 返回的页）或 `image_base64` + `mime`（图片 ≤ 8MB）；可选 `strong`（改用强模型重识别） | 手写识别（仅 VLM 一条路）：返回 `engine` / `text` / `clarity` / `questions`（逐题题干、作答、题号、页内坐标 bbox 与作答框 answer_box）。未配密钥 / 额度用尽时返回 `engine:"none"` 与原因文案，不做假降级 |
+| POST | `/api/grade-image` | `question_id`（题库内题目）或题面 + 学科（题库外真实作业）+ `ocr_text` + `ocr_clarity`（需 LLM/VLM 凭据） | 单题图片批改：题库内题目复用既有流水线；题库外走临时批改（无预置标注，置信度因子冷启动推导） |
+| POST | `/api/upload-pages` | `image_base64`、`mime`、`filename`、`role`（`student` / `teacher`；PDF 或图片 ≤ 8MB） | 拆页留底：图片 1 页、PDF 按 150 DPI 逐页渲染成 JPEG（单次上限 20 页，超出如实报错不静默截断），返回每页 `page_id` 与像素尺寸，供后续识别 / 批改 / 留痕复用同一份原件 |
+| GET  | `/api/page/{page_id}` | 路径参数 `page_id`；`?marked=1` 取带批改痕迹的版本 | 取页图（按会话隔离，跨会话一律 404）。`marked=1` 只在整页批改之后才有 |
+| POST | `/api/bank/build` | `page_ids`（教师答案页的页 ID 数组）、`name`（可选） | 教师页建库：逐页抽出每题 `{题号, 题干, 标准答案, 题型, 分值}`，卷面无分值时按题型推定并标 `score_source: "default"`，返回 `bank_id`、逐题清单与 `guessed_score_count`（有几道分值是推的） |
+| GET  | `/api/bank/list` | — | 本会话题库清单（名称 / 学科 / 题数 / 总分 / 建库时间） |
+| GET / DELETE | `/api/bank/{bank_id}` | 路径参数 `bank_id` | 读取题库逐题详情 / 删除该题库 |
+| POST | `/api/bank/{bank_id}/score` | `qid`、`max_score`（0 < 分值 ≤ 150） | 教师改某题分值（推定值不对时手动纠正），改后重建该题 Rubric 并返回题库新总分 |
+| POST | `/api/grade-page` | `page_id`、`questions`（识别结果，教师可修正后回传）、`subject`、`clarity`、`bank_id`（可选，不传即无题库）、`student_name`、`folder_id` | **整页一次批改**：一次大模型调用批完整页全部题目，按题干相似度对齐题库（不按题号）逐题比对得 `answer_match`，在学生原图上渲染批改痕迹，返回逐题得分 / 页级总分 / 置信度五因子 / `matched_count` / `mark_stats` |
 | GET  | `/api/teacher/results` | — | 教师工作台全部批改概览（叠加终审态，附 §6.11 错因枚举供多选） |
 | POST | `/api/teacher/review` | `submission_id`、`teacher_action`（confirmed / modified）、`final_score`、`final_error_tags`、`final_comment` | 教师终审：确认 / 改分 / 改判错因 / 修订评语；校验分数区间与错因枚举，返回该题最新通过率 |
 | GET  | `/api/grade-progress` | — | 批改进度 `graded` / `total`（llm 模式前端轮询用） |
@@ -217,5 +242,8 @@ python -m uvicorn app:app --port 8010
 | ---- | -------- |
 | `python` 命令被解析到 Microsoft Store 占位程序（无输出或弹商店） | 改用 `py -3 -m uvicorn app:app --port 8010`，或直接用 `run_demo.bat` / `run_demo.ps1`（脚本自动探测可用解释器）。 |
 | 8010 端口被占用，启动报错 | 换端口启动：`python -m uvicorn app:app --port 8011`，浏览器打开对应地址即可。 |
-| 报 `ModuleNotFoundError: No module named 'PIL'`（pillow 未装） | 执行 `pip install -r requirements.txt`（requirements.txt 已包含 pillow，样例匹配识别依赖它）。 |
-| 现场无网络环境 | 全功能离线可用：mock 规则引擎批改 + 感知哈希样例匹配识别 + 飞书演示模式预览，全程不发起任何外部请求。 |
+| 报 `ModuleNotFoundError: No module named 'PIL'` / `'fitz'`（依赖未装） | 执行 `pip install -r requirements.txt`（含 pillow 与 pymupdf：前者做图片校验、样例匹配与批改痕迹渲染，后者做 PDF 拆页）。 |
+| 上传 PDF 报「这份 PDF 共 N 页，单次最多处理 20 页」 | 单次拆页上限是 20 页（`pdfpage.MAX_PAGES`），防止一次误传变成几十次模型调用。把 PDF 拆开分次上传即可；**不会静默只批前 20 页**。 |
+| 建题库报「需要配置多模态识别密钥」 | 读答案页上的手写标准答案必须走多模态模型，没有离线替代。跳过建库直接批改学生作业仍可用——由大模型自行判分，置信度的「答案匹配度」一维留空并按权重重归一化。 |
+| 批改痕迹画在页边而不是贴着题目 | 题目坐标来自多模态模型给的 bbox，本身不精确；判不出坐标的题会退回页边并**标上题号**，图下方也会写明「N / M 道题的记号按坐标落笔」。这是如实告知，不是渲染出错。 |
+| 现场无网络环境 | **拍照识别与批改都不可用**（识别只有多模态一条路，内置样例是真实作业原件、没有预置转写可兜底）。断网时仍可演示的是：②批改结果、③教师工作台、④班级看板三屏（走内置基线数据 + mock 规则引擎），以及飞书演示模式预览。前端零外部请求，页面本身断网可正常打开。 |

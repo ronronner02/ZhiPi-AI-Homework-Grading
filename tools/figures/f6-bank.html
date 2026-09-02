@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>FIG.6 教师答案页建题库</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  .fig { width: 1280px; height: 528px; padding: 28px 34px 16px; display: flex; flex-direction: column; }
+  .fig-foot span:first-child { flex: none; }
+  .fig-foot span:last-child { text-align: right; padding-left: 24px; }
+  .body { flex: 1; padding-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+
+  .top { display: flex; gap: 16px; align-items: stretch; }
+
+  /* 左：答案页 → 抽取 → 题库表 */
+  .lane { display: flex; align-items: center; gap: 12px; }
+  .sheet {
+    width: 96px; height: 132px; background: var(--paper-white);
+    border: 1.5px solid var(--ink); box-shadow: var(--shadow-riso);
+    padding: 9px 8px; flex: none; position: relative;
+  }
+  .sheet .hd { font-size: 8.5px; color: var(--ink-soft); margin-bottom: 5px; letter-spacing: .04em; }
+  .sheet i { display: block; height: 2px; background: var(--rule); margin-bottom: 4px; }
+  .sheet i.ans { background: var(--green); opacity: .55; width: 52%; }
+  .sheet .lbl {
+    position: absolute; bottom: -19px; left: 0; font-size: 10px;
+    color: var(--ink-soft); white-space: nowrap;
+  }
+  .vlm { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; }
+  .vlm .chip {
+    font-size: 11.5px; font-weight: 700; padding: 3px 9px 4px;
+    background: var(--blue); color: var(--paper-white);
+    box-shadow: 2px 2px 0 rgba(43,65,200,.22); white-space: nowrap;
+  }
+  .vlm .txt { font-size: 10px; color: var(--ink-soft); }
+
+  table.bank { border-collapse: collapse; width: 100%; background: var(--paper-white); }
+  table.bank th, table.bank td { border: 1px solid var(--rule); padding: 4px 7px; font-size: 11px; text-align: left; }
+  table.bank th { background: var(--paper-warm); font-size: 10px; letter-spacing: .06em; color: var(--ink-soft); }
+  table.bank td.q { font-family: var(--font-mono); font-size: 10.5px; }
+  table.bank td.ans { color: var(--green); font-weight: 700; }
+  .est { font-size: 9.5px; color: #9A5E00; background: var(--amber-lt);
+         border: 1px solid var(--amber); padding: 0 4px; border-radius: 2px; margin-left: 4px; }
+
+  /* 右：题干相似度对齐 */
+  .align { width: 372px; flex: none; }
+  .align .pair { display: flex; align-items: flex-start; gap: 0; position: relative; }
+  .align .side { flex: 1; }
+  .align .side h5 { font-size: 11px; color: var(--ink-soft); margin-bottom: 5px; letter-spacing: .04em; }
+  .align .qq {
+    background: var(--paper-white); border: 1px solid var(--rule);
+    padding: 3px 7px; font-size: 10.5px; margin-bottom: 5px; height: 26px;
+    display: flex; align-items: center; line-height: 1.25;
+  }
+  .align .qq b { font-family: var(--font-mono); font-size: 10px; color: var(--blue-deep); margin-right: 5px; }
+  .align .qq.miss { background: var(--paper-warm); color: var(--ink-faint); border-style: dashed; }
+  .align .mid { width: 46px; flex: none; position: relative; }
+
+  .box { background: var(--paper-white); border: 1.5px solid var(--ink); box-shadow: var(--shadow-riso); padding: 9px 11px 10px; }
+  .box h4 { font-size: 12.5px; margin-bottom: 4px; }
+  .box p { font-size: 11px; color: var(--ink-mid); line-height: 1.6; }
+  .box p b { color: var(--ink); }
+
+  .bots { display: flex; gap: 12px; }
+  .bots .box { flex: 1; }
+  .no {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 17px; height: 17px; border-radius: 50%; background: var(--ink);
+    color: var(--paper-white); font-family: var(--font-mono); font-size: 10px;
+    font-weight: 700; margin-right: 6px; flex: none;
+  }
+  .why {
+    border-left: 3px solid var(--blue); background: var(--blue-lt);
+    padding: 7px 11px; font-size: 11.5px; line-height: 1.65; color: var(--ink-mid);
+  }
+  .why b { color: var(--blue-deep); }
+</style>
+</head>
+<body>
+<div class="fig">
+  <div class="fig-head">
+    <span class="fig-num">FIG.6</span>
+    <span class="fig-title">教师答案页建题库：不依赖预置题库，换一套教辅就能开工</span>
+    <span class="fig-sub">对应 §2.3.3 ｜创新点二【已实现】</span>
+  </div>
+
+  <div class="body">
+    <div class="top">
+      <!-- 左 -->
+      <div style="flex:1;display:flex;flex-direction:column">
+        <div class="lane">
+          <div class="sheet">
+            <div class="hd">参考答案</div>
+            <i></i><i class="ans"></i><i></i><i class="ans" style="width:64%"></i>
+            <i></i><i class="ans" style="width:44%"></i><i></i><i class="ans" style="width:58%"></i>
+            <div class="lbl">教师答案页 · 图片 / PDF</div>
+          </div>
+          <div class="vlm">
+            <div class="chip">VLM 逐题抽取</div>
+            <div class="arrow-right" style="border-left-color:var(--blue)"></div>
+            <div class="txt">一次调用</div>
+          </div>
+          <div style="flex:1">
+            <table class="bank">
+              <thead><tr><th style="width:38px">题号</th><th>题干</th><th style="width:118px">标准答案</th><th style="width:46px">题型</th><th style="width:88px">分值</th></tr></thead>
+              <tbody>
+                <tr><td class="q">1</td><td>解方程 x²−5x+6=0</td><td class="ans q">x₁=2, x₂=3</td><td>解答</td><td>6 分<span class="est">推定</span></td></tr>
+                <tr><td class="q">2</td><td>下列说法正确的是</td><td class="ans q">D</td><td>选择</td><td>2 分<span class="est">推定</span></td></tr>
+                <tr><td class="q">3</td><td>汽车 2h 行驶 90km，速度是</td><td class="ans q">45 km/h</td><td>填空</td><td>2 分<span class="est">推定</span></td></tr>
+                <tr><td class="q">4</td><td>翻译：他每天骑车上学</td><td class="ans q">He rides … </td><td>翻译</td><td>4 分<span class="est">推定</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="why" style="margin-top:auto">
+          <b>这一维为什么非做不可：</b>置信度里的「答案匹配度」占 0.25。没有基准答案，这一维只能<b>留空</b>或<b>当 0 分白扣</b>——
+          前者丢信息，后者冤枉学生。让教师把答案页拍进来，是把这一维<b>真的算出来</b>的最短路径。
+        </div>
+      </div>
+
+      <!-- 右：对齐 -->
+      <div class="align">
+        <div class="box" style="height:100%">
+          <h4>按<span style="color:var(--blue-deep)">题干相似度</span>对齐，不按题号</h4>
+          <p style="margin-bottom:7px">实测语文：教师页是<b>答案册</b>、学生页是<b>练习册</b>，版式完全不同，仍对上 <b>16/20</b>。</p>
+          <div class="pair">
+            <div class="side">
+              <h5>教师答案页</h5>
+              <div class="qq"><b>12</b>解方程 x²−5x+6</div>
+              <div class="qq"><b>13</b>汽车 2h 行 90km</div>
+              <div class="qq"><b>14</b>翻译：他每天…</div>
+              <div class="qq miss"><b>15</b>（本页学生没做）</div>
+            </div>
+            <div class="mid">
+              <svg width="46" height="132" style="display:block;margin-top:22px">
+                <path d="M2,13 C22,13 24,13 44,13"   stroke="#2B41C8" stroke-width="1.4" fill="none"/>
+                <path d="M2,44 C22,44 24,75 44,75"   stroke="#2B41C8" stroke-width="1.4" fill="none"/>
+                <path d="M2,75 C22,75 24,44 44,44"   stroke="#2B41C8" stroke-width="1.4" fill="none"/>
+                <path d="M2,106 C16,106 20,106 30,106" stroke="#B3A996" stroke-width="1.4" fill="none" stroke-dasharray="3 3"/>
+                <circle cx="2" cy="13" r="2.4" fill="#2B41C8"/><circle cx="44" cy="13" r="2.4" fill="#2B41C8"/>
+                <circle cx="2" cy="44" r="2.4" fill="#2B41C8"/><circle cx="44" cy="44" r="2.4" fill="#2B41C8"/>
+                <circle cx="2" cy="75" r="2.4" fill="#2B41C8"/><circle cx="44" cy="75" r="2.4" fill="#2B41C8"/>
+                <circle cx="2" cy="106" r="2.4" fill="#B3A996"/>
+              </svg>
+            </div>
+            <div class="side">
+              <h5>学生作业页</h5>
+              <div class="qq"><b>1</b>解方程 x²−5x+6</div>
+              <div class="qq"><b>2</b>翻译：他每天…</div>
+              <div class="qq"><b>3</b>汽车 2h 行 90km</div>
+              <div class="qq miss"><b>4</b>题库中无此题</div>
+            </div>
+          </div>
+          <p style="margin-top:7px">题号完全不同也能对上；<b>对不上的题照批，但不计入答案匹配度</b>，逐题表里标「题库中无此题」。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部三机制 -->
+    <div class="bots">
+      <div class="box">
+        <h4><span class="no">1</span>卷面没印分值？按题型推定</h4>
+        <p>选择 / 填空 2 分、翻译 4 分、解答 6 分。界面明确标注<b style="color:#9A5E00">「系统推定 · 教师可改」</b>，
+          教师逐题改分后<b>自动重建该题评分细则</b>——不假装分值是从卷面读出来的。</p>
+      </div>
+      <div class="box">
+        <h4><span class="no">2</span>PDF 自动按页拆开</h4>
+        <p>答案页是多页 PDF 时自动拆页、逐页抽取，可选页建库；学生页同理，
+          批量清单里的 PDF 就地展开成<b>每页一份</b>，不再只批第 1 页。</p>
+      </div>
+      <div class="box">
+        <h4><span class="no">3</span>没有题库也能用</h4>
+        <p>由大模型按五维判别体系判分，置信度里「答案匹配度」这一维<b>留空并显式标注</b>
+          「无题库 · 权重已重归一化」——<b>不静默略过，也不当 0 分白扣</b>。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="fig-foot">
+    <span>智批π · 教师可控的多模态作业批改与错因诊断系统 ｜ 队名：我chovy</span>
+    <span>题库表为示意排版；16/20 对齐率为 2026-08-10 语文真实作业实测</span>
+  </div>
+</div>
+</body>
+</html>

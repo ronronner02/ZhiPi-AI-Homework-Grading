@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>FIG.3 三条路径对比</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  .fig { width: 1280px; height: 748px; padding: 28px 34px 16px; display: flex; flex-direction: column; }
+  .fig-foot span:first-child { flex: none; }
+  .fig-foot span:last-child { text-align: right; padding-left: 24px; }
+  .body { flex: 1; padding-top: 14px; display: flex; flex-direction: column; }
+
+  .cols { display: flex; gap: 14px; }
+  .col { flex: 1; display: flex; flex-direction: column; }
+  .col-hd { border-top: 3px solid; padding: 8px 2px 9px; }
+  .col-hd .t { font-size: 16px; font-weight: 700; line-height: 1.2; }
+  .col-hd .s { font-size: 11px; color: var(--ink-soft); margin-top: 3px; }
+  .col--a .col-hd { border-color: var(--red); }
+  .col--b .col-hd { border-color: var(--amber); }
+  .col--c .col-hd { border-color: var(--blue); }
+
+  /* 流程步骤 */
+  .flow { display: flex; flex-direction: column; gap: 0; }
+  .st {
+    background: var(--paper-white); border: 1.2px solid var(--rule);
+    padding: 6px 9px; font-size: 12px; line-height: 1.45;
+  }
+  .st .k { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); margin-right: 5px; }
+  .st b { font-weight: 700; }
+  .st .sub { display: block; font-size: 10.5px; color: var(--ink-soft); margin-top: 1px; }
+  .st--hot { background: var(--red-lt); border-color: var(--red); color: var(--red); }
+  .st--dim { background: repeating-linear-gradient(45deg,#F0EBE0,#F0EBE0 4px,#E4DDCD 4px,#E4DDCD 8px);
+             border-style: dashed; border-color: var(--ink-faint); color: var(--ink-soft); }
+  .st--q   { background: var(--amber-lt); border-color: var(--amber); color: #9A5E00; }
+  .st--ai  { background: var(--blue-lt); border-color: var(--blue); color: var(--blue-deep); }
+  .st--ok  { background: var(--green-lt); border-color: var(--green); color: var(--green); }
+  .conn { width: 2px; height: 7px; background: var(--rule); margin: 0 auto; }
+
+  .cost { margin-top: auto; padding-top: 10px; }
+  .cost .big { font-family: var(--font-serif); font-size: 25px; font-weight: 700; line-height: 1.05; }
+  .cost .sm { font-size: 10.5px; color: var(--ink-soft); line-height: 1.5; margin-top: 3px; }
+
+  /* 对比矩阵 */
+  .mx { margin-top: 16px; border-top: 2px solid var(--ink); }
+  .mx table { width: 100%; border-collapse: collapse; }
+  .mx th, .mx td { text-align: left; vertical-align: top; padding: 7px 9px; font-size: 11.5px; line-height: 1.5; }
+  .mx thead th { font-size: 11px; letter-spacing: .12em; color: var(--ink-soft); font-weight: 700; padding-bottom: 4px; }
+  .mx tbody tr { border-top: 1px solid var(--rule-soft); }
+  .mx .dim { width: 118px; font-weight: 700; color: var(--ink); }
+  .mx td.a { color: var(--ink-mid); }
+  .mx td.b { color: var(--ink-mid); }
+  .mx td.c { color: var(--ink); background: rgba(43,65,200,.045); }
+  .mx td.c b { color: var(--blue-deep); }
+  .mark { color: var(--red); font-weight: 700; }
+  .good { color: var(--green); font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="fig">
+  <div class="fig-head">
+    <span class="fig-num">FIG.3</span>
+    <span class="fig-title">同一个班 40 份作业：三条路径，省下什么、拿到什么</span>
+    <span class="fig-sub">对应 §2.2 Before / After</span>
+  </div>
+
+  <div class="body">
+    <div class="cols">
+      <!-- A 纯人工 -->
+      <div class="col col--a">
+        <div class="col-hd">
+          <div class="t">A ｜ 纯人工</div>
+          <div class="s">今天绝大多数老师的常态</div>
+        </div>
+        <div class="flow">
+          <div class="st"><span class="k">01</span>收上 40 份纸质作业</div>
+          <div class="conn"></div>
+          <div class="st st--hot"><span class="k">02</span><b>逐份逐题判分</b>
+            <span class="sub">公式 · 代入 · 单位 · 部分对怎么给分　40×5×45 秒</span></div>
+          <div class="conn"></div>
+          <div class="st"><span class="k">03</span>写评语<span class="sub">时间已被判分吃光 → 只剩「继续加油」</span></div>
+          <div class="conn"></div>
+          <div class="st st--dim"><span class="k">04</span>学情分析<span class="sub">时间归零，凭印象记住三四个名字</span></div>
+          <div class="conn"></div>
+          <div class="st st--dim"><span class="k">05</span>明天讲评<span class="sub">凭印象选题</span></div>
+        </div>
+        <div class="cost">
+          <div class="big" style="color:var(--red)">约 150 分钟</div>
+          <div class="sm">教师全程在场；<br>判分挤掉评语，评语挤掉学情</div>
+        </div>
+      </div>
+
+      <!-- B 主流 AI 批改 -->
+      <div class="col col--b">
+        <div class="col-hd">
+          <div class="t">B ｜ 市面主流 AI 批改工具</div>
+          <div class="s">把「批得快」做到了极致</div>
+        </div>
+        <div class="flow">
+          <div class="st"><span class="k">01</span>拍照 / 扫描</div>
+          <div class="conn"></div>
+          <div class="st"><span class="k">02</span>OCR 识别<span class="sub">转写藏在管线里，教师看不到也改不了</span></div>
+          <div class="conn"></div>
+          <div class="st"><span class="k">03</span><b>判对错 → 出分数</b><span class="sub">客观题吞吐量极高</span></div>
+          <div class="conn"></div>
+          <div class="st st--q"><span class="k">04</span><b>老师不知道哪些该信</b>
+            <span class="sub">没有逐份可信度标识 → 要么全信（有风险），要么全查（没省时）</span></div>
+          <div class="conn"></div>
+          <div class="st st--dim"><span class="k">05</span>学情<span class="sub">多为个人报告，不进班级教研</span></div>
+        </div>
+        <div class="cost">
+          <div class="big" style="color:#9A5E00">判分很快</div>
+          <div class="sm">同类产品官方口径：每班约 90 → 约 5 分钟<br>（科大讯飞，2024）——<span class="mark">但省下的是手，不是心</span></div>
+        </div>
+      </div>
+
+      <!-- C 智批π -->
+      <div class="col col--c">
+        <div class="col-hd">
+          <div class="t">C ｜ 智批π</div>
+          <div class="s">教师可控的过程诊断</div>
+        </div>
+        <div class="flow">
+          <div class="st"><span class="k">01</span>拍照 / PDF，整页一次批<span class="sub">支持批量与多页</span></div>
+          <div class="conn"></div>
+          <div class="st st--ai"><span class="k">02</span><b>三阶段识别</b>
+            <span class="sub">版面 → 归属 → 定向复识；<b>转写可见 · 可改 · 可复识</b></span></div>
+          <div class="conn"></div>
+          <div class="st st--ai"><span class="k">03</span><b>过程级批改</b>
+            <span class="sub">逐步判分，每步引用卷面原文；两层错因</span></div>
+          <div class="conn"></div>
+          <div class="st st--ok"><span class="k">04</span><b>置信度五因子 → 红黄绿分流</b>
+            <span class="sub">绿抽查 · 黄一键确认 · 红转人工；三条否决防线</span></div>
+          <div class="conn"></div>
+          <div class="st st--ok"><span class="k">05</span>教师终审 → 回灌置信度 → <b>班级看板 + 讲评大纲</b></div>
+        </div>
+        <div class="cost">
+          <div class="big" style="color:var(--green)">约 44 分钟</div>
+          <div class="sm">教师<b>实际动手</b>时间；AI 批改另约 20 分钟<b>无需教师值守</b><br>
+            只精改黄红桶 + 抽查绿桶　<span class="good">净省 1.5~2 小时 / 班次</span>（估算）</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 对比矩阵 -->
+    <div class="mx">
+      <table>
+        <thead>
+          <tr><th class="dim">量化对比</th><th>A ｜ 纯人工</th><th>B ｜ 主流 AI 批改工具</th><th>C ｜ 智批π</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="dim">教师耗时<br>（每班次）</td>
+            <td class="a">约 <b>150 分钟</b>，全程在场</td>
+            <td class="b">判分环节大幅压缩，但复核策略缺失：<br>全查 ≈ 没省，全信 ≈ 担风险</td>
+            <td class="c">教师实际动手 <b>约 44 分钟</b>（估算）：只精改黄红桶 + 抽查绿桶；<br>AI 批改另约 20 分钟<b>无需值守</b>　<b>净省 1.5~2 小时</b></td>
+          </tr>
+          <tr>
+            <td class="dim">诊断深度</td>
+            <td class="a">对错 + 分数（人来做，最细但最贵）</td>
+            <td class="b">对错 / 分数为主</td>
+            <td class="c"><b>过程级</b>：逐评分节点判分，<b>每步引用学生原文</b>；知识点 + 十类错因两层标签</td>
+          </tr>
+          <tr>
+            <td class="dim">教师能不能信</td>
+            <td class="a">可信，但成本就是那 150 分钟</td>
+            <td class="b"><span class="mark">黑盒</span>：没有逐份可信度，也没有"该看哪几份"</td>
+            <td class="c"><b>置信度五因子 + 红黄绿分流</b>；双模型交叉验证 / needs_review / 低分率三条防线只做否决</td>
+          </tr>
+          <tr>
+            <td class="dim">教学闭环</td>
+            <td class="a">凭印象选明天讲什么</td>
+            <td class="b">多为学生个人报告，难进班级教研</td>
+            <td class="c">班级薄弱点 · 错因分布 · 学生画像 → <b>一键生成讲评课件大纲</b>，可直接备课</td>
+          </tr>
+          <tr>
+            <td class="dim">单份直接成本</td>
+            <td class="a">¥0 现金，<b>3.75 分钟</b>教师时间</td>
+            <td class="b">按厂商定价，通常含硬件</td>
+            <td class="c">AI 调用 <b>约 2 分钱 / 份</b>（保守上界估算）——教师时间价值与 AI 成本相差约<b>两个数量级</b></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="fig-foot">
+    <span>智批π · 教师可控的多模态作业批改与错因诊断系统 ｜ 队名：我chovy</span>
+    <span>A 列为命题场景推算；B 列引自科大讯飞官方公开口径；C 列 AI 侧为 2026-08-10 真实链路实测，教师侧为估算（口径见 §2.4）</span>
+  </div>
+</div>
+</body>
+</html>

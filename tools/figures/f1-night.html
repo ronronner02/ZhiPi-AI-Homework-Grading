@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>FIG.1 同一个周三晚上</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  .fig { width: 1280px; height: 470px; padding: 30px 36px 20px; display: flex; flex-direction: column; }
+  .body { flex: 1; padding-top: 16px; }
+
+  /* 时间刻度 */
+  .axis { position: relative; height: 20px; margin-left: 132px; margin-right: 208px; }
+  .axis .tk { position: absolute; top: 0; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-soft); transform: translateX(-50%); }
+  .axis .tk::after { content: ""; position: absolute; left: 50%; top: 15px; width: 1px; height: 6px; background: var(--rule); }
+
+  .lane { display: flex; align-items: stretch; gap: 0; margin-bottom: 6px; }
+  .lane .name { width: 132px; flex: none; padding-right: 12px; }
+  .lane .name .t { font-size: 15px; font-weight: 700; line-height: 1.35; }
+  .lane .name .s { font-size: 10.5px; color: var(--ink-soft); margin-top: 2px; }
+  .lane .track { flex: 1; position: relative; height: 54px; border-left: 1px dashed var(--rule); border-right: 1px dashed var(--rule); }
+  .lane .sum { width: 208px; flex: none; padding-left: 16px; display: flex; flex-direction: column; justify-content: center; }
+
+  .blk {
+    position: absolute; top: 9px; height: 36px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; font-size: 11.5px; line-height: 1.3;
+    border: 1.5px solid; text-align: center; overflow: hidden;
+  }
+  .blk .n2 { font-family: var(--font-mono); font-size: 10px; opacity: .8; }
+  .blk.work { background: var(--red-lt);   border-color: var(--red);   color: var(--red); }
+  .blk.thin { background: var(--amber-lt); border-color: var(--amber); color: #9A5E00; }
+  .blk.void { background: repeating-linear-gradient(45deg, #F0EBE0, #F0EBE0 4px, #E4DDCD 4px, #E4DDCD 8px);
+              border-color: var(--ink-faint); color: var(--ink-soft); border-style: dashed; }
+  .blk.ai   { background: var(--blue-lt);  border-color: var(--blue);  color: var(--blue-deep); }
+  .blk.hum  { background: var(--green-lt); border-color: var(--green); color: var(--green); }
+  .blk.free { background: transparent; border: none; color: var(--ink-faint); font-size: 12px; }
+
+  .stamp2 { position: absolute; top: 50px; font-size: 10px; color: var(--ink-soft); font-family: var(--font-mono); transform: translateX(-50%); white-space: nowrap; }
+
+  .loss { display: flex; gap: 9px; margin: 3px 0 0 132px; margin-right: 208px; }
+  .loss .it { flex: 1; font-size: 11.5px; line-height: 1.5; padding: 6px 9px; border-left: 3px solid; background: var(--paper-white); }
+  .loss .it b { display: block; font-size: 12px; margin-bottom: 1px; }
+  .loss .it.bad { border-color: var(--red); }
+  .loss .it.bad b { color: var(--red); }
+  .loss .it.good { border-color: var(--green); }
+  .loss .it.good b { color: var(--green); }
+
+  .big { font-family: var(--font-serif); font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+  .sub2 { font-size: 11px; color: var(--ink-soft); line-height: 1.5; margin-top: 4px; }
+
+  .vs { display: flex; align-items: center; gap: 12px; margin: 16px 0 12px 132px; margin-right: 208px; }
+  .vs .ln { flex: 1; height: 1px; background: var(--rule); }
+  .vs .w { font-family: var(--font-serif); font-size: 16px; font-weight: 700; color: var(--ink-faint); letter-spacing: .1em; }
+  .fig-foot span:first-child { flex: none; }
+  .fig-foot span:last-child { text-align: right; padding-left: 24px; }
+</style>
+</head>
+<body>
+<div class="fig">
+  <div class="fig-head">
+    <span class="fig-num">FIG.1</span>
+    <span class="fig-title">同一个周三晚上：老师的时间都去哪了</span>
+    <span class="fig-sub">对应 §2.1.1 ｜一个班 40 份数学作业</span>
+  </div>
+
+  <div class="body">
+    <!-- 时间刻度 -->
+    <div class="axis">
+      <span class="tk" style="left:0%">21:00</span>
+      <span class="tk" style="left:16.7%">21:30</span>
+      <span class="tk" style="left:33.3%">22:00</span>
+      <span class="tk" style="left:50%">22:30</span>
+      <span class="tk" style="left:66.7%">23:00</span>
+      <span class="tk" style="left:83.3%">23:30</span>
+      <span class="tk" style="left:100%">24:00</span>
+    </div>
+
+    <!-- Before -->
+    <div class="lane" style="margin-top:12px">
+      <div class="name">
+        <div class="t">纯人工</div>
+        <div class="s">今天绝大多数老师的常态</div>
+      </div>
+      <div class="track">
+        <div class="blk work" style="left:0;width:83.3%">
+          逐份逐题判分：公式对不对 · 代入对不对 · 单位漏没漏 · 部分对的怎么给分
+          <span class="n2">40 份 × 5 题 × 45 秒 ≈ 150 分钟</span>
+        </div>
+        <div class="blk thin" style="left:83.3%;width:5.6%">写评语<span class="n2">10 分钟</span></div>
+        <div class="blk void" style="left:88.9%;width:11.1%">学情分析<span class="n2">时间归零</span></div>
+        <span class="stamp2" style="left:0;transform:none">▲ 21:00 收上 40 份，逐份翻开</span>
+        <span class="stamp2" style="left:100%;transform:translateX(-100%)">23:30 判完 · 23:40 只能凭印象选明天讲什么 ▲</span>
+      </div>
+      <div class="sum">
+        <span class="big" style="color:var(--red)">约 160 分钟</span>
+        <span class="sub2">判分独占 150 分钟，<br>最有教学价值的环节被牺牲</span>
+      </div>
+    </div>
+
+    <div class="loss">
+      <div class="it bad"><b>判分：重复劳动</b>可自动化，却没有自动化</div>
+      <div class="it bad"><b>评语：被时间挤成模板</b>最该个性化的环节最先失守 —— 只剩「继续加油」</div>
+      <div class="it bad"><b>学情：完全牺牲</b>哪个知识点最薄弱？没时间统计，只能凭印象</div>
+    </div>
+
+    <div class="vs">
+      <span class="ln"></span><span class="w">同一个晚上，用智批π</span><span class="ln"></span>
+    </div>
+
+    <!-- After -->
+    <div class="lane">
+      <div class="name">
+        <div class="t">智批π</div>
+        <div class="s">教师只做该由人做的事</div>
+      </div>
+      <div class="track">
+        <div class="blk ai" style="left:0;width:11.1%">
+          AI 批改 40 份<span class="n2">≈ 20 分钟 · 教师无需值守</span>
+        </div>
+        <div class="blk hum" style="left:11.1%;width:24.4%">
+          教师精改黄红桶 + 抽查绿桶<span class="n2">≈ 44 分钟（估算）</span>
+        </div>
+        <div class="blk ai" style="left:35.5%;width:4.5%">看板<span class="n2">自动</span></div>
+        <div class="blk free" style="left:40%;width:60%">—— 这段时间还给老师 ——</div>
+        <span class="stamp2" style="left:0;transform:none">▲ 21:00 拖入 40 份</span>
+        <span class="stamp2" style="left:40%;transform:none">▲ 22:10 学情看板与讲评课件大纲就绪，可直接备课</span>
+      </div>
+      <div class="sum">
+        <span class="big" style="color:var(--green)">约 44 分钟</span>
+        <span class="sub2">教师<b>实际动手</b>时间<br>（AI 那 20 分钟无需值守）<br><b style="color:var(--green)">净省 1.5~2 小时 / 班次</b><br>（估算，口径见 §2.4.1）</span>
+      </div>
+    </div>
+
+    <div class="loss">
+      <div class="it good"><b>判分：交给 AI + 分流</b>老师只看该看的那几份，其余抽查</div>
+      <div class="it good"><b>评语：逐份定位到具体错误步骤</b>同一错因、不同学生，措辞也不同</div>
+      <div class="it good"><b>学情：从 0 到 1</b>薄弱点 · 错因分布 · 讲评大纲，自动产出</div>
+    </div>
+  </div>
+
+  <div class="fig-foot">
+    <span>智批π · 教师可控的多模态作业批改与错因诊断系统 ｜ 队名：我chovy</span>
+    <span>纯人工 150 分钟为命题场景推算；23~36 秒/份为 2026-08-10 真实链路实测；教师侧 44 分钟与净省时长为估算</span>
+  </div>
+</div>
+</body>
+</html>
