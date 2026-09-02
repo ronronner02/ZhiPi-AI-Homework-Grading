@@ -24,6 +24,7 @@
 不配置环境变量时全部不生效，本机演示行为与以前完全一致。部署见 deploy/README.md。
 """
 import base64
+import io
 import os
 import json
 import re
@@ -90,9 +91,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from pipeline import grader, analytics, feishu, folders, guard, session_store
-from pipeline import confidence as conf_mod
-from pipeline import dimensions
+from pipeline import bank, confidence as conf_mod
+from pipeline import demopages
+from pipeline import dimensions, marks, pagegrader
 from pipeline import ocr as ocr_mod
+from pipeline import pagestore, pdfpage
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -205,9 +208,21 @@ async def _lifespan(_app):
         "" if mode == "llm" else "  ← 未配置 LLM 凭据，或凭据未被读到"), flush=True)
     print("[智批π] 手写识别：%s" % (
         "真实多模态（%s）" % os.environ.get("ZHIPI_VLM_MODEL", "?") if vlm_on
-        else "离线样例匹配  ← 上传任意照片将无法识别"), flush=True)
+        else "不可用  ← 未配置 VLM 凭据，任何照片（含内置样例）都无法识别"), flush=True)
+    if vlm_on:
+        # 强模型这条必须打出来：它决定「界面上那个强模型重识别按钮存不存在」。
+        # 没配的话按钮不显示，教师遇到潦草作业就只能干看着，而这在日志里
+        # 是唯一能提前发现的地方。
+        print("[智批π] 强模型重识别：%s" % (
+            "可用（%s，教师可在识别结果处按需触发%s）"
+            % (ocr_mod.strong_model_name(),
+               "；ZHIPI_VLM_STRONG=1 已设为默认" if ocr_mod.strong_default() else "")
+            if ocr_mod.strong_available()
+            else "未配置  ← 填 ZHIPI_VLM_STRONG_* 或 ZHIPI_LLM_*_2 即可启用"),
+            flush=True)
     if mode == "llm":
-        print("[智批π] 单次批改超时 %d 秒（跑批量评测请调大 ZHIPI_LLM_TIMEOUT）"
+        print("[智批π] 单次批改超时 %d 秒（按「教师上传完可走开」定；"
+              "现场演示要快速失败就调小 ZHIPI_LLM_TIMEOUT）"
               % grader._llm_timeout(), flush=True)
         # 这两条必须打出来。二次复批与交叉验证都按设计静默降级——配错了界面上
         # 完全看不出来，只是置信度因子悄悄退回模型自报值、或黄红件白等一场超时。
@@ -764,6 +779,13 @@ def demo_config(session: dict = Depends(demo_session)):
     return {
         "mode": current_mode(),
         "vlm_configured": ocr_mod.vlm_configured(),
+        # 强模型重识别：配了才在界面上给按钮。慢一个数量级，所以不做默认，
+        # 由教师对着潦草的那一页按需触发。
+        "strong_recognize": {
+            "available": ocr_mod.strong_available(),
+            "model": ocr_mod.strong_model_name(),
+            "default_on": ocr_mod.strong_default(),
+        },
         "adhoc_grading_available": bool(grader.llm_credentials()),
         "feishu_webhook_configured": bool(
             os.environ.get("ZHIPI_FEISHU_WEBHOOK", "").strip()),
@@ -777,7 +799,7 @@ def demo_config(session: dict = Depends(demo_session)):
             "uploads": len(session["uploads"]),
             "upload_max": session_store.UPLOAD_MAX,
             "active_folder_id": session.get("active_folder_id",
-                                            folders.DEMO_FOLDER_ID),
+                                            folders.DEFAULT_FOLDER_ID),
             "folders": len(session.get("folders") or {}),
             "folder_max": folders.MAX_FOLDERS,
         },
@@ -793,8 +815,9 @@ def demo_reset(request: Request, response: Response,
     演示的进度也清掉。AI 批改基线是共享只读的，无需重建。
     """
     fresh = session_store.reset(session.get("_sid", ""))
+    dropped = pagestore.drop_session(session.get("_sid", ""))
     return {"status": "reset", "reviews": len(fresh["reviews"]),
-            "uploads": len(fresh["uploads"])}
+            "uploads": len(fresh["uploads"]), "pages": dropped}
 
 
 
@@ -802,8 +825,8 @@ def demo_reset(request: Request, response: Response,
 def list_submissions():
     """列出内置学生作答（含转写预览）。
 
-    保留的编程接口：前端拍照提交页已改用 /api/sample-images 图库，
-    本接口供脚本 / 评测工具按 ID 枚举内置作答使用。
+    保留的编程接口：前端不再有「按内置作答挑一份」的入口（改为内置样例夹），
+    本接口供脚本 / 评测工具按 ID 枚举内置作答使用，②③④ 页面的基线数据也来自它。
     """
     items = []
     for sub in SUBMISSIONS:
@@ -838,51 +861,70 @@ def api_grade(req: GradeReq, session: dict = Depends(demo_session)):
 
 # ---------- 图片批改链路：作业照片 → 手写识别 → 过程级批改 ----------
 
-SAMPLE_DIR = DATA_DIR / "sample_images"
 
+@app.get("/api/demo-pages")
+def list_demo_pages():
+    """内置样例清单：三科真实作业（按学科分夹）+ 教师答案页（题库夹）。
 
-def _sample_manifest() -> dict:
-    """读取内置手写样例图片清单（tools/gen_sample_images.py 生成）。"""
-    path = SAMPLE_DIR / "manifest.json"
-    if not path.exists():
-        return {}
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-
-@app.get("/api/sample-images")
-def list_sample_images():
-    """内置手写作业照片图库，供前端「模拟拍照上传」选择。"""
-    items = []
-    for sid, meta in _sample_manifest().items():
-        sub = SUB_MAP.get(sid)
-        if not sub:
-            continue
-        question = QUESTIONS[sub["question_id"]]
-        items.append({
-            "submission_id": sid,
-            "file": meta["file"],
-            "url": "/api/sample-images/%s" % meta["file"],
-            "student_name": sub["student_name"],
-            "subject": question["subject"],
-            "question_title": question["title"],
-            "clarity": sub["ocr"]["clarity"],
+    前端拿到 url 后取回文件字节，当成一份刚上传的作业送进 upload-pages，
+    后面的拆页 / 识别 / 批改与体验者自己上传的作业**走同一条链路**。
+    """
+    groups = []
+    for meta in demopages.FOLDERS:
+        fid = meta["folder_id"]
+        groups.append({
+            "folder_id": fid,
+            "name": meta["name"],
+            "subject": meta.get("subject", ""),
+            "role": meta.get("role", "student"),
+            "items": [_demo_page_row(it) for it in demopages.by_folder(fid)],
         })
-    items.sort(key=lambda x: x["submission_id"])
     return {
         "mode": current_mode(),
         "vlm_configured": ocr_mod.vlm_configured(),
-        "images": items,
+        "groups": groups,
     }
 
 
-@app.get("/api/sample-images/{name}")
-def get_sample_image(name: str):
-    """返回内置样例图片文件（只允许清单内的文件名，防路径穿越）。"""
-    allowed = {meta["file"] for meta in _sample_manifest().values()}
-    if name not in allowed:
-        raise HTTPException(status_code=404, detail="样例图片不存在：%s" % name)
-    return FileResponse(SAMPLE_DIR / name, media_type="image/png")
+def _demo_page_row(item: dict) -> dict:
+    """一条内置样例的对外结构。刻意带上 pair_titles：学生页与答案页分处两个夹，
+    不写清楚「这份对应题库里的哪一份」，体验者就得靠猜。"""
+    return {
+        "item_id": item["item_id"],
+        "role": item["role"],
+        "subject": item["subject"],
+        "title": item["title"],
+        "stage_name": item.get("stage_name") or item["title"],
+        "mime": item["mime"],
+        "page_count": item.get("page_count", 1),
+        "bytes": item.get("bytes", 0),
+        "is_pdf": item["mime"] == "application/pdf",
+        "url": "/api/demo-pages/file/%s" % item["item_id"],
+        "thumb": "/api/demo-pages/thumb/%s" % item["item_id"],
+        "pairs_with": item.get("pairs_with") or [],
+        "pair_titles": demopages.titles(item.get("pairs_with")),
+    }
+
+
+def _demo_page_or_404(item_id: str) -> dict:
+    item = demopages.get(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="内置样例不存在：%s" % item_id)
+    return item
+
+
+@app.get("/api/demo-pages/file/{item_id}")
+def get_demo_page_file(item_id: str):
+    """取内置样例原件。文件名一律由 manifest 决定，不接受外部拼路径。"""
+    item = _demo_page_or_404(item_id)
+    return FileResponse(demopages.file_path(item), media_type=item["mime"])
+
+
+@app.get("/api/demo-pages/thumb/{item_id}")
+def get_demo_page_thumb(item_id: str):
+    """夹内清单用的小图（长边 320）。PDF 取第 1 页渲染，打包时已生成。"""
+    item = _demo_page_or_404(item_id)
+    return FileResponse(demopages.thumb_path(item), media_type="image/jpeg")
 
 
 def _open_question(stem: str, subject: str, printed_max: float | None = None) -> dict:
@@ -931,8 +973,14 @@ def _adhoc_title(stem: str, subject: str) -> str:
 
 
 class RecognizeReq(BaseModel):
-    image_base64: str
-    mime: str = "image/png"
+    # 二选一：page_id 指向 /api/upload-pages 已存下的页图（PDF 拆页后的走法），
+    # image_base64 是直接把图片字节带上来（单张照片的老走法，保持兼容）。
+    page_id: str | None = Field(None, max_length=40)
+    image_base64: str | None = None
+    mime: str = Field("image/png", max_length=64)
+    # 教师在界面上点「强模型重识别」时为 true：这一页改用更强的多模态模型重读。
+    # 慢一个数量级，所以由人按需触发，不做默认。
+    strong: bool = False
 
 
 def _decode_upload(image_base64: str) -> bytes:
@@ -940,22 +988,136 @@ def _decode_upload(image_base64: str) -> bytes:
 
     先按字符串长度粗筛再解码：base64 编码后约膨胀 4/3，先看长度可以在
     「解码出一个几十 MB 的 bytes」之前就拒掉，避免公网上被人用超大图刷内存。
+
+    PDF 在这里被识别出来但**不解析**——它可能有多页，一页对应一份作业，
+    展开成几份是调用方的事，这个函数只负责「还原并确认能用」。
     """
     limit = guard.MAX_IMAGE_BYTES
     if not image_base64 or len(image_base64) > (limit // 3 + 1) * 4 + 1024:
         raise HTTPException(status_code=413,
-                            detail="图片为空或超过 %d MB 限制。" % (limit // 1024 // 1024))
+                            detail="文件为空或超过 %d MB 限制。" % (limit // 1024 // 1024))
     try:
         image_bytes = base64.b64decode(image_base64, validate=False)
     except Exception:
-        raise HTTPException(status_code=400, detail="图片 base64 解码失败")
+        raise HTTPException(status_code=400, detail="文件 base64 解码失败")
     if not image_bytes or len(image_bytes) > limit:
         raise HTTPException(status_code=413,
-                            detail="图片为空或超过 %d MB 限制。" % (limit // 1024 // 1024))
+                            detail="文件为空或超过 %d MB 限制。" % (limit // 1024 // 1024))
+    if pdfpage.is_pdf(image_bytes):
+        return image_bytes
     invalid = ocr_mod.validate_image(image_bytes)
     if invalid:
         raise HTTPException(status_code=400, detail=invalid)
     return image_bytes
+
+
+def _as_page_images(data: bytes) -> list:
+    """把上传内容摊成「一页一张图片字节」。图片是 1 页，PDF 是 N 页。
+
+    返回 [(页码, image_bytes), ...]；页码从 1 起，图片恒为 [(1, data)]。
+    """
+    # EXIF 方向在**入口**统一处理掉：此后整条链路（尺寸、识别、bbox、痕迹渲染）
+    # 只面对一种朝向。手机照片普遍是「横着存像素 + 一个 EXIF 说该转 90°」，
+    # 浏览器认这个标记而 Pillow 不认，不在入口拉平就会出现「原图竖着显示、
+    # 批改图横着显示、痕迹全部错位」——见 ocr.normalize_orientation 的说明。
+    if not pdfpage.is_pdf(data):
+        return [(1, ocr_mod.normalize_orientation(data))]
+    try:
+        pages, total = pdfpage.render_pages(data)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if total > len(pages):
+        # 截断必须说出来。静默只批前 N 页，教师会以为整份都批过了。
+        raise HTTPException(
+            status_code=413,
+            detail="这份 PDF 共 %d 页，单次最多处理 %d 页。请拆分后分次上传。"
+                   % (total, pdfpage.MAX_PAGES))
+    return pages
+
+
+def _page_size(data: bytes) -> tuple:
+    """读页图的像素尺寸；读不出返回 (0, 0)。批改痕迹按相对坐标画，前端要用它换算。
+
+    按 EXIF 方向取**显示尺寸**而不是存储尺寸：横着存的竖向照片，img.size 报的是
+    (3508, 2484)，而浏览器显示的是 (2484, 3508)。前端拿存储尺寸去换算相对坐标，
+    宽高恰好对调，痕迹位置就整体错开。
+    """
+    try:
+        from PIL import Image, ImageOps
+        with Image.open(io.BytesIO(data)) as img:
+            return ImageOps.exif_transpose(img).size
+    except Exception:
+        return (0, 0)
+
+
+class UploadPagesReq(BaseModel):
+    image_base64: str
+    mime: str = Field("image/png", max_length=64)
+    filename: str | None = Field(None, max_length=200)
+    role: Literal["student", "teacher"] = "student"   # 学生页批改 / 教师页建题库
+
+
+@app.post("/api/upload-pages")
+def api_upload_pages(req: UploadPagesReq, request: Request,
+                     session: dict = Depends(demo_session)):
+    """把一份上传（照片或 PDF）拆成页，存进服务端页图暂存，返回每页的 ID。
+
+    为什么要落到服务端而不是让前端自己拿着：批改痕迹要画回**学生本人那张
+    作业图**，所以批改结束时服务端得还能拿到原图。让浏览器为了换一张画了
+    勾叉的图再把整页传一遍，既慢又会撞上传体积上限。
+
+    PDF 在这里被摊成 N 页，每页各自是一份待批作业——语文、英语的整份作业
+    就是这样交上来的（扫描件，无文字层）。
+    """
+    _rate_guard(request, "recognize")
+    data = _decode_upload(req.image_base64)
+    sid = session.get("_sid", "")
+    kind = "pdf" if pdfpage.is_pdf(data) else "image"
+    pages = _as_page_images(data)
+    mime = pdfpage.PAGE_MIME if kind == "pdf" else (req.mime or "image/png")
+
+    out = []
+    for page_no, blob in pages:
+        width, height = _page_size(blob)
+        page_id = pagestore.put(sid, blob, mime, {
+            "page_no": page_no,
+            "page_total": len(pages),
+            "filename": req.filename or "",
+            "role": req.role,
+            "width": width,
+            "height": height,
+        })
+        out.append({
+            "page_id": page_id,
+            "page_no": page_no,
+            "width": width,
+            "height": height,
+            "mime": mime,
+            "url": "/api/page/%s" % page_id,
+        })
+    return {"kind": kind, "page_total": len(out), "role": req.role, "pages": out}
+
+
+@app.get("/api/page/{page_id}")
+def api_page_image(page_id: str, marked: int = 0,
+                   session: dict = Depends(demo_session)):
+    """取回一页原图，marked=1 取带批改痕迹的版本。
+
+    归属校验放在 pagestore.get 里：页图是别人的作业照片，拿到 ID 也不该
+    跨会话取到。找不到与「不是你的」返回同一个 404，不泄露存在性。
+    """
+    item = pagestore.get(session.get("_sid", ""), page_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="页图不存在或已过期，请重新上传。")
+    if marked:
+        if not item.get("marked"):
+            raise HTTPException(status_code=404, detail="这一页还没有批改痕迹。")
+        body, mime = item["marked"], item["marked_mime"] or "image/jpeg"
+    else:
+        body, mime = item["data"], item["mime"]
+    # 页图带会话归属，绝不能进共享缓存
+    return Response(content=body, media_type=mime,
+                    headers={"Cache-Control": "private, max-age=600"})
 
 
 def _rate_guard(request: Request, bucket: str) -> None:
@@ -968,81 +1130,83 @@ def _rate_guard(request: Request, bucket: str) -> None:
             headers={"Retry-After": str(retry)})
 
 
+def _resolve_page_input(req, session: dict) -> tuple:
+    """把「page_id 或 image_base64」统一解析成 (图片字节, mime, 页元数据)。
+
+    两条入口并存是有意的：整份 PDF 走 upload-pages 拆页后按 page_id 引用
+    （服务端留着原图，批改痕迹才画得回去），单张照片的老链路仍可直接带
+    base64 上来——内置样例图库、批量照片流水线都在用那一条。
+    """
+    if getattr(req, "page_id", None):
+        item = pagestore.get(session.get("_sid", ""), req.page_id)
+        if item is None:
+            raise HTTPException(status_code=404,
+                                detail="页图不存在或已过期，请重新上传这份作业。")
+        return item["data"], item["mime"], item["meta"]
+    if not getattr(req, "image_base64", None):
+        raise HTTPException(status_code=400, detail="缺少 page_id 或 image_base64")
+    # 直传 base64 这条路没经过 upload-pages，方向归一化要在这里补上，
+    # 否则横置照片走单张链路时 bbox 与原图仍然错开一个 90°。
+    return (ocr_mod.normalize_orientation(_decode_upload(req.image_base64)),
+            req.mime, {})
+
+
 @app.post("/api/recognize-image")
 def api_recognize_image(req: RecognizeReq, request: Request,
                         session: dict = Depends(demo_session)):
-    """作业照片手写识别：多模态大模型（配置 Key）或离线样例匹配（默认）。"""
-    image_bytes = _decode_upload(req.image_base64)
+    """作业照片手写识别：只有多模态大模型一条路，未配置凭据时如实报不可用。"""
+    image_bytes, mime, page_meta = _resolve_page_input(req, session)
     _rate_guard(request, "recognize")
 
-    # 真实多模态识别按日配额放行；额度用尽时静默回落离线样例匹配，
-    # 并在返回里说明原因，而不是把「没钱了」当成识别失败甩给体验者。
+    # 真实多模态识别按日配额放行。额度用尽时如实说明「今天不能再识别了」——
+    # 内置样例现在也是真实作业原件，没有离线兜底可以回落。
     allow_vlm, note = True, ""
     if ocr_mod.vlm_configured() and not guard.quota_take("vlm"):
         allow_vlm = False
-        note = "今日真实识别额度已用尽（公开体验限额），已切换为离线样例识别。"
+        note = "今日真实识别额度已用尽（公开体验限额），请明天再试或自行部署配置密钥。"
 
-    result = ocr_mod.recognize_image(image_bytes, req.mime, SUB_MAP,
-                                     allow_vlm=allow_vlm, unavailable_note=note)
+    result = ocr_mod.recognize_image(image_bytes, mime,
+                                     allow_vlm=allow_vlm, unavailable_note=note,
+                                     strong=bool(req.strong))
     if note:
         result["quota_note"] = note
+    if req.page_id:
+        result["page_id"] = req.page_id
+        result["page_no"] = page_meta.get("page_no", 1)
+        result["page_total"] = page_meta.get("page_total", 1)
+        result["page_url"] = "/api/page/%s" % req.page_id
     if result.get("engine") == "none":
         return result
 
-    sid = result.get("matched_submission_id")
-    if sid and sid in SUB_MAP:
-        # 命中内置样例：学科与题面按题库回填（离线演示链路，与以前一致）
-        sub = SUB_MAP[sid]
-        question = QUESTIONS[sub["question_id"]]
-        result.update({
-            "student_name": sub["student_name"],
-            "question_id": question["question_id"],
-            "question_title": question["title"],
-            "subject": question["subject"],
-        })
-        qlist = result.get("questions") or []
-        if qlist:
-            qlist[0]["subject"] = question["subject"]
-            qlist[0]["stem"] = question["question_text"]
-    else:
-        # 题库外的任意上传：学科与题面直接用识别结果，**不做题库匹配**。
-        # 原先这里按 difflib 相似度硬套一道内置题，把一页导数题判成英语作文，
-        # 再用英语评分标准批出 0 分。题库只有 3 道题，真实作业几乎必然不在
-        # 里面，所以「匹配」本身就是错的问题——模型能读懂这张纸，让它直说。
-        qlist = result.get("questions") or []
-        if qlist:
-            first = qlist[0]
-            result.update({
-                "question_id": None,          # 题库外，无 ID
-                "subject": first["subject"],
-                "question_title": _adhoc_title(first["stem"], first["subject"]),
-                "question_text": first["stem"],
-                "printed_max_score": first["printed_max_score"],
-            })
-
-    # 整份试卷 / 一图多题：把每道题都摊给前端，并给出可直接送批改的标题。
-    # detected 是**实际认出来的题数**，gradable 是本次允许批改的题数；
-    # 两者不等时必须让界面说出来，不能悄悄少批几道。
+    # 题库外的任意上传：学科与题面直接用识别结果，**不做题库匹配**。
+    # 原先这里按 difflib 相似度硬套一道内置题，把一页导数题判成英语作文，
+    # 再用英语评分标准批出 0 分。题库只有 3 道题，真实作业几乎必然不在
+    # 里面，所以「匹配」本身就是错的问题——模型能读懂这张纸，让它直说。
     qlist = result.get("questions") or []
-    detected = len(qlist)
-    cap = guard.MAX_PAPER_QUESTIONS
+    if qlist:
+        first = qlist[0]
+        result.update({
+            "question_id": None,          # 题库外，无 ID
+            "subject": first["subject"],
+            "question_title": _adhoc_title(first["stem"], first["subject"]),
+            "question_text": first["stem"],
+            "printed_max_score": first["printed_max_score"],
+        })
+
+    # 整份试卷 / 一图多题：把每道题都摊给前端。
+    # 这里以前有一个「本次最多批前 8 道」的截断——那是「每道题一次模型调用」
+    # 时代的产物。整页现在是一次调用批完，题数只影响一次请求的 token 数，
+    # 截断的理由随之消失，全部题目一律可批。
+    qlist = result.get("questions") or []
     for q in qlist:
         q["title"] = _adhoc_title(q["stem"], q["subject"])
-        q["gradable"] = q["index"] <= cap
-    result["question_count"] = detected
-    result["gradable_count"] = min(detected, cap)
-    result["paper_cap"] = cap
-    if detected > cap:
-        result["paper_truncated"] = True
-        result["paper_note"] = (
-            "这张图共认出 %d 道题，本次最多批改前 %d 道（公开体验限额：每道题都是"
-            "一次独立的大模型批改）。其余题目的题面已保留在下方清单里，"
-            "可稍后单独提交。" % (detected, cap))
+        q["gradable"] = True
+    result["question_count"] = len(qlist)
+    result["gradable_count"] = len(qlist)
     return result
 
 
 class GradeImageReq(BaseModel):
-    matched_submission_id: str | None = None   # 命中内置样例：走既有流水线
     question_id: str | None = None             # 题库内题目：题目 + 转写 + 清晰度
     ocr_text: str | None = Field(None, max_length=4000)   # 限长：转写文本要发给大模型，按 token 计费
     ocr_clarity: float = Field(75.0, ge=0, le=100)   # 防直调 API 构造超界置信度
@@ -1059,8 +1223,9 @@ class GradeImageReq(BaseModel):
     stem: str | None = Field(None, max_length=4000)     # 照片里的印刷题面（教师可修正）
     subject: str | None = Field(None, max_length=16)    # 识别出的学科
     printed_max_score: float | None = Field(None, ge=0, le=300)  # 题面印的分值，仅展示
-    # 整份试卷：同一张卷子的各题共享 paper_id，前端与看板据此聚回一份卷子。
-    # 由前端生成（只在本会话内做分组键，不参与鉴权），这里只校验形状。
+    # 同一份作业拆出的多条结果共享 paper_id，前端与看板据此聚回一份。
+    # 整页批改（/api/grade-page）不用它——那条路一次出一份结果，天然就是一份。
+    # 这三个字段留给单题批改（/api/grade-image）被脚本按题逐条调用的场景。
     paper_id: str | None = Field(None, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
     paper_index: int | None = Field(None, ge=1, le=200)   # 本题在卷中的序号
     paper_total: int | None = Field(None, ge=1, le=200)   # 该卷共几道题
@@ -1078,24 +1243,14 @@ def _clean_name(raw: str) -> str:
 @app.post("/api/grade-image")
 def api_grade_image(req: GradeImageReq, request: Request,
                     session: dict = Depends(demo_session)):
-    """图片批改：命中样例复用既有流水线，任意上传走 LLM 临时批改。
+    """图片批改：按识别出的转写文本走 LLM 临时批改。
 
-    VLM 模式下即使命中内置样例，前端也走「转写文本」分支批改——
-    保证教师对识别结果的人工修正真实生效（教师可控原则）。
+    教师对识别结果的人工修正真实生效——批改吃的是前端回传的转写文本，
+    不是识别时的原始输出（教师可控原则）。
 
-    任意上传的批改结果会存进**本会话**，并带一个 UP-xxx 临时 ID，
-    这样它能出现在教师工作台与班级看板里，体验动线不至于批完就断。
+    批改结果会存进**本会话**，并带一个 UP-xxx 临时 ID，这样它能出现在
+    教师工作台与班级看板里，体验动线不至于批完就断。
     """
-    if req.matched_submission_id:
-        if req.matched_submission_id not in SUB_MAP:
-            raise HTTPException(status_code=404,
-                                detail="作答不存在：%s" % req.matched_submission_id)
-        result = dict(session_result(session, req.matched_submission_id))
-        result["source"] = "sample"
-        if req.engine:
-            result["recognition_engine"] = req.engine
-        return result
-
     if not (req.ocr_text and req.ocr_text.strip()):
         raise HTTPException(status_code=400, detail="缺少 ocr_text（学生作答转写）")
 
@@ -1147,8 +1302,8 @@ def api_grade_image(req: GradeImageReq, request: Request,
         if "timed out" in text.lower() or "timeout" in text.lower():
             raise HTTPException(
                 status_code=504,
-                detail="批改超时（当前上限 %d 秒）。大模型网关响应过慢，"
-                       "可调大 ZHIPI_LLM_TIMEOUT 或换用更快的模型；"
+                detail="批改超时（已等满 %d 秒）。大模型网关响应过慢或上游无响应，"
+                       "可稍后重试、换用更快的模型，或调大 ZHIPI_LLM_TIMEOUT；"
                        "也可以先点下方内置样例照片，离线链路不受影响。"
                        % grader._llm_timeout())
         raise HTTPException(status_code=502, detail="临时批改失败：%s" % exc)
@@ -1181,6 +1336,495 @@ def api_grade_image(req: GradeImageReq, request: Request,
     upload_id = session_store.add_upload(session, result)
     folders.add_item(session, target_folder, upload_id)
     return result
+
+
+# ---------------------------------------------------------------------------
+# 教师页 → 会话题库
+# ---------------------------------------------------------------------------
+
+class BankBuildReq(BaseModel):
+    page_ids: list[str] = Field(..., max_length=pdfpage.MAX_PAGES)
+    name: str | None = Field(None, max_length=40)
+
+
+@app.post("/api/bank/build")
+def api_bank_build(req: BankBuildReq, request: Request,
+                   session: dict = Depends(demo_session)):
+    """读教师答案页，建一套本会话的题库。
+
+    题库是「答案匹配度」这一维的基准。没有它，该因子测不出、按权重重归一化
+    剔除，五因子实际只有四项在工作——这不是缺陷，是如实表达「这一维没有
+    依据」。教师传了答案页，它才真的开始计分。
+    """
+    if not ocr_mod.vlm_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="建题库需要读答案页上的手写标准答案，必须配置多模态识别密钥"
+                   "（ZHIPI_VLM_API_KEY）。未配置时可直接批改学生作业——"
+                   "由大模型自行判分，置信度的「答案匹配度」一维留空、权重重归一化。")
+    if not req.page_ids:
+        raise HTTPException(status_code=400, detail="请先上传教师答案页")
+
+    _rate_guard(request, "recognize")
+    sid = session.get("_sid", "")
+    pages, subject = [], ""
+    for page_id in req.page_ids:
+        item = pagestore.get(sid, page_id)
+        if item is None:
+            raise HTTPException(status_code=404,
+                                detail="答案页不存在或已过期，请重新上传。")
+        if not guard.quota_take("vlm"):
+            raise HTTPException(
+                status_code=429,
+                detail="今日真实识别额度已用尽（公开体验限额），暂时无法建题库。")
+        try:
+            recognized = ocr_mod.recognize_teacher_page(item["data"], item["mime"])
+        except Exception as exc:
+            guard.quota_refund("vlm")
+            raise HTTPException(status_code=502, detail="答案页识别失败：%s" % exc)
+        subject = subject or recognized.get("subject", "")
+        pages.append({
+            "page_id": page_id,
+            "page_no": item["meta"].get("page_no", 1),
+            "questions": recognized.get("questions") or [],
+        })
+
+    questions = bank.build_questions(pages)
+    if not questions:
+        raise HTTPException(
+            status_code=422,
+            detail="这几页答案页里没读出任何题目。请确认上传的是**教师答案页**"
+                   "（印有题目、并写有标准答案），而不是空白练习页。")
+
+    name = req.name or _bank_default_name(subject, questions)
+    record = bank.create(session, name, subject, questions, req.page_ids)
+    guessed = sum(1 for q in questions if q["score_source"] == "default")
+    return {
+        "bank_id": record["bank_id"],
+        "name": record["name"],
+        "subject": record["subject"],
+        "question_count": len(questions),
+        "total_score": round(sum(q["max_score"] for q in questions), 1),
+        # 分值有几道是系统推的必须说出来。教师看到「总分 46」时要知道其中
+        # 哪些是卷面印的、哪些是按题型默认推的，否则他会以为 46 是卷面数字。
+        "guessed_score_count": guessed,
+        "questions": questions,
+    }
+
+
+def _bank_default_name(subject: str, questions: list) -> str:
+    """题库没起名时，用「学科 + 首题题干开头」凑一个可辨认的名字。"""
+    head = ""
+    for q in questions:
+        head = _adhoc_title(q.get("stem", ""), subject)
+        if head:
+            break
+    return ("%s · %s" % (subject or "作业", head or "答案页")).strip()[:40]
+
+
+@app.get("/api/bank/list")
+def api_bank_list(session: dict = Depends(demo_session)):
+    """本会话的题库清单（供批改前选择）。"""
+    return {"banks": bank.listing(session), "vlm_configured": ocr_mod.vlm_configured()}
+
+
+@app.get("/api/bank/{bank_id}")
+def api_bank_detail(bank_id: str, session: dict = Depends(demo_session)):
+    """一套题库的完整题目（教师核对与改分值用）。"""
+    record = bank.get(session, bank_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="题库不存在或已过期")
+    return record
+
+
+class BankScoreReq(BaseModel):
+    qid: str = Field(..., max_length=16)
+    max_score: float = Field(..., gt=0, le=150)
+
+
+@app.post("/api/bank/{bank_id}/score")
+def api_bank_set_score(bank_id: str, req: BankScoreReq,
+                       session: dict = Depends(demo_session)):
+    """教师改某题的分值。
+
+    分值有两个来源：卷面印的、系统按题型推的。推定值必然有猜错的时候，
+    所以必须能改——不能改的话，「系统推定」就成了一个教师无法反驳的判断。
+    改过之后 score_source 记为 teacher，界面据此不再标「系统推定」。
+    """
+    record = bank.get(session, bank_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="题库不存在或已过期")
+    for q in record["questions"]:
+        if q["qid"] == req.qid:
+            q["max_score"] = float(req.max_score)
+            q["score_source"] = "teacher"
+            q["rubric"] = bank.rubric_for_item(q["qtype"], q["max_score"])
+            return {"qid": q["qid"], "max_score": q["max_score"],
+                    "score_source": q["score_source"],
+                    "total_score": round(sum(x["max_score"]
+                                             for x in record["questions"]), 1)}
+    raise HTTPException(status_code=404, detail="题库里没有这道题：%s" % req.qid)
+
+
+@app.delete("/api/bank/{bank_id}")
+def api_bank_delete(bank_id: str, session: dict = Depends(demo_session)):
+    """删掉一套题库。"""
+    if not bank.remove(session, bank_id):
+        raise HTTPException(status_code=404, detail="题库不存在或已过期")
+    return {"status": "deleted", "bank_id": bank_id}
+
+
+# ---------------------------------------------------------------------------
+# 学生页整页批改
+# ---------------------------------------------------------------------------
+
+class GradePageReq(BaseModel):
+    page_id: str = Field(..., max_length=40)
+    # 识别结果由前端回传：识别与批改分两步，中间教师可以修正转写。
+    # 不在服务端重新识别一次——那会多烧一次多模态额度，还会让教师的修正失效。
+    questions: list[dict] = Field(..., max_length=100)
+    subject: str | None = Field(None, max_length=16)
+    clarity: float = Field(75.0, ge=0, le=100)
+    bank_id: str | None = Field(None, max_length=40)   # 选了题库就按题库判分
+    student_name: str = Field("上传作业", max_length=200)
+    engine: str | None = Field(None, max_length=32)
+    folder_id: str | None = Field(None, max_length=32)
+
+
+@app.post("/api/grade-page")
+def api_grade_page(req: GradePageReq, request: Request,
+                   session: dict = Depends(demo_session)):
+    """整页批改：一次大模型调用批完这一页的全部题目，并在原图上留痕。
+
+    有题库（req.bank_id）→ 按题干相似度把学生页的题对齐到题库，逐题带上
+    教师给的标准答案与分值判分，答案匹配度真实计入置信度；
+    无题库 → 同一条流程，大模型自行判分，答案匹配度留空、权重重归一化。
+    """
+    sid = session.get("_sid", "")
+    page = pagestore.get(sid, req.page_id)
+    if page is None:
+        raise HTTPException(status_code=404, detail="页图不存在或已过期，请重新上传。")
+
+    student_questions = _clean_page_questions(req.questions)
+    if not student_questions:
+        raise HTTPException(
+            status_code=400,
+            detail="这一页没有可批改的题目。若识别结果为空，请确认上传的是学生作业页。")
+
+    record = None
+    if req.bank_id:
+        record = bank.get(session, req.bank_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="题库不存在或已过期")
+
+    subject = (req.subject or "").strip() or (record or {}).get("subject", "") \
+        or (student_questions[0].get("subject") or "")
+    items, matched_count, missing_qs = _align_to_bank(student_questions, record,
+                                                      req.page_id)
+
+    _rate_guard(request, "grade")
+    if not guard.quota_take("grade"):
+        raise HTTPException(
+            status_code=429,
+            detail="今日真实批改额度已用尽（公开体验限额）。可点选内置样例作业照片，"
+                   "离线链路完全不受影响，红黄绿分流与教师终审都能正常体验。")
+
+    rate = dimension_pass_rate(session, subject)
+    overrides = {"teacher_pass_rate": rate} if rate is not None else None
+    try:
+        result = pagegrader.grade_page(subject, items, req.clarity,
+                                       with_bank=bool(record),
+                                       factor_overrides=overrides)
+    except Exception as exc:
+        guard.quota_refund("grade")
+        text = "%s %s" % (type(exc).__name__, exc)
+        if "timed out" in text.lower() or "timeout" in text.lower():
+            raise HTTPException(
+                status_code=504,
+                detail="整页批改超时（已等满 %d 秒）。整页比单题的 prompt 长，"
+                       "可稍后重试、换用更快的模型，或调大 ZHIPI_LLM_TIMEOUT。"
+                       % grader._llm_timeout())
+        raise HTTPException(status_code=502, detail="整页批改失败：%s" % exc)
+
+    # 题库里有、这一页却没找到的题：可能是学生没做，也可能是识别漏读，系统分不出。
+    # 所以既不判 0（做了的学生会被冤枉），也不静默略过（漏读就永远看不见），
+    # 而是如实列出来；夹在本页题目区间之内的那些多半真是漏读，额外压住绿灯。
+    if missing_qs:
+        result["missing_questions"] = missing_qs
+        inside = [m for m in missing_qs if m.get("inside_page_range")]
+        result["missing_inside_count"] = len(inside)
+        if inside:
+            if result.get("status") == "green":
+                result["status"] = "yellow"
+            names = "、".join((m["no"] or m["stem"][:8]) for m in inside[:5])
+            result["teacher_note"] = (result.get("teacher_note") or "") + \
+                "｜题库里的第 %s 题夹在本页题目之间却没被识别到（共 %d 道），" \
+                "多半是漏读而不是学生没作答；它们未计入总分，请人工确认" % (
+                    names, len(inside))
+
+    # 在学生自己那张作业图上画批改痕迹
+    marked_url = None
+    # located 数的是「记号有落点」的题：优先看学生作答框，其次题目框——
+    # 与 marks._anchor 同一口径，不然界面会报出一个和图上对不上的数。
+    located = sum(1 for q in result["questions"]
+                  if q.get("answer_box") or q.get("bbox"))
+    on_answer = sum(1 for q in result["questions"] if q.get("answer_box"))
+    try:
+        marked = marks.render(page["data"], result["questions"], header={
+            "student": _clean_name(req.student_name),
+            "total": result["total_score"],
+            "max": result["max_score"],
+            "status": result["status"],
+        })
+        if pagestore.set_marked(sid, req.page_id, marked, "image/jpeg"):
+            marked_url = "/api/page/%s?marked=1" % req.page_id
+    except Exception as exc:
+        # 痕迹画不出来不该让整次批改失败——分数、证据链、分流都已经算好了。
+        # 但也不能装作画了：把原因带回前端，界面显示「痕迹渲染失败」。
+        result["mark_error"] = "批改痕迹渲染失败：%s" % exc
+    # 有多少道题的记号真的落在题目上，如实报给界面。识别给的坐标不精确，
+    # 报出来教师才知道「记号没贴着题」是坐标不准，不是系统认错了题。
+    # on_answer 单独报：勾叉落在**学生作答**旁边才是想要的效果，只落在题目框上
+    # 说明这题的作答没被定位到，记号是贴着题写的而不是贴着答案写的。
+    result["mark_stats"] = {"located": located, "on_answer": on_answer,
+                            "total": len(result["questions"])}
+
+    try:
+        target_folder = folders.resolve_target(session, req.folder_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    result.update({
+        "source": "upload",
+        "recognition_engine": req.engine or "vlm",
+        "student_name": _clean_name(req.student_name),
+        "question_id": None,
+        "question_title": _page_title(page, subject, len(items)),
+        "subject": subject,
+        "question_text": "",
+        "standard_answer": "",
+        "ocr_text": "\n\n".join(
+            "%s %s" % (q.get("no") or ("第%d题" % q["index"]), q.get("student_answer", ""))
+            for q in items).strip(),
+        "folder_id": target_folder,
+        "page_id": req.page_id,
+        "page_no": page["meta"].get("page_no", 1),
+        "page_total": page["meta"].get("page_total", 1),
+        "page_url": "/api/page/%s" % req.page_id,
+        "marked_url": marked_url,
+        "bank_id": req.bank_id,
+        "bank_name": (record or {}).get("name", ""),
+        "matched_count": matched_count,
+        "question_count": len(items),
+        # 满分里有多少来自「卷面真的印了分值」。整页总分是各题分值之和，
+        # 而没印分值的题是按题型推的——不说清楚，教师会把这个总分当卷面分抄走。
+        "printed_score_count": sum(
+            1 for q in items
+            if isinstance(q.get("printed_max_score"), (int, float))
+            and q["printed_max_score"] > 0),
+    })
+    upload_id = session_store.add_upload(session, result)
+    folders.add_item(session, target_folder, upload_id)
+    return result
+
+
+def _clean_page_questions(raw: list) -> list:
+    """清洗前端回传的识别结果：只留下游真正要用的字段，并做长度与类型校验。
+
+    直接把请求体里的 dict 往下传是不行的——这些字段会进 prompt、进结果、
+    进教师工作台，任意长度的字符串在这三处都是问题。
+    """
+    out = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        stem = str(item.get("stem") or "").strip()[:2000]
+        answer = str(item.get("answer") or item.get("student_answer") or "").strip()[:2000]
+        if not stem and not answer:
+            continue
+        out.append({
+            "index": len(out) + 1,
+            "no": str(item.get("no") or "").strip()[:12],
+            "subject": str(item.get("subject") or "").strip()[:16],
+            # 题型从识别阶段透传下来。它决定「这道题该不该看解题步骤」——
+            # 客观题（选择/填空/判断）只核对答案，没有过程分可扣。
+            # 前端可能不回传（旧版本、手工构造的请求），留空由 _align_to_bank 按
+            # 作答形态兜底推断，绝不能让它一路空到批改 prompt 里。
+            "qtype": ocr_mod._normalize_qtype(
+                item.get("qtype"), stem, answer) if item.get("qtype") else "",
+            "stem": stem,
+            "student_answer": answer,
+            "printed_max_score": item.get("printed_max_score"),
+            "bbox": ocr_mod._normalize_bbox(item.get("bbox")),
+            # 学生作答所在的框。批改痕迹靠它把勾叉画到学生写的那几个字上，
+            # 而不是画在题目框里——不传的话痕迹只能退回页边，跟着题走而不
+            # 跟着答案走，一页批下来看不出「哪一处答案错了」。
+            # 面积上限放到 1.0：一道解答题的作答本来就可能占半页，
+            # 按题目框那套 0.35 的上限卡，长答案的框会被整个丢掉。
+            "answer_box": ocr_mod._normalize_bbox(item.get("answer_box"), 1.0),
+            # 识别阶段标出的越界作答与归属把握，透传给批改与界面：
+            # 越界题的转写更可能有误，教师复核时该优先看它。
+            "overflow": bool(item.get("overflow")),
+            # 收敛成数值或 None：下游要拿它跟阈值比大小，字符串进来会直接抛。
+            # bool 也挡掉——True 悄悄变成 1.0 会伪装成「归属把握满分」。
+            "attribution_confidence": (
+                float(item["attribution_confidence"])
+                if isinstance(item.get("attribution_confidence"), (int, float))
+                and not isinstance(item.get("attribution_confidence"), bool)
+                else None),
+            # 定向复识的留痕。refined=这道题的转写被系统改写过；legible_hint=False
+            # 是模型自己都说看不清。两者都只用于「要不要请教师复核」，不参与判分，
+            # 所以按回传值收下，但仍要收敛类型，别让任意 JSON 流进下游。
+            "refined": bool(item.get("refined")),
+            "refine_changed": bool(item.get("refine_changed")),
+            "refine_reason": str(item.get("refine_reason") or "").strip()[:24],
+            "legible_hint": False if item.get("legible_hint") is False else None,
+        })
+    return out
+
+
+def _guess_max_score(q: dict, qtype: str = "") -> float:
+    """给「没有题库依据」的题推一个分值。
+
+    优先用卷面印的分值；卷面没印就按**题型**推（选择填空 2 分、解答 6 分……），
+    题型优先用调用方已经推断好的值，传空则从作答形态再推一次。刻意不用一个
+    统一的常数：一道选择题和一道解答题都按 10 分算，会让整页满分既不是卷面分
+    也不是任何一种可解释的口径——实测一道 2 分的选择题因此被记成 10 分。
+    """
+    printed = q.get("printed_max_score")
+    if isinstance(printed, (int, float)) and 0 < printed <= 150:
+        return float(printed)
+    if not qtype:
+        qtype = ocr_mod._normalize_qtype("", q.get("stem", ""), q.get("student_answer", ""))
+    return float(bank.default_score(qtype))
+
+
+def _align_to_bank(student_questions: list, record, page_id: str) -> tuple:
+    """把学生页的题对齐到题库，产出送批清单。返回 (items, 对上的题数, 缺题清单)。
+
+    对齐按**题干相似度**，不按题号：教师页与学生页常常不是同一份版式
+    （答案册 vs 练习册），题号各排各的；一份周周清里「1.」还会在多个板块
+    重复出现。按题号对齐会稳定地对错行，且错得毫无征兆。
+
+    没有题库依据的题（无题库、或有题库但这一题没对上）按卷面分值 / 题型
+    推定分值，见 _guess_max_score。
+
+    第三个返回值是**题库里有、这一页却没找到的题**。识别漏题是真实发生的
+    （版面解析跳过页首页尾的续页题、把学生写工整的填空当成印刷题干），
+    而漏掉的题以前是静默消失的：不判分、不提示、总分照出——教师看到的是一份
+    「批完了」的作业，少掉的那道题没有任何痕迹。这里如实报出来。
+    """
+    if record is None:
+        items = []
+        for q in student_questions:
+            # 题型推断：优先用识别阶段已经给出的值，没有再按作答形态猜。
+            # 不能留空：空题型进 batch prompt 里，模型看不出这是填空题，
+            # 就会对一道只要答案的题打出「步骤缺失」扣分。
+            qtype = (q.get("qtype") or "").strip()
+            if not qtype:
+                qtype = ocr_mod._normalize_qtype(
+                    "", q.get("stem", ""), q.get("student_answer", ""))
+            items.append({
+                **q,
+                "qid": None,
+                "qtype": qtype,
+                "standard_answer": "",
+                "max_score": _guess_max_score(q, qtype),
+                "match_score": 0.0,
+                "page_id": page_id,
+            })
+        return items, 0, []
+
+    bank_map = {q["qid"]: q for q in record["questions"]}
+    # 题库原顺序。归并时要按它给多条小问排序（否则 (3) 可能排在 (1) 前面，
+    # 拼出来的标准答案顺序是乱的），后面判定「漏题在不在本页范围内」也用它。
+    order_of = {q["qid"]: i for i, q in enumerate(record["questions"])}
+    alignment = bank.align(student_questions, record["questions"])
+    # 一对一之后再做一轮小问归并：教师页把 2(1)(2)(3)(4) 拆成四条、学生页
+    # 第 2 题是一整块时，剩下的三条并不是「学生没做」，而是写在同一块里。
+    # 不归并的话它们会被报成「题库里有、本页没识别到」，教师按提示去找一道
+    # 根本不存在的漏题；反过来（教师页粗、学生页细）则报「题库中无此题」，
+    # 分值退回按题型推定——两种都是同一个粒度错位的两面。
+    absorbed = bank.absorb_leftovers(student_questions, record["questions"],
+                                     alignment)
+    items, matched = [], 0
+    hit_qids = set()
+    for si, (q, hit) in enumerate(zip(student_questions, alignment)):
+        bq = bank_map.get(hit["qid"]) if hit["qid"] else None
+        extra = absorbed.get(si) or []
+        if bq or extra:
+            matched += 1
+            # 归并后这道题的题库依据 = 一对一命中的那条 + 被它包含的小问。
+            # 标准答案按题库原顺序拼（否则 (3) 会排在 (1) 前面），但**代表这道题
+            # 的仍是一对一命中的那条**：qid / 题型要跟着最可信的那个匹配走。
+            # 早先这里取的是排序后的第一条，于是一道正确命中了本页题的作业，
+            # 会因为顺带归并了一条排在更前面的题，qid 显示成那一条——教师看到
+            # 的是「这题对到了另一道题上」，而实际匹配是对的。
+            entries = ([(bq, hit["score"])] if bq else []) + extra
+            entries.sort(key=lambda e: order_of.get(e[0]["qid"], 0))
+            for ebq, _cov in entries:
+                hit_qids.add(ebq["qid"])
+            head = bq or entries[0][0]
+            items.append({
+                **q,
+                "qid": head["qid"],
+                "no": q.get("no") or head.get("no", ""),
+                "qtype": head["qtype"],
+                "standard_answer": bank.merge_standard_answers(entries),
+                "max_score": round(sum(float(e[0]["max_score"]) for e in entries), 2),
+                "match_score": hit["score"],
+                # 归并留痕：教师看到的满分是几条小问加出来的，得说清是哪几条，
+                # 否则「这题怎么 8 分」无从对账。
+                "absorbed": [{"qid": e[0]["qid"], "no": e[0].get("no", ""),
+                              "coverage": e[1]} for e in extra],
+                "page_id": page_id,
+            })
+        else:
+            # 没对上题库的题照批，只是它不进答案匹配度的统计（无基准可比）。
+            qtype = (q.get("qtype") or "").strip()
+            if not qtype:
+                qtype = ocr_mod._normalize_qtype(
+                    "", q.get("stem", ""), q.get("student_answer", ""))
+            items.append({
+                **q,
+                "qid": None,
+                "qtype": qtype,
+                "standard_answer": "",
+                "max_score": _guess_max_score(q, qtype),
+                "match_score": hit["score"],
+                "absorbed": [],
+                "page_id": page_id,
+            })
+
+    # 题库里有、这一页没对上的题。分两类，因为一套题库常常是多页教师页合并的，
+    # 而学生页是一页一批——「题库有而本页没有」本身很正常，别页的题不该报警：
+    #   inside=True  夹在本页已对上的题之间 → 这一页确实该有它，多半是识别漏读
+    #   inside=False 排在本页范围之外       → 很可能属于别的页，只列出不压分流
+    hit_pos = sorted(order_of[qid] for qid in hit_qids if qid in order_of)
+    lo, hi = (hit_pos[0], hit_pos[-1]) if hit_pos else (None, None)
+    missing = []
+    for i, bq in enumerate(record["questions"]):
+        if bq["qid"] in hit_qids:
+            continue
+        missing.append({
+            "qid": bq["qid"],
+            "no": bq.get("no", ""),
+            "stem": (bq.get("stem") or "")[:60],
+            "qtype": bq.get("qtype", ""),
+            "max_score": float(bq["max_score"]),
+            "inside_page_range": lo is not None and lo < i < hi,
+        })
+    return items, matched, missing
+
+
+def _page_title(page: dict, subject: str, count: int) -> str:
+    """给整页批改结果起一个在教师工作台里可辨认的标题。"""
+    name = (page["meta"].get("filename") or "").strip()
+    total = page["meta"].get("page_total", 1)
+    head = name or (subject or "作业")
+    if total > 1:
+        head += " 第 %d 页" % page["meta"].get("page_no", 1)
+    return ("%s · %d 题" % (head, count))[:60]
 
 
 @app.get("/api/teacher/results")
@@ -1218,11 +1862,14 @@ def teacher_results(session: dict = Depends(demo_session)):
             "score_basis": graded.get("score_basis", "question"),
             "printed_max_score": graded.get("printed_max_score"),
             "reference_answer": graded.get("reference_answer", ""),
-            # 整卷批改：同一张照片拆出的多道题共用 paper_id，教师台按题一行，
-            # 但要能看出「这几行来自同一份试卷」。
+            # 分组标记：单题批改按 paper_id 聚回一份作业；整页批改一次出一份，
+            # 用页码标出它是多页作业里的第几页。教师台按行展示，两者都要能看出来源。
             "paper_id": graded.get("paper_id"),
             "paper_index": graded.get("paper_index"),
             "paper_total": graded.get("paper_total"),
+            "page_no": graded.get("page_no"),
+            "page_total": graded.get("page_total"),
+            "marked_url": graded.get("marked_url"),
             "reviewed": bool(review),
             "final_score": review["final_score"] if review else None,
             "final_error_tags": review.get("final_error_tags") if review else None,
@@ -1469,10 +2116,6 @@ def api_feishu_sync_base(request: Request, session: dict = Depends(demo_session)
 
 # ---------- 作业文件夹 ----------
 
-def _sample_count() -> int:
-    return len(_sample_manifest())
-
-
 class FolderCreateReq(BaseModel):
     name: str = Field(..., min_length=1, max_length=24)
 
@@ -1489,8 +2132,8 @@ class FolderActiveReq(BaseModel):
 def api_folders_list(session: dict = Depends(demo_session)):
     """列出本会话全部文件夹（含 Demo 样例夹）。"""
     return {
-        "active_folder_id": session.get("active_folder_id", folders.DEMO_FOLDER_ID),
-        "folders": folders.list_summaries(session, sample_count=_sample_count()),
+        "active_folder_id": session.get("active_folder_id", folders.DEFAULT_FOLDER_ID),
+        "folders": folders.list_summaries(session, builtin_counts=demopages.counts()),
     }
 
 
@@ -1510,7 +2153,7 @@ def api_folders_create(req: FolderCreateReq, request: Request,
         raise HTTPException(status_code=422, detail=str(exc))
     return {
         "folder": meta,
-        "folders": folders.list_summaries(session, sample_count=_sample_count()),
+        "folders": folders.list_summaries(session, builtin_counts=demopages.counts()),
         "active_folder_id": session.get("active_folder_id"),
     }
 
@@ -1528,7 +2171,7 @@ def api_folders_rename(folder_id: str, req: FolderRenameReq, request: Request,
         raise HTTPException(status_code=422, detail=str(exc))
     return {
         "folder": meta,
-        "folders": folders.list_summaries(session, sample_count=_sample_count()),
+        "folders": folders.list_summaries(session, builtin_counts=demopages.counts()),
     }
 
 
@@ -1545,7 +2188,7 @@ def api_folders_delete(folder_id: str, request: Request,
         raise HTTPException(status_code=422, detail=str(exc))
     return {
         "status": "deleted",
-        "folders": folders.list_summaries(session, sample_count=_sample_count()),
+        "folders": folders.list_summaries(session, builtin_counts=demopages.counts()),
         "active_folder_id": session.get("active_folder_id"),
     }
 
@@ -1570,35 +2213,23 @@ def api_folders_active(req: FolderActiveReq,
 
 @app.get("/api/folders/{folder_id}")
 def api_folders_detail(folder_id: str, session: dict = Depends(demo_session)):
-    """文件夹详情：夹内条目清单（Demo 夹含内置样例 + 用户上传）。"""
+    """文件夹详情：夹内条目清单（内置夹含内置样例 + 用户上传）。"""
     try:
         folder = folders.get(session, folder_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
     items = []
-    # Demo 夹：先挂内置样例
-    if folder.get("kind") == "demo":
-        for sid, meta in _sample_manifest().items():
-            sub = SUB_MAP.get(sid)
-            if not sub:
-                continue
-            q = QUESTIONS[sub["question_id"]]
-            graded = GRADED.get(sid) or {}
-            items.append({
-                "item_id": sid,
-                "kind": "sample",
-                "student_name": sub["student_name"],
-                "subject": q["subject"],
-                "question_title": q["title"],
-                "url": "/api/sample-images/%s" % meta["file"],
-                "graded": sid in GRADED,
-                "status": graded.get("status"),
-                "score": graded.get("total_score"),
-                "max_score": graded.get("max_score"),
-            })
+    # 内置夹：先挂内置样例（真实作业原件，未批改——批改由体验者触发）
+    if folders.is_builtin(folder):
+        for it in demopages.by_folder(folder_id):
+            row = _demo_page_row(it)
+            row.update({"kind": "builtin", "graded": False, "status": None,
+                        "score": None, "max_score": None,
+                        "student_name": row["stage_name"]})
+            items.append(row)
 
-    # 用户上传（任意夹，含丢进 Demo 夹的）
+    # 用户上传（任意夹，含丢进内置夹的）
     for uid in list(folder.get("item_ids") or []):
         up = session["uploads"].get(uid)
         if not up:
@@ -1617,11 +2248,15 @@ def api_folders_detail(folder_id: str, session: dict = Depends(demo_session)):
             "submission_id": uid,
         })
 
+    # 题库夹装的是教师答案页，前端据此把按钮从「加入待批清单」换成「建题库」
+    builtin_meta = next((m for m in demopages.FOLDERS
+                         if m["folder_id"] == folder_id), None)
     return {
         "folder": {
             "folder_id": folder["folder_id"],
             "name": folder["name"],
             "kind": folder.get("kind", "user"),
+            "role": (builtin_meta or {}).get("role", "student"),
             "count": len(items),
         },
         "items": items,
@@ -1633,7 +2268,9 @@ def api_folders_grade(folder_id: str, request: Request,
                       session: dict = Depends(demo_session)):
     """整夹一键批改，完成后自动推送飞书审核提醒卡片。
 
-    - Demo 样例夹：批改全部内置作答（已缓存的跳过）；
+    - 内置样例夹：不在这里批。内置样例是真实作业原件，每份都要走一次真实的
+      识别 + 整页批改；一次点击烧掉五六次模型调用，代价与「点错一个按钮」
+      不对等。改由前端把整夹加进待批清单，体验者确认后再批。
     - 自建夹：夹内上传件在上传时已批改，这里只做汇总 + 飞书推送。
     返回批改摘要与飞书推送结果。
     """
@@ -1646,26 +2283,11 @@ def api_folders_grade(folder_id: str, request: Request,
     graded_ids = []
     errors = []
 
-    if folder.get("kind") == "demo":
-        # 内置样例：走全局基线缓存
-        for sid in _sample_manifest():
-            if sid not in SUB_MAP:
-                continue
-            try:
-                grade_one(sid)
-                graded_ids.append(sid)
-            except Exception as exc:
-                errors.append({"item_id": sid, "error": str(exc)})
-        # Demo 夹里用户上传的也算进汇总（已在上传时批过）
-        for uid in list(folder.get("item_ids") or []):
-            if uid in session["uploads"]:
-                graded_ids.append(uid)
-    else:
-        for uid in list(folder.get("item_ids") or []):
-            if uid in session["uploads"]:
-                graded_ids.append(uid)
-            else:
-                errors.append({"item_id": uid, "error": "上传件不存在或已过期"})
+    for uid in list(folder.get("item_ids") or []):
+        if uid in session["uploads"]:
+            graded_ids.append(uid)
+        elif not folders.is_builtin(folder):
+            errors.append({"item_id": uid, "error": "上传件不存在或已过期"})
 
     # 聚合本夹结果做红黄绿统计（不全班，避免夹批改卡片被全班 11 份淹没）
     rows = []
