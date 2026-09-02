@@ -70,15 +70,15 @@ return (async function () {
   }
 
   // ---------------- 02 结果：先批一份内置样例 ----------------
-  // 夹内清单里的「批改」按钮是唯一的样例入口
+  // 夹内清单里的「加入待批清单」按钮是内置样例的入口
   document.querySelector('#folder-open-btn').click();
   await sleep(1200);
   out.counts.fileRows = document.querySelectorAll('.file-row').length;
   collapsed('.file-row__thumb', '夹内缩略图');
 
-  var pick = document.querySelector('[data-sample]');
+  var pick = document.querySelector('[data-demo-stage]');
   if (!pick) {
-    out.bad.push('夹内清单没有 data-sample 入口，02 屏无法走查');
+    out.bad.push('夹内清单没有 data-demo-stage 入口，02 屏无法走查');
   } else {
     pick.click();
     // llm 模式下识别是真实 VLM 调用，实测要十几秒。轮询到 #recog-result
