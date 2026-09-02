@@ -30,3 +30,13 @@ eval_data/**/.cache/
 # tools/probe.mjs 每次运行的临时 Chrome profile。正常会自删，
 # 但 Chrome 被强杀时文件仍被占用，会残留在这儿。
 .probe-profile/
+
+# 内置样例作业页：由 tools/pack_demo_pages.py 从真实测评数据压缩生成。
+# 里头是真实学生/教师作业扫描件（含手写姓名），仓库公开，所以不入库；
+# 跑 demo 需要它时用 pack_demo_pages.py 重新生成一份。
+demo/data/demo_pages/
+# 对照识别 / 真实数据评测的中间产物：裁图、留痕图，随时可重跑，没有文档引用它们。
+demo/tools/ab_recognize_out/
+demo/tools/real_eval_out/
+# tools/figures/render.py 的渲染中间产物（下划线前缀），成品图在 docs/assets/。
+tools/figures/_*
