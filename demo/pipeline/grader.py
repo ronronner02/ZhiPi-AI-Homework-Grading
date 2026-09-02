@@ -563,24 +563,27 @@ def llm_credentials_2():
 
 
 def _llm_timeout() -> int:
-    """单次批改调用的超时秒数，可用 ZHIPI_LLM_TIMEOUT 覆盖（默认 30）。
+    """单次批改调用的超时秒数，可用 ZHIPI_LLM_TIMEOUT 覆盖（默认 300）。
 
-    为什么必须可调：30 秒是按「课堂演示不能久等」定的，但实测中转网关
-    与免费通道上，同一模型同一 prompt 的耗时会从 20 秒漂到 60 秒以上。
-    批量评测时若仍用 30 秒，会把「网关慢」记成「批改失败」并静默降级
-    mock —— 评测报告里的准确率就成了规则引擎的成绩，而不是大模型的。
-    故：演示保持 30，跑评测时显式调到 120 以上。
+    默认值从 30 放宽到 300，是因为使用方式变了：以前假设教师盯着屏幕等，
+    所以宁可快速失败；现在是「上传完人就走开，批完自动推飞书卡片」，
+    没人在等这一秒，快速失败反而是纯损失——实测中转网关与免费通道上，
+    同一模型同一 prompt 的耗时会从 20 秒漂到 180 秒以上，30 秒预算会把
+    「网关慢」记成「批改失败」并静默降级 mock，评测报告里的准确率就成了
+    规则引擎的成绩，而不是大模型的。
+
+    代价：模型真的挂了时，也要等满 300 秒才报错。要做现场演示就显式调回 30。
     """
     try:
         return max(5, min(600, int(str(os.environ.get("ZHIPI_LLM_TIMEOUT", "")).strip())))
     except (TypeError, ValueError):
-        return 30
+        return 300
 
 
 def _cross_timeout() -> int:
-    """双模型交叉验证的超时秒数，可用 ZHIPI_CROSS_TIMEOUT 覆盖（默认 90）。
+    """双模型交叉验证的超时秒数，可用 ZHIPI_CROSS_TIMEOUT 覆盖（默认 300）。
 
-    默认值为什么是 90 而不是更短：交叉验证只在配齐第二模型时启用，而
+    默认值为什么给这么宽：交叉验证只在配齐第二模型时启用，而
     「配齐了就该真的跑起来」。实测同一中转网关上的候选第二模型单次耗时
     minimax-m3 25-90 秒（中位 62）、glm-5.2 45-65、glm-4.5-flash 49-72、
     grok-4.5 77-91——预算低于最快一次成功（25 秒）时，这个功能不是「偶尔
@@ -588,15 +591,16 @@ def _cross_timeout() -> int:
     except 静默吞掉：界面无任何异样，日志无任何报错，配置看起来完全正确。
     早先的缺省 12 秒就是这种状态，白等 12 秒再丢弃结果，比不开还差。
     宁可默认偏慢让人抱怨「黄/红件等得久」（看得见、可调小），也不要默认偏快
-    让功能静默失效（看不见）。
+    让功能静默失效（看不见）。既然教师已经可以走开，这条增强项就更没有
+    理由为了省几十秒而失效。
 
-    上限 300 而不是 120：调大是使用者对「我愿意等」的明确表达，被静默截断
-    会重现同一类问题——设了 180 却仍在 120 秒超时，且无处得知。
+    上限 600 而不是 300：调大是使用者对「我愿意等」的明确表达，被静默截断
+    会重现同一类问题——设了 480 却仍在 300 秒超时，且无处得知。
     """
     try:
-        return max(3, min(300, int(str(os.environ.get("ZHIPI_CROSS_TIMEOUT", "")).strip())))
+        return max(3, min(600, int(str(os.environ.get("ZHIPI_CROSS_TIMEOUT", "")).strip())))
     except (TypeError, ValueError):
-        return 90
+        return 300
 
 
 # 中转网关的「瞬时上游故障」特征。这些错误与请求本身无关，重试就能过。
@@ -623,8 +627,12 @@ def _is_transient_gateway_error(status: int, body: str) -> bool:
     刻意收窄：只认带上述特征的正文，或 429/502/503/504 这类状态码。
     模型名写错（404 model_not_found）、鉴权彻底失败这类**请求本身有问题**
     的情况不在其中——那种重试只是重复烧钱和时间。
+
+    520-527 是 Cloudflare 自己的状态码（524=上游没在它的窗口内回完），
+    走 CDN 的中转网关会大量返回，描述的全是「网关到上游这一段出了事」，
+    与请求内容无关，所以同样该重试。
     """
-    if status in (429, 502, 503, 504):
+    if status in (429, 502, 503, 504) or 520 <= status <= 527:
         return True
     low = (body or "").lower()
     return any(sig in low for sig in _TRANSIENT_UPSTREAM)
@@ -635,7 +643,7 @@ def _call_llm(creds: dict, prompt: str, temperature: float = 0,
     """OpenAI 兼容 chat/completions 调用，返回解析后的 JSON 结果。
 
     - response_format 强制 JSON 输出（DeepSeek / Qwen 均支持），降低解析失败率；
-    - timeout 统一 30 秒：单题批改足够，避免课堂演示场景长时间卡住。
+    - timeout 缺省走 _llm_timeout()（默认 300 秒），按「教师可以走开」定的预算。
     """
     payload = {
         "model": creds["model"],
@@ -902,11 +910,10 @@ def cross_check(question: dict, student_text: str, first_total, creds2: dict = N
 def _maybe_cross_check(question: dict, student_text: str, first_total, status: str):
     """黄 / 红结果才触发交叉验证（绿区无需复核，省调用）；异常静默跳过。
 
-    超时单独收紧（ZHIPI_CROSS_TIMEOUT，默认 12 秒）：交叉验证是**增强项**，
-    拿不到结论只是少一份佐证，主批改结果照样可用。而它用的第二模型往往是
-    另一家、稳定性未知——实测 grok-4.5 会静默挂 30 秒才失败，把一次
-    5 秒的批改拖成 35 秒。让可选环节按主流程的超时等待，是把增强项的
-    不确定性转嫁给了核心链路。
+    超时走独立的 ZHIPI_CROSS_TIMEOUT（默认 300 秒）而不是主批改超时：这两件事
+    该由不同的人决定。它用的第二模型往往是另一家、稳定性未知——实测
+    grok-4.5 会静默挂 30 秒才失败。分开配的意义在于，想收紧增强项的等待
+    （或者反过来给它更多耐心）时，不必动到核心链路的预算。
     """
     if status not in ("yellow", "red"):
         return None
