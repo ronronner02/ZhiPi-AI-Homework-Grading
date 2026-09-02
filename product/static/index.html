@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>智批π · 教师可控作业批改</title>
+  <link rel="stylesheet" href="/static/styles.css?v=1">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" aria-label="主导航">
+      <div class="brand"><span class="brand-mark">π</span><span>智批π</span></div>
+      <p class="brand-sub">让每一次判断都有证据</p>
+      <nav>
+        <button class="nav-item active" data-view="workbench"><span>01</span>教师工作台</button>
+        <button class="nav-item" data-view="upload"><span>02</span>提交与批改</button>
+        <button class="nav-item" data-view="analytics"><span>03</span>班级学情</button>
+      </nav>
+      <div class="system-card">
+        <div class="system-line"><span class="pulse"></span><strong id="modeLabel">正在连接</strong></div>
+        <p id="persistLabel">检查持久化服务…</p>
+      </div>
+      <button id="logoutButton" class="text-button hidden">退出工作台</button>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">ZHIPI TEACHER CONSOLE</p>
+          <h1 id="pageTitle">教师工作台</h1>
+        </div>
+        <div class="top-actions">
+          <span class="workspace" id="workspaceLabel">工作区 —</span>
+          <button id="refreshButton" class="secondary-button">刷新数据</button>
+        </div>
+      </header>
+
+      <section id="workbenchView" class="view active">
+        <div class="metric-grid" id="workbenchMetrics"></div>
+        <div class="panel toolbar-panel">
+          <div class="filters" role="group" aria-label="筛选作业">
+            <button class="filter active" data-status="all">全部</button>
+            <button class="filter" data-status="red"><i class="dot red"></i>人工优先</button>
+            <button class="filter" data-status="yellow"><i class="dot yellow"></i>需要确认</button>
+            <button class="filter" data-status="green"><i class="dot green"></i>可抽查</button>
+          </div>
+          <label class="search"><span>搜索</span><input id="searchInput" placeholder="学生、学科或题目"></label>
+        </div>
+        <div class="panel table-panel">
+          <div class="table-headline">
+            <div><h2>待审作业</h2><p id="resultCount">正在加载…</p></div>
+            <div class="legend"><span><i class="dot red"></i>低置信</span><span><i class="dot yellow"></i>中置信</span><span><i class="dot green"></i>高置信</span></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>学生 / 作业</th><th>学科</th><th>AI 判分</th><th>置信度</th><th>终审状态</th><th></th></tr></thead>
+              <tbody id="resultsBody"></tbody>
+            </table>
+          </div>
+          <div id="tableEmpty" class="empty hidden">当前筛选条件下没有作业。</div>
+        </div>
+      </section>
+
+      <section id="uploadView" class="view">
+        <div class="two-column upload-layout">
+          <form id="uploadForm" class="panel form-panel">
+            <div class="panel-title"><span class="step-number">01</span><div><h2>提交一份作业</h2><p>图片会安全归档；无模型时转入人工终审，不生成伪分数。</p></div></div>
+            <label>学生姓名<input name="student_name" maxlength="40" value="体验学生" required></label>
+            <label>对应题目<select name="question_id" id="questionSelect"></select></label>
+            <div id="customQuestion" class="custom-fields hidden">
+              <label>学科<input name="subject" maxlength="16" placeholder="如：数学"></label>
+              <label>题面<textarea name="question_text" maxlength="4000" rows="3" placeholder="粘贴题目原文"></textarea></label>
+            </div>
+            <label>作业图片<input name="file" type="file" accept="image/jpeg,image/png,image/webp" required><small>JPG / PNG / WebP，单张不超过 8 MB</small></label>
+            <label>学生作答转写<textarea name="transcript" maxlength="12000" rows="6" placeholder="可先人工核对并填写。留空时只归档图片，稍后再补。"></textarea></label>
+            <button class="primary-button" type="submit" id="uploadSubmit">上传并进入批改</button>
+          </form>
+          <div class="panel guide-panel">
+            <p class="eyebrow">PRODUCT BOUNDARY</p>
+            <h2>这个版本如何处理“不确定”</h2>
+            <ol>
+              <li><span>1</span><div><strong>先守住输入边界</strong><p>验证真实格式、像素、动图、长宽比和文件完整性，并重新编码去除定位信息。</p></div></li>
+              <li><span>2</span><div><strong>再保留教师控制</strong><p>教师核对转写文本后才进入判分；任何终审都会持久化并写入审计记录。</p></div></li>
+              <li><span>3</span><div><strong>拒绝假装有 AI</strong><p>未配置模型时明确进入红色人工队列。内置样例用于完整演示，上传件不会靠关键词伪判。</p></div></li>
+            </ol>
+            <div id="uploadResult" class="upload-result hidden" aria-live="polite"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="analyticsView" class="view">
+        <div class="metric-grid" id="analyticsMetrics"></div>
+        <div class="analytics-grid">
+          <div class="panel"><div class="panel-title compact"><div><h2>薄弱知识点</h2><p>按评分步骤的错误率排序</p></div></div><div id="weakPoints" class="bar-list"></div></div>
+          <div class="panel"><div class="panel-title compact"><div><h2>错因分布</h2><p>教师终审标签优先于 AI 标签</p></div></div><div id="errorTags" class="tag-list"></div></div>
+          <div class="panel teaching-panel"><div class="panel-title compact"><div><h2>下一课时建议</h2><p>从数据回到教学动作</p></div><button id="outlineButton" class="secondary-button">复制讲评提纲</button></div><ol id="suggestions"></ol></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="reviewDialog">
+    <form id="reviewForm" method="dialog">
+      <div class="dialog-head"><div><p class="eyebrow">TEACHER FINAL REVIEW</p><h2 id="reviewTitle">教师终审</h2></div><button type="button" class="icon-button" id="closeReview" aria-label="关闭">×</button></div>
+      <div class="review-grid">
+        <div class="paper-preview"><img id="reviewImage" class="hidden" alt="作业原图"><div id="reviewTranscript" class="transcript"></div></div>
+        <div class="review-form-fields">
+          <div class="score-line"><label>AI 分数<input id="aiScore" disabled></label><label>教师终判<input id="finalScore" type="number" min="0" step="0.5" required></label></div>
+          <div><span class="field-label">错因改判</span><div id="errorTagOptions" class="tag-options"></div></div>
+          <label>终审评语<textarea id="finalComment" maxlength="500" rows="4" placeholder="可补充给学生的具体建议"></textarea></label>
+          <div class="evidence-panel"><strong>AI 证据链</strong><div id="evidenceList"></div></div>
+        </div>
+      </div>
+      <div class="dialog-actions"><button type="button" class="secondary-button" id="cancelReview">取消</button><button type="submit" class="primary-button">保存教师终审</button></div>
+    </form>
+  </dialog>
+
+  <div id="loginOverlay" class="login-overlay hidden">
+    <form id="loginForm" class="login-card">
+      <div class="brand"><span class="brand-mark">π</span><span>智批π</span></div>
+      <p class="eyebrow">AUTHORIZED TEACHERS ONLY</p>
+      <h2>进入教师工作台</h2>
+      <p>请输入部署方提供的访问口令。口令只用于本次登录，不会出现在地址栏。</p>
+      <label>访问口令<input name="access_code" type="password" autocomplete="current-password" required autofocus></label>
+      <button class="primary-button" type="submit">验证并进入</button>
+      <p id="loginError" class="form-error hidden"></p>
+    </form>
+  </div>
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="/static/app.js?v=1" defer></script>
+</body>
+</html>
+

@@ -1,0 +1,73 @@
+{
+  "questions": [
+    {
+      "question_id": "Q001",
+      "subject": "数学",
+      "grade": "初二",
+      "question_type": "计算题",
+      "title": "一元二次方程求解",
+      "knowledge_points": ["一元二次方程", "因式分解"],
+      "question_text": "解方程：x² - 5x + 6 = 0",
+      "standard_answer": "x² - 5x + 6 = 0 → (x - 2)(x - 3) = 0 → x₁ = 2，x₂ = 3",
+      "standard_solution_steps": [
+        "观察方程 x²-5x+6=0，判断可用因式分解法",
+        "寻找两数使其积为 6、和为 5，得 2 与 3，分解为 (x-2)(x-3)=0",
+        "由每个因式分别为零解得 x₁=2，x₂=3",
+        "写出完整结论：方程的解为 x₁=2，x₂=3"
+      ],
+      "max_score": 10,
+      "rubric": [
+        {"step_id": 1, "step": "选择合适解法", "max_score": 2, "knowledge_point": "一元二次方程"},
+        {"step_id": 2, "step": "因式分解正确", "max_score": 3, "knowledge_point": "因式分解"},
+        {"step_id": 3, "step": "求出两个根", "max_score": 3, "knowledge_point": "一元二次方程"},
+        {"step_id": 4, "step": "结论表达完整", "max_score": 2, "knowledge_point": "一元二次方程"}
+      ]
+    },
+    {
+      "question_id": "Q002",
+      "subject": "物理",
+      "grade": "初二",
+      "question_type": "计算题",
+      "title": "速度与单位换算",
+      "knowledge_points": ["速度公式", "单位换算"],
+      "question_text": "一辆汽车沿平直公路匀速行驶，通过的路程 s = 200 m，所用时间 t = 20 s。求汽车行驶的速度 v。",
+      "standard_answer": "v = s / t = 200 m ÷ 20 s = 10 m/s",
+      "standard_solution_steps": [
+        "明确匀速直线运动求速度，先写出公式原式 v = s/t",
+        "代入已知量：v = 200 m ÷ 20 s",
+        "计算得数值结果 v = 10",
+        "补全单位，写出最终结果 v = 10 m/s"
+      ],
+      "max_score": 6,
+      "rubric": [
+        {"step_id": 1, "step": "写出正确公式", "max_score": 2, "knowledge_point": "速度公式"},
+        {"step_id": 2, "step": "正确代入数值", "max_score": 2, "knowledge_point": "速度公式"},
+        {"step_id": 3, "step": "计算结果正确", "max_score": 1, "knowledge_point": "速度公式"},
+        {"step_id": 4, "step": "单位正确", "max_score": 1, "knowledge_point": "单位换算"}
+      ]
+    },
+    {
+      "question_id": "Q003",
+      "subject": "英语",
+      "grade": "初二",
+      "question_type": "短文写作",
+      "title": "短文写作 My Weekend",
+      "knowledge_points": ["英语写作", "英语时态", "英语词汇", "英语句法"],
+      "question_text": "请以 “My Weekend” 为题写一篇不少于 60 词的短文，描述你上个周末的活动。",
+      "standard_answer": "要点完整（时间 / 活动 / 感受），全文使用一般过去时，语法与拼写正确，句式连贯，不少于 60 词。",
+      "standard_solution_steps": [
+        "审题定内容：围绕上个周末，覆盖时间、活动、感受三要素，篇幅不少于 60 词",
+        "定时态：叙述已发生的事，通篇使用一般过去时并保持一致",
+        "查词汇：逐词核对拼写，避免 interesting / relaxed 等常见易错词写错",
+        "理句式：用 First / Then / After that 等连接词衔接句子，长短句搭配，保证篇章连贯"
+      ],
+      "max_score": 15,
+      "rubric": [
+        {"step_id": 1, "step": "内容切题且要点完整", "max_score": 4, "knowledge_point": "英语写作"},
+        {"step_id": 2, "step": "语法与时态正确", "max_score": 4, "knowledge_point": "英语时态"},
+        {"step_id": 3, "step": "词汇拼写正确", "max_score": 3, "knowledge_point": "英语词汇"},
+        {"step_id": 4, "step": "句式结构与连贯", "max_score": 4, "knowledge_point": "英语句法"}
+      ]
+    }
+  ]
+}
