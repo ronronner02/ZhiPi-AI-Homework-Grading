@@ -787,7 +787,7 @@ input:focus, select:focus, textarea:focus {
 .proof-row:first-of-type { border-top: 0; }
 .swatch { width: 10px; height: 28px; border-radius: 2px; flex: 0 0 auto; }
 
-/* 拼贴：图片来自 /api/sample-images，位置由 --1/--2/--3 定，
+/* 拼贴：图片来自 /api/demo-pages，位置由 --1/--2/--3 定，
    视差由 motion.js 的 registerParallax 在 transform 上叠加 */
 .collage {
   position: absolute;
@@ -1010,6 +1010,10 @@ input:focus, select:focus, textarea:focus {
 }
 .file-row__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .file-row__name { font-weight: 600; }
+/* 题库夹多选合并：勾选框占一列，其余三列布局不变 */
+.file-row--pick { grid-template-columns: 24px 44px 1fr auto; }
+.file-row__pick { display: flex; align-items: center; justify-content: center; }
+.file-row__pick input { width: 16px; height: 16px; cursor: pointer; }
 
 /* ---- 上传 ---------------------------------------------------------------- */
 .dropzone {
@@ -1373,7 +1377,7 @@ input:focus, select:focus, textarea:focus {
   gap: 12px;
 }
 /* --------------------------------------------------------------------------
-   一图多题 / 整份试卷清单
+   一图多题 / 整页作业清单
    -------------------------------------------------------------------------- */
 .paper-head {
   display: flex;
@@ -1429,6 +1433,180 @@ input:focus, select:focus, textarea:focus {
 .paper-q__off { color: #8A5A08; font-family: var(--font-sans); }
 
 /* --------------------------------------------------------------------------
+   教师页题库：上传答案页 → 建库 → 选中生效
+   -------------------------------------------------------------------------- */
+.bank-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 0; }
+.bank-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 11px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-1);
+  background: var(--paper);
+}
+/* 生效中的题库要一眼看出来：答案匹配度这一维靠它才有分 */
+.bank-row.is-on { border-color: var(--brand); background: var(--paper-warm); }
+.bank-row__pick {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink);
+}
+/* 「不用题库」那一项也是可选项，跟题库行同一套样式，缩排区分 */
+.bank-row--none {
+  margin-top: 8px;
+  gap: 8px;
+  align-items: baseline;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ink-mid);
+}
+
+/* 题库逐题预览：题干 / 标准答案 / 分值，分值可改 */
+.bank-detail { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+.bank-q {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 6px 9px;
+  border-radius: var(--r-1);
+  background: var(--paper-warm);
+  font-size: 12px;
+}
+.bank-q__no {
+  flex: 0 0 auto;
+  min-width: 26px;
+  font-family: var(--font-mono);
+  color: var(--ink-mid);
+}
+.bank-q__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.bank-q__stem { color: var(--ink); }
+.bank-q__ans { color: var(--ink-mid); }
+.bank-q__type {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+/* 宽度只能靠 flex-basis 定死：.input--sm 定义在本节之后、同为单类选择器，
+   它的 width:100% 会盖掉这里写的 width。再叠上 flex-shrink:0，输入框就独占整行
+   且拒绝收缩——题干被挤到一字一行，页面还横向溢出。flex-basis 不受那条规则影响。 */
+.bank-q__score { flex: 0 0 66px; }
+.bank-q__src {
+  flex: 0 0 auto;
+  width: 52px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+/* 分值是系统按题型推定、教师可改的，别让它看着像卷面印刷的权威数字 */
+.bank-q__src.is-guess { color: #8A5A08; }
+
+/* --------------------------------------------------------------------------
+   学生作业上的批改痕迹
+   -------------------------------------------------------------------------- */
+.marked {
+  margin: 12px 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-2);
+  overflow: hidden;
+  background: var(--paper-deep);
+}
+.marked__img { display: block; width: 100%; height: auto; }
+.marked__note {
+  padding: 7px 10px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border-top: 1px solid var(--rule);
+}
+.marked__note b { color: var(--ink-mid); font-weight: 600; }
+
+/* 逐题清单（整页批改结果） */
+.pq-list { display: flex; flex-direction: column; gap: 6px; }
+.pq {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-left-width: 3px;
+  border-radius: var(--r-1);
+  background: var(--paper);
+  font-size: 12px;
+}
+.pq.is-ok { border-left-color: var(--green); }
+.pq.is-warn { border-left-color: var(--yellow); }
+.pq.is-bad { border-left-color: var(--red); }
+.pq__no {
+  flex: 0 0 auto;
+  min-width: 26px;
+  font-family: var(--font-mono);
+  color: var(--ink-mid);
+}
+.pq__mark { flex: 0 0 auto; display: grid; place-items: center; }
+.pq__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pq__stem { color: var(--ink); font-weight: 600; }
+.pq__ans {
+  color: var(--ink-mid);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pq__tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.pq__score {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--ink);
+}
+.pq__max { color: var(--ink-soft); font-weight: 400; }
+
+/* PDF 多页选择：先看缩略图再决定批哪一页 */
+.pdf-pages {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.pdf-page {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-1);
+  background: var(--paper);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink-mid);
+  text-align: center;
+}
+.pdf-page:hover { border-color: var(--brand); }
+.pdf-page img {
+  width: 100%;
+  height: 124px;
+  object-fit: cover;
+  object-position: top;
+  border-radius: 3px;
+  background: var(--paper-deep);
+}
+
+/* 暂存清单里 PDF 没有缩略图，用一个文件角标占位 */
+.stage-item__thumb--pdf {
+  display: grid;
+  place-items: center;
+  color: var(--ink-soft);
+}
+
+/* 教师答案页入口：比学生上传区矮一档，视觉上是「可选的前置一步」 */
+.dropzone--slim { padding: 18px 14px; }
+
+/* --------------------------------------------------------------------------
    暂存区：文件选好先改名，再手动发起批改
    -------------------------------------------------------------------------- */
 #stage-box { margin-top: 12px; }
@@ -1452,7 +1630,7 @@ input:focus, select:focus, textarea:focus {
 }
 /* 名称输入框弹性撑满剩余宽度 */
 .stage-item .input--sm { flex: 1 1 auto; min-width: 0; }
-/* 同卷标记：教师表里要能看出这几行来自同一张卷子 */
+/* 同源标记：教师表里要能看出这几行来自同一份作业（同卷各题 / 同份各页） */
 .paper-mark {
   display: inline-block;
   margin-left: 6px;

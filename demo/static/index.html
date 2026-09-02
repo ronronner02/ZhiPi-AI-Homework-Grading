@@ -128,7 +128,7 @@
     <div class="trail-tip">
       <span id="trail-tip"></span>
       <span class="trail-sep">·</span>
-      <span>当前上传目标：<strong id="folder-active-hint">Demo 样例</strong></span>
+      <span>当前上传目标：<strong id="folder-active-hint">数学样例</strong></span>
     </div>
 
     <!-- 说明块。刻意放在四屏之外：01 屏完整展开，02-04 屏收成一行常驻，
@@ -142,7 +142,7 @@
         <div class="toolbar">
           <h3>作业文件夹</h3>
           <span class="spacer"></span>
-          <span class="hint-inline">选中后可整夹一键批改</span>
+          <span class="hint-inline">内置三科真实作业，点开即可选用</span>
         </div>
         <p class="hint" id="engine-hint">识别引擎载入中</p>
 
@@ -150,7 +150,7 @@
              不明写出来的话，「配齐生效」与「配了但每次超时」界面上无从分辨。 -->
         <ul class="chain" id="chain-list"></ul>
 
-        <p class="hint mt-4">可自建命名、指定上传目标；选中后可整夹一键批改，批改完成自动发飞书审核提醒。</p>
+        <p class="hint mt-4">前四个是<b>内置样例夹</b>（语文 / 数学 / 英语 + 题库 · 教师答案页），点开「查看夹内文件」可把真实作业加入待批清单、或用答案页建题库。也可自建夹作为自己上传作业的落点，整夹一键批改后自动发飞书审核提醒。</p>
 
         <div class="folder-create mt-4">
           <input class="input" type="text" id="folder-name-input" maxlength="24"
@@ -169,7 +169,7 @@
         <div class="folder-actions" id="folder-actions" style="display:none;">
           <button class="btn btn--accent" type="button" id="folder-grade-btn">
             <span data-icon="scan" data-icon-size="16"></span>
-            <span>整夹一键批改</span>
+            <span id="folder-grade-label">整夹一键批改</span>
           </button>
           <button class="btn btn--ghost btn--sm" type="button" id="folder-rename-btn">重命名</button>
           <button class="btn btn--ghost btn--sm" type="button" id="folder-delete-btn">删除</button>
@@ -189,22 +189,55 @@
 
       <div class="sheet">
         <div class="toolbar">
-          <h3>上传到当前文件夹</h3>
+          <h3>① 教师页 · 建题库（可选）</h3>
         </div>
-        <p class="sub" id="upload-target-hint">上传目标：<b>Demo 样例</b></p>
+        <p class="sub">
+          先传<b>教师答案页</b>建一套题库，学生作业就按教师给的标准答案逐题比对判分，
+          置信度里的「答案匹配度」这一维才真的计分。跳过这一步也能直接批改学生作业——
+          由大模型自行判分，该维留空并按权重重归一化。<br>
+          也可以不上传：上方切到<b>「题库 · 教师答案页」</b>夹，里面有三科共 19 份内置答案页，
+          点「用这份建题库」即可；同一套答案分成两册时，勾选后「合并建库」建成一套。
+        </p>
+
+        <div class="dropzone dropzone--slim" id="teacher-dropzone">
+          <span data-icon="fileText" data-icon-size="24"></span>
+          <h4>上传教师答案页</h4>
+          <p id="teacher-upload-hint">支持 PNG / JPG / WebP / PDF，PDF 会自动按页拆开</p>
+          <label class="btn btn--ghost btn--sm" style="cursor:pointer;">
+            <span data-icon="upload" data-icon-size="15"></span>
+            <span>选择答案页</span>
+            <input type="file" id="teacher-file-input"
+                   accept="image/png,image/jpeg,image/webp,application/pdf"
+                   multiple class="sr-only">
+          </label>
+        </div>
+        <div id="teacher-status" class="mt-4"></div>
+        <div id="bank-box" class="mt-4"></div>
+        <!-- 题库详情刻意放在 #bank-box 外面：renderBanks 会重写 #bank-box 的
+             innerHTML，放里面的话，改一次分值（成功后要重拉题库列表）就把展开的
+             题目列表连同滚动位置一起清掉，教师改第二题得重新点开。 -->
+        <div id="bank-detail" class="mt-4"></div>
+      </div>
+
+      <div class="sheet">
+        <div class="toolbar">
+          <h3>② 学生页 · 上传到当前文件夹</h3>
+        </div>
+        <p class="sub" id="upload-target-hint">上传目标：<b>数学样例</b></p>
 
         <div class="dropzone" id="dropzone">
           <span data-icon="upload" data-icon-size="28"></span>
           <h4>上传你自己的作业照片</h4>
-          <p id="upload-hint">支持 PNG / JPG / WebP</p>
+          <p id="upload-hint">支持 PNG / JPG / WebP / PDF</p>
           <label class="btn btn--ghost btn--sm" style="cursor:pointer;">
             <span data-icon="image" data-icon-size="15"></span>
-            <span>选择照片</span>
-            <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp"
+            <span>选择作业</span>
+            <input type="file" id="file-input"
+                   accept="image/png,image/jpeg,image/webp,application/pdf"
                    multiple class="sr-only">
           </label>
         </div>
-        <p class="hint mt-4">照片先进入下方待批清单，可改名后再决定批改哪几份。上传件会进入上方选中的文件夹。</p>
+        <p class="hint mt-4">作业先进入下方待批清单，可改名后再决定批改哪几份。PDF 会按页拆成多份。上传件会进入上方选中的文件夹。<br>没带作业？切到上方<b>语文 / 数学 / 英语样例</b>夹，点「查看夹内文件 → 加入待批清单」，走的是同一条链路。</p>
 
         <div id="stage-box" style="display:none;">
           <div class="toolbar mt-4">
@@ -213,6 +246,13 @@
             <button class="btn btn--accent btn--sm" type="button" id="stage-grade-btn">
               <span data-icon="scan" data-icon-size="14"></span>
               <span id="stage-grade-label">开始批改</span>
+            </button>
+            <!-- 强模型批量入口：只在服务端确实配了强模型时才显示（由 renderStaging 控制）。
+                 不取代常规批改——它慢一个数量级，是否值得由教师看着这叠作业的字迹决定。 -->
+            <button class="btn btn--sm" type="button" id="stage-grade-strong-btn"
+                    style="display:none;">
+              <span data-icon="target" data-icon-size="14"></span>
+              <span id="stage-grade-strong-label">全部增强批改</span>
             </button>
             <button class="btn btn--ghost btn--sm" type="button" id="stage-clear-btn">清空</button>
           </div>
@@ -242,6 +282,8 @@
             <div id="recog-status"></div>
             <div id="recog-result" style="display:none;">
               <div class="factor-wrap" id="recog-badges" style="margin-bottom:14px;"></div>
+              <!-- 字迹潦草时换更强的模型重读这一页。服务端没配强模型就整块不显示 -->
+              <div id="strong-recog-box" style="display:none;margin-bottom:14px;"></div>
               <!-- 一图多题 / 整份试卷：认出几道就列几道，超出批改上限的如实标注 -->
               <div id="paper-sheet" style="display:none;"></div>
               <label class="field-label" id="ocr-title" for="ocr-text">转写文本</label>
@@ -254,7 +296,7 @@
                 </button>
                 <button class="btn" id="paper-grade-btn" type="button" style="display:none;">
                   <span data-icon="layers" data-icon-size="16"></span>
-                  <span id="paper-grade-label">批改整份</span>
+                  <span id="paper-grade-label">批改整页</span>
                 </button>
                 <span class="hint-inline" id="grade-hint"></span>
               </div>
@@ -269,7 +311,7 @@
       <div id="result-body">
         <div class="empty">
           <div class="empty__ico"><span data-icon="info" data-icon-size="40"></span></div>
-          <p class="empty__desc">请先在「01 拍照提交」中选择样例或上传照片，识别后点击「提交批改」。</p>
+          <p class="empty__desc">请先在「01 拍照提交」中选择内置样例或上传照片，识别后点击「提交批改」。</p>
           <div class="empty__actions">
             <button class="btn btn--accent btn--sm" type="button" data-goto="submit">去拍照提交</button>
           </div>

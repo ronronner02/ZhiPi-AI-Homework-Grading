@@ -88,7 +88,7 @@
   /* 分流章的类名后缀。视觉层用 --g/--y/--r，业务层仍只认 green/yellow/red，
      两边靠这张表对上，换设计不用改业务判断。 */
   var STATUS_STAMP = { green: 'g', yellow: 'y', red: 'r' };
-  var ENGINE_TEXT = { vlm: '多模态大模型识别', 'sample-match': '离线演示识别 · 样例匹配' };
+  var ENGINE_TEXT = { vlm: '多模态大模型识别' };
 
   var FACTOR_LABEL = {
     ocr_clarity: 'OCR 识别清晰度',
@@ -128,9 +128,12 @@
   var TRAIL_AT = 0;
   var ACTIVE = 'submit';
   var FOLDERS = [];        // 文件夹列表摘要
-  var ACTIVE_FOLDER = 'demo';
+  var DEFAULT_FOLDER = 'bi-math';   // 与后端 folders.DEFAULT_FOLDER_ID 一致
+  var ACTIVE_FOLDER = DEFAULT_FOLDER;
   var _FOLDER_DETAIL_OPEN_ID = null; // 当前展开的夹 id，null = 收起
-  var SAMPLE_IMAGES = [];  // 内置样例（打开 Demo 夹时展示）
+  var DEMO_GROUPS = [];    // 内置样例夹分组（/api/demo-pages）
+  var DEMO_ITEMS = {};     // item_id -> 内置样例条目，供各处按 id 取文件
+  var BANK_PICKS = {};     // 题库夹里勾选待合并建库的 item_id
 
   /* ======================================================================
      3. 叙事首屏
@@ -151,7 +154,7 @@
     box.innerHTML = picked.map(function (im, i) {
       return '<figure class="collage__f collage__f--' + (i + 1) + '"' +
         ' data-parallax="' + speeds[i] + '" data-parallax-rotate="' + rots[i] + '">' +
-        '<img src="' + esc(im.url) + '" alt="" loading="lazy"></figure>';
+        '<img src="' + esc(im.thumb || im.url) + '" alt="" loading="lazy"></figure>';
     }).join('');
     M.parallax(box);
   }
@@ -261,7 +264,7 @@
       // 把它们改成 block 各占一行。若把句子留成裸文本节点，CSS 就管不到，
       // 390px 下会折出「合成仿手／写」这种词中断行。
       var bits = [
-        '样例图为合成仿手写，历史趋势为模拟数据',
+        '样例为三科真实作业，历史趋势为模拟数据',
         '操作只影响你自己'
       ].map(function (s) {
         return '<span class="note__sep">·</span><span class="note__bit">' + s + '</span>';
@@ -282,12 +285,16 @@
       '普通 AI 批改回答「这道题对不对」，它回答的是「错在哪一步、老师敢不敢信、下节课怎么讲」。<br>' +
       '<b>当前为' + (mock ? '离线演示模式。' : '真实大模型模式。') + '</b>' +
       (mock
-        ? '批改走内置规则引擎，识别走内置样例照片匹配，全程不联网、不消耗任何 API；' +
-          '上传你自己的照片需要服务端配置多模态大模型密钥。'
+        // 内置样例换成真实作业照片后，离线的感知哈希样例匹配一并下线了：
+        // 它只能认出程序合成的那 11 张图。所以 mock 模式下「有分数可看」
+        // 与「能识别照片」不再是一回事，这里必须说清，否则体验者会以为
+        // 断网也能走通拍照批改。
+        ? '教师工作台与班级学情可直接查看（内置作答的批改结果为预置数据）；' +
+          '识别手写照片需要服务端配置多模态大模型密钥，当前不可用。'
         : '识别与批改都会真实调用大模型，可上传任意手写作业照片。') +
-      '<br><b>数据说明。</b>内置 11 份作答的样例图为程序合成的仿手写，学生画像中的历史趋势为模拟数据' +
-      '（界面已标注），真实手写照片的实测数据正在采集中。你的操作只影响你自己这一次体验，' +
-      '随时可点右上角「重置演示」。';
+      '<br><b>数据说明。</b>内置样例是三科真实作业照片（学生页 19 份 + 教师答案页 19 份，' +
+      '卷面无姓名）；教师工作台里的 11 份作答与学生画像中的历史趋势为预置演示数据' +
+      '（界面已标注）。你的操作只影响你自己这一次体验，随时可点右上角「重置演示」。';
     $('#intro-slot').innerHTML =
       '<div class="note note--amber" id="intro-note">' +
       '<span class="note__ico">' + I('info', { size: 18 }) + '</span>' +
@@ -302,14 +309,13 @@
     btn.disabled = true;
     api('/api/demo/reset', { method: 'POST' }).then(function () {
       CURRENT = null; RECOG = null; TRAIL_AT = 0; OUTLINE_MD = '';
-      FOLDERS = []; ACTIVE_FOLDER = 'demo';
+      FOLDERS = []; ACTIVE_FOLDER = DEFAULT_FOLDER; BANK_PICKS = {};
       _FOLDER_DETAIL_OPEN_ID = null;
       $('#recog-sheet').style.display = 'none';
       $('#batch-sheet').style.display = 'none';
       $('#folder-detail-sheet').style.display = 'none';
       $('#folder-feishu-note').style.display = 'none';
-      $('#result-body').innerHTML = emptyBox('请先在「01 拍照提交」中选择样例或上传照片，识别后点击「提交批改」。');
-      markPlate(null);        // 清掉夹内清单上的选中标记
+      $('#result-body').innerHTML = emptyBox('请先在「01 拍照提交」中选择内置样例或上传照片，识别后点击「提交批改」。');
       loadFolders();
       switchTab('submit');
     }).catch(function (e) {
@@ -328,9 +334,17 @@
     return null;
   }
 
+  /* 夹的「角色」决定夹内清单给什么按钮：
+     学生夹 → 加入待批清单；题库夹 → 建题库；自建夹 → 只列上传件。 */
+  function folderRole(meta) {
+    if (!meta || meta.kind !== 'builtin') return 'user';
+    return meta.folder_id === 'bi-bank' ? 'teacher' : 'student';
+  }
+
   function updateUploadTargetHint() {
     var meta = activeFolderMeta();
-    var name = meta ? meta.name : 'Demo 样例';
+    var name = meta ? meta.name : '内置样例';
+    var role = folderRole(meta);
     // 动线条上那句「当前上传目标：___」只填夹名，前缀写死在 index.html 里
     var el = $('#folder-active-hint');
     if (el) el.textContent = name;
@@ -340,8 +354,20 @@
     if (actions) actions.style.display = meta ? '' : 'none';
     var ren = $('#folder-rename-btn');
     var del = $('#folder-delete-btn');
-    if (ren) ren.style.display = (meta && meta.kind !== 'demo') ? '' : 'none';
-    if (del) del.style.display = (meta && meta.kind !== 'demo') ? '' : 'none';
+    if (ren) ren.style.display = (meta && meta.kind !== 'builtin') ? '' : 'none';
+    if (del) del.style.display = (meta && meta.kind !== 'builtin') ? '' : 'none';
+    // 内置学生夹的主按钮是「全部加入待批清单」而不是「整夹一键批改」：
+    // 每份内置样例都要走一次真实识别 + 整页批改，一次点击烧掉五六次模型调用，
+    // 代价与「点错一个按钮」不对等。题库夹没有「批改」这回事，直接隐藏。
+    var gBtn = $('#folder-grade-btn');
+    var gLbl = $('#folder-grade-label');
+    if (gBtn) {
+      gBtn.style.display = (role === 'teacher') ? 'none' : '';
+      if (gLbl) {
+        gLbl.textContent = (role === 'student')
+          ? '全部加入待批清单' : '整夹一键批改';
+      }
+    }
   }
 
   function renderFolders() {
@@ -360,7 +386,10 @@
       if (!count) cls += ' folder--empty';
       if (on) cls += ' is-on';
 
-      var meta = f.kind === 'demo' ? '系统夹 · ' + count + ' 份' : count + ' 份作业';
+      var meta = f.kind === 'builtin'
+        ? (f.folder_id === 'bi-bank' ? '内置答案页 · ' + count + ' 份'
+                                     : '内置样例 · ' + count + ' 份')
+        : count + ' 份作业';
       // 无障碍：夹面的角标与描边都是视觉信号，语义全部压进这一句
       var label = f.name + '，' + meta + (on ? '，当前上传目标' : '');
 
@@ -379,7 +408,7 @@
   function loadFolders() {
     return api('/api/folders').then(function (d) {
       FOLDERS = d.folders || [];
-      ACTIVE_FOLDER = d.active_folder_id || 'demo';
+      ACTIVE_FOLDER = d.active_folder_id || DEFAULT_FOLDER;
       renderFolders();
     }).catch(function (e) {
       var grid = $('#folder-grid');
@@ -427,7 +456,7 @@
 
   function renameFolder() {
     var meta = activeFolderMeta();
-    if (!meta || meta.kind === 'demo') return;
+    if (!meta || meta.kind === 'builtin') return;
     var name = prompt('重命名文件夹', meta.name);
     if (name == null) return;
     name = String(name).trim();
@@ -445,13 +474,13 @@
 
   function deleteFolder() {
     var meta = activeFolderMeta();
-    if (!meta || meta.kind === 'demo') return;
+    if (!meta || meta.kind === 'builtin') return;
     if (!confirm('删除文件夹「' + meta.name + '」？\n夹内已批改的上传件仍保留在工作台，只是不再归属此夹。')) return;
     api('/api/folders/' + encodeURIComponent(meta.folder_id), {
       method: 'DELETE'
     }).then(function (d) {
       FOLDERS = d.folders || [];
-      ACTIVE_FOLDER = d.active_folder_id || 'demo';
+      ACTIVE_FOLDER = d.active_folder_id || DEFAULT_FOLDER;
       $('#folder-detail-sheet').style.display = 'none';
       renderFolders();
     }).catch(function (e) {
@@ -485,25 +514,15 @@
         Icons.hydrate(body);
         return;
       }
-      body.innerHTML = '<div class="file-list">' + items.map(function (it) {
-        var thumb = it.url
-          ? '<span class="file-row__thumb"><img src="' + esc(it.url) + '" alt=""></span>'
-          : '<span class="file-row__thumb">' + I('fileText', { size: 18 }) + '</span>';
-        var st = it.status ? (STATUS_TEXT[it.status] || it.status) : (it.graded ? '已批改' : '未批改');
-        var score = (it.score != null && it.max_score != null)
-          ? (it.score + '/' + it.max_score + ' · ') : '';
-        var action = (it.kind === 'sample' && it.url)
-          ? '<button class="btn btn--ghost btn--sm" type="button" data-sample="' +
-            esc(it.item_id) + '" data-url="' + esc(it.url) + '">批改</button>'
-          : (it.kind === 'upload'
-            ? '<span class="tag tag--mine">已入工作台</span>' : '');
-        return '<div class="file-row">' + thumb +
-          '<div><div class="file-row__name">' + esc(it.student_name || it.item_id) + '</div>' +
-          '<div class="meta-line">' + esc((it.subject || '') +
-            (it.question_title ? ' · ' + it.question_title : '') +
-            ' · ' + score + st) + '</div></div>' + action + '</div>';
-      }).join('') + '</div>';
+      // 内置条目缓存下来：夹内清单里的按钮只带 item_id，取文件时按 id 回查
+      items.forEach(function (it) {
+        if (it.kind === 'builtin') DEMO_ITEMS[it.item_id] = it;
+      });
+      body.innerHTML = (folderRole(meta) === 'teacher')
+        ? renderBankFolder(items)
+        : '<div class="file-list">' + items.map(fileRow).join('') + '</div>';
       Icons.hydrate(body);
+      if (folderRole(meta) === 'teacher') syncBankPickBar();
       sheet.scrollIntoView({ behavior: M.reduced ? 'auto' : 'smooth', block: 'start' });
     }).catch(function (e) {
       body.innerHTML = emptyBox('加载失败：' + e.message, 'alert');
@@ -511,9 +530,185 @@
     });
   }
 
+  /* 题库夹按学科分节：19 份答案页平铺成一列，找「这科的答案」得一行行扫。
+     多选合并是必需的而不是锦上添花——语文的两份答案册属于同一套答案，
+     分成两套题库会让学生页只对上一半。 */
+  function renderBankFolder(items) {
+    var order = [], groups = {};
+    items.forEach(function (it) {
+      var key = it.subject || '其他';
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key].push(it);
+    });
+    var html = '<p class="hint">勾选同一套答案的若干份（如分成两册的答案页），' +
+      '再点「合并建库」建成<b>一套</b>题库；只用一份时直接点该行的「用这份建题库」。</p>' +
+      '<div class="toolbar mt-4" id="bank-pick-bar">' +
+      '<button class="btn btn--primary btn--sm" type="button" id="bank-merge-btn">' +
+      '<span data-icon="layers" data-icon-size="14"></span>' +
+      '<span id="bank-merge-label">合并建库</span></button>' +
+      '<button class="btn btn--ghost btn--sm" type="button" id="bank-pick-clear">清空勾选</button>' +
+      '<span class="hint-inline" id="bank-pick-hint"></span></div>';
+    order.forEach(function (key) {
+      html += '<h4 class="block-title mt-4">' + esc(key) + '</h4>' +
+        '<div class="file-list">' + groups[key].map(fileRow).join('') + '</div>';
+    });
+    return html;
+  }
+
+  /* 夹内清单的一行。三种形态：内置学生页（加入待批清单）、
+     内置教师答案页（勾选 + 用这份建题库）、本会话上传件（只读）。 */
+  function fileRow(it) {
+    var builtin = (it.kind === 'builtin');
+    var thumbSrc = builtin ? it.thumb : it.url;
+    var thumb = thumbSrc
+      ? '<span class="file-row__thumb"><img src="' + esc(thumbSrc) + '" alt="" loading="lazy"></span>'
+      : '<span class="file-row__thumb">' + I('fileText', { size: 18 }) + '</span>';
+
+    var action = '', pick = '', line2;
+    if (builtin && it.role === 'teacher') {
+      pick = '<label class="file-row__pick"><input type="checkbox" data-bank-pick="' +
+        esc(it.item_id) + '"' + (BANK_PICKS[it.item_id] ? ' checked' : '') +
+        ' aria-label="勾选合并建库"></label>';
+      action = '<button class="btn btn--ghost btn--sm" type="button" data-demo-bank="' +
+        esc(it.item_id) + '">用这份建题库</button>';
+    } else if (builtin) {
+      action = '<button class="btn btn--ghost btn--sm" type="button" data-demo-stage="' +
+        esc(it.item_id) + '">加入待批清单</button>';
+    } else if (it.kind === 'upload') {
+      action = '<span class="tag tag--mine">已入工作台</span>';
+    }
+
+    if (builtin) {
+      var bits = [];
+      if (it.subject) bits.push(it.subject);
+      bits.push(it.is_pdf ? ('PDF · ' + (it.page_count || 1) + ' 页') : '图片');
+      if (it.bytes) bits.push((it.bytes / 1048576).toFixed(1) + 'MB');
+      if (it.pair_titles && it.pair_titles.length) {
+        bits.push((it.role === 'teacher' ? '对应学生页：' : '对应答案页：') +
+                  it.pair_titles.join('、'));
+      }
+      line2 = bits.join(' · ');
+    } else {
+      var st = it.status ? (STATUS_TEXT[it.status] || it.status) : (it.graded ? '已批改' : '未批改');
+      var score = (it.score != null && it.max_score != null)
+        ? (it.score + '/' + it.max_score + ' · ') : '';
+      line2 = (it.subject || '') + (it.question_title ? ' · ' + it.question_title : '') +
+        ' · ' + score + st;
+    }
+
+    return '<div class="file-row' + (pick ? ' file-row--pick' : '') + '">' + pick + thumb +
+      '<div><div class="file-row__name">' +
+      esc(it.title || it.student_name || it.item_id) + '</div>' +
+      '<div class="meta-line">' + esc(line2) + '</div></div>' + action + '</div>';
+  }
+
+  function syncBankPickBar() {
+    var n = Object.keys(BANK_PICKS).length;
+    var lbl = $('#bank-merge-label');
+    var btn = $('#bank-merge-btn');
+    var hint = $('#bank-pick-hint');
+    if (lbl) lbl.textContent = n ? ('合并建库（已选 ' + n + ' 份）') : '合并建库';
+    if (btn) btn.disabled = !n;
+    if (hint) {
+      hint.textContent = n
+        ? '这 ' + n + ' 份会合成一套题库'
+        : '先勾选要合并的答案页';
+    }
+  }
+
+  /* 取一份内置样例的文件字节，包成 File——后面 stageFiles / buildBank
+     吃的都是 File，于是内置样例与体验者自己上传的作业走的是同一条链路。 */
+  function fetchDemoFile(it) {
+    return fetch(it.url, { credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.blob();
+    }).then(function (blob) {
+      var name = (it.stage_name || it.title || it.item_id) + (it.is_pdf ? '.pdf' : '.jpg');
+      return new File([blob], name, { type: it.mime || blob.type || 'image/jpeg' });
+    });
+  }
+
+  /** 内置样例 → 待批清单（可一次多份，顺序取文件避免同时几十个请求）。 */
+  function stageDemoItems(ids) {
+    var list = ids.map(function (id) { return DEMO_ITEMS[id]; })
+                  .filter(function (it) { return !!it; });
+    if (!list.length) return;
+    var files = [];
+    var chain = Promise.resolve();
+    list.forEach(function (it) {
+      chain = chain.then(function () {
+        return fetchDemoFile(it).then(function (f) { files.push(f); });
+      });
+    });
+    chain.then(function () {
+      stageFiles(files);
+      toast('已加入待批清单', list.length + ' 份内置作业已进入待批清单，可改名后再批改');
+    }).catch(function (e) {
+      toast('取内置样例失败', e.message);
+    });
+  }
+
+  /** 内置答案页 → 建题库（多份合成一套）。 */
+  function bankFromDemoItems(ids) {
+    var list = ids.map(function (id) { return DEMO_ITEMS[id]; })
+                  .filter(function (it) { return !!it; });
+    if (!list.length) return;
+    var box = $('#teacher-status');
+    if (box) {
+      box.innerHTML = spinner('正在取内置答案页（' + list.length + ' 份）');
+      box.scrollIntoView({ behavior: M.reduced ? 'auto' : 'smooth', block: 'center' });
+    }
+    var files = [];
+    var chain = Promise.resolve();
+    list.forEach(function (it) {
+      chain = chain.then(function () {
+        return fetchDemoFile(it).then(function (f) { files.push(f); });
+      });
+    });
+    chain.then(function () {
+      buildBank(files);
+    }).catch(function (e) {
+      if (box) {
+        box.innerHTML = '<div class="note note--red"><span class="note__ico">' +
+          I('alert', { size: 18 }) + '</span><div><b>取内置答案页失败。</b><br>' +
+          esc(e.message) + '</div></div>';
+        Icons.hydrate(box);
+      }
+    });
+  }
+
+  /** 「全部加入待批清单」：把当前内置学生夹里的内置样例一次性进清单。 */
+  function stageWholeFolder() {
+    var meta = activeFolderMeta();
+    if (!meta) return;
+    var hint = $('#folder-grade-hint');
+    if (hint) hint.innerHTML = '<span class="spin">' + I('loader', { size: 14 }) +
+      '</span> 正在取内置作业…';
+    Icons.hydrate(hint);
+    api('/api/folders/' + encodeURIComponent(meta.folder_id)).then(function (d) {
+      var ids = (d.items || []).filter(function (it) {
+        return it.kind === 'builtin' && it.role !== 'teacher';
+      }).map(function (it) {
+        DEMO_ITEMS[it.item_id] = it;
+        return it.item_id;
+      });
+      if (!ids.length) {
+        if (hint) hint.textContent = '这个夹里没有内置作业可加入。';
+        return;
+      }
+      if (hint) hint.textContent = '已加入 ' + ids.length + ' 份，见下方待批清单。';
+      stageDemoItems(ids);
+    }).catch(function (e) {
+      if (hint) hint.textContent = '取夹内文件失败：' + e.message;
+    });
+  }
+
   function gradeFolder() {
     var meta = activeFolderMeta();
     if (!meta) return;
+    // 内置学生夹：主按钮是「全部加入待批清单」，不在这里烧模型调用
+    if (folderRole(meta) === 'student') { stageWholeFolder(); return; }
+    if (folderRole(meta) === 'teacher') return;
     var hint = $('#folder-grade-hint');
     var note = $('#folder-feishu-note');
     var btn = $('#folder-grade-btn');
@@ -566,7 +761,6 @@
         Icons.hydrate(note);
       }
       loadFolders();
-      if (meta.kind === 'demo') openFolderDetail();
     }).catch(function (e) {
       if (hint) hint.textContent = '整夹批改失败：' + e.message;
     }).then(function () {
@@ -651,32 +845,38 @@
       '<span class="sr-only">（' + (r.on ? '已启用' : '未启用') + '）</span></li>';
   }
 
+  /* 内置样例清单（/api/demo-pages）：只用来写引擎提示与首屏拼贴，
+     真正的入口在夹内清单里——同一批样例平铺两遍，翻页时会看见两次。 */
   function renderGallery(data) {
+    DEMO_GROUPS = (data && data.groups) || [];
+    var students = [];
+    DEMO_GROUPS.forEach(function (g) {
+      (g.items || []).forEach(function (it) {
+        DEMO_ITEMS[it.item_id] = it;
+        if (it.role !== 'teacher') students.push(it);
+      });
+    });
+
+    var counts = DEMO_GROUPS.filter(function (g) { return g.role !== 'teacher'; })
+      .map(function (g) { return g.name + ' ' + (g.items || []).length + ' 份'; })
+      .join(' / ');
+    var bank = DEMO_GROUPS.filter(function (g) { return g.role === 'teacher'; })[0];
+    var bankN = bank ? (bank.items || []).length : 0;
+
     $('#engine-hint').innerHTML = data.vlm_configured
-      ? '识别引擎：<b>多模态大模型</b>（已配置密钥，可识别任意手写作业照片）'
-      : '识别引擎：<b>离线演示识别</b>（未配置多模态密钥，通过感知哈希匹配内置样例照片）';
+      ? '识别引擎：<b>多模态大模型</b>（可识别任意手写作业照片）。已内置三科<b>真实作业</b>：' +
+        esc(counts) + '，另有 <b>' + bankN + '</b> 份教师答案页在「题库」夹——' +
+        '点文件夹再点「查看夹内文件」即可选用。'
+      : '识别引擎：<b>未配置</b>（服务端缺少多模态密钥）。内置样例是真实作业原件，' +
+        '识别需要联网调用大模型，请配置 <code>ZHIPI_VLM_API_KEY</code> 后重试。';
 
     var mb = (CONFIG.guard && CONFIG.guard.max_image_mb) || 8;
     $('#upload-hint').innerHTML = data.vlm_configured
-      ? '支持 PNG / JPG / WebP，超过 1MB 会自动压缩后上传（原图 &#8804; ' + mb + 'MB）'
-      : '当前为离线演示模式，<b>只能识别内置样例照片</b>；识别任意照片需服务端配置多模态密钥';
+      ? '支持 PNG / JPG / WebP / PDF，超过 1MB 会自动压缩后上传（原图 &#8804; ' + mb + 'MB）'
+      : '当前服务端未配置多模态密钥，<b>暂时无法识别任何作业照片</b>（内置样例同样需要联网识别）';
 
-    // 样例照片只在「查看夹内文件」里列出，01b 不再平铺一遍。
-    // 之前两处都渲染，同一批 11 张在一屏里出现两次，翻页时尤其明显。
-    // SAMPLE_IMAGES 仍要留着——首屏拼贴（buildCollage）用的是它。
-    SAMPLE_IMAGES = data.images || [];
-    buildCollage(SAMPLE_IMAGES);
+    buildCollage(students);
     updateUploadTargetHint();
-  }
-
-  /* 标记当前选中的样例。
-     样例平铺图库撤掉后，承载 data-sample 的是夹内清单里的「批改」按钮，
-     所以标记打在它所属的那一行上，而不再找 .plate。 */
-  function markPlate(sid) {
-    $$('[data-sample]').forEach(function (b) {
-      var row = (b.closest && b.closest('.file-row')) || b;
-      row.classList.toggle('is-on', !!sid && b.dataset.sample === sid);
-    });
   }
 
   function blobToB64(blob) {
@@ -689,7 +889,8 @@
   }
 
   /* 上传前压缩：手机原图常 4-8MB，base64 后再涨 1/3，弱网必卡。
-     小于阈值的图片原样上传——离线样例匹配会先比对 SHA-256，重编码会破坏精确命中。 */
+     小于阈值的图片原样上传——内置样例打包时已压到长边 2000（多数 400-800KB），
+     正好落在阈值下，于是链路上只有一次编码。 */
   var COMPRESS_SKIP = 1200 * 1024;
   var MAX_EDGE = 1600;
 
@@ -724,15 +925,236 @@
     }).catch(function () { return file; });   // 压缩失败不阻断，交服务端体积校验兜底
   }
 
-  function selectSample(sid, url) {
-    markPlate(sid);
-    $('#chosen-img').src = url;
-    fetch(url).then(function (r) { return r.blob(); }).then(function (blob) {
+  // ——————————————————————————————————————————————————————————————
+  // 教师页 → 会话题库
+  // 有题库，学生作业就按教师给的标准答案逐题比对，置信度的「答案匹配度」
+  // 这一维才有基准可算；没题库时该维留空、按权重重归一化剔除。
+  // ——————————————————————————————————————————————————————————————
+  var BANKS = [];        // 本会话已建的题库清单
+  var ACTIVE_BANK = '';  // 批改学生页时选用的题库
+
+  function isPdf(file) {
+    return file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+  }
+
+  /* 把一份上传（图片或 PDF）交给服务端拆页并留底。
+     留底是必须的：批改痕迹要画回学生自己那张纸，服务端手里得有原图。 */
+  function uploadPages(file, role) {
+    var maxMB = (CONFIG.guard && CONFIG.guard.max_image_mb) || 8;
+    // PDF 不压缩：压的是图片像素，PDF 压不了，也不该被 canvas 重编码
+    var prep = isPdf(file) ? Promise.resolve(file) : compressImage(file);
+    return prep.then(function (blob) {
+      if (blob.size > maxMB * 1024 * 1024) {
+        throw new Error((isPdf(file) ? '这份 PDF 有 ' : '压缩后仍有 ') +
+          (blob.size / 1048576).toFixed(1) + 'MB，超过 ' + maxMB + 'MB 上限。');
+      }
       return blobToB64(blob).then(function (b64) {
-        return recognize(b64, blob.type || 'image/png', '');
+        return api('/api/upload-pages', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image_base64: b64,
+            mime: blob.type || file.type || 'image/png',
+            filename: file.name || '',
+            role: role || 'student'
+          })
+        });
+      });
+    });
+  }
+
+  function onTeacherFiles(ev) {
+    var files = Array.prototype.slice.call(ev.target.files || []);
+    ev.target.value = '';
+    if (!files.length) return;
+    buildBank(files);
+  }
+
+  function buildBank(files) {
+    var box = $('#teacher-status');
+    box.innerHTML = spinner('正在读答案页并建题库');
+
+    // 逐份上传拆页，把所有页的 page_id 汇总成一套题库。
+    // 一份作业的答案常常横跨两页，分成两套题库会让学生页只能对上一半。
+    var pageIds = [];
+    var chain = Promise.resolve();
+    files.forEach(function (f) {
+      chain = chain.then(function () {
+        return uploadPages(f, 'teacher').then(function (res) {
+          res.pages.forEach(function (p) { pageIds.push(p.page_id); });
+        });
+      });
+    });
+
+    chain.then(function () {
+      box.innerHTML = spinner('已上传 ' + pageIds.length + ' 页，正在逐页读标准答案');
+      return api('/api/bank/build', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          page_ids: pageIds,
+          name: files.map(function (f) {
+            return (f.name || '').replace(/\.[^.]+$/, '');
+          }).join(' + ').slice(0, 40)
+        })
+      });
+    }).then(function (res) {
+      ACTIVE_BANK = res.bank_id;
+      box.innerHTML =
+        '<div class="note note--green"><span class="note__ico">' +
+        I('circleCheck', { size: 18 }) + '</span><div>题库<b>' + esc(res.name) +
+        '</b>已建立：' + res.question_count + ' 道题，总分 ' + res.total_score + ' 分。' +
+        (res.guessed_score_count
+          ? '其中 <b>' + res.guessed_score_count + ' 道题卷面没印分值</b>，' +
+            '已按题型推定，可在下方逐题修改。'
+          : '全部分值取自卷面。') +
+        '<br>现在上传学生作业，就会按这套标准答案逐题比对判分。</div></div>';
+      return loadBanks();
+    }).catch(function (e) {
+      box.innerHTML =
+        '<div class="note note--red"><span class="note__ico">' + I('alert', { size: 18 }) +
+        '</span><div><b>建题库失败。</b><br>' + esc(e.message) + '</div></div>';
+    });
+  }
+
+  function loadBanks() {
+    return api('/api/bank/list').then(function (d) {
+      BANKS = d.banks || [];
+      if (ACTIVE_BANK && !BANKS.some(function (b) { return b.bank_id === ACTIVE_BANK; })) {
+        ACTIVE_BANK = '';
+      }
+      renderBanks();
+    }).catch(function () { /* 题库是可选项，列不出来不该打断主动线 */ });
+  }
+
+  function renderBanks() {
+    var box = $('#bank-box');
+    if (!box) return;
+    if (!BANKS.length) { box.innerHTML = ''; closeBankDetail(); return; }
+
+    box.innerHTML =
+      '<div class="toolbar"><h3 class="block-title" style="margin:0;">本次已建题库</h3></div>' +
+      '<div class="bank-list">' + BANKS.map(function (b) {
+        var on = (b.bank_id === ACTIVE_BANK);
+        return '<div class="bank-row' + (on ? ' is-on' : '') + '">' +
+          '<label class="bank-row__pick">' +
+            '<input type="radio" name="bank-pick" value="' + esc(b.bank_id) + '"' +
+              (on ? ' checked' : '') + '>' +
+            '<span><b>' + esc(b.name) + '</b>' +
+            '<span class="hint-inline"> · ' + esc(b.subject || '学科未定') + ' · ' +
+              b.question_count + ' 题 · 满分 ' + b.total_score + '</span></span>' +
+          '</label>' +
+          '<button class="btn btn--ghost btn--sm" type="button" data-bank-open="' +
+            esc(b.bank_id) + '">查看/改分值</button>' +
+          '<button class="btn btn--ghost btn--sm" type="button" data-bank-del="' +
+            esc(b.bank_id) + '" aria-label="删除题库">&times;</button>' +
+        '</div>';
+      }).join('') + '</div>' +
+      '<label class="bank-row bank-row--none' + (ACTIVE_BANK ? '' : ' is-on') + '">' +
+        '<input type="radio" name="bank-pick" value=""' + (ACTIVE_BANK ? '' : ' checked') + '>' +
+        '<span>不用题库（由大模型自行判分，「答案匹配度」一维留空）</span>' +
+      '</label>';
+
+    box.querySelectorAll('input[name="bank-pick"]').forEach(function (rb) {
+      rb.addEventListener('change', function () {
+        ACTIVE_BANK = rb.value;
+        renderBanks();
+      });
+    });
+    box.querySelectorAll('[data-bank-del]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        api('/api/bank/' + encodeURIComponent(btn.dataset.bankDel), { method: 'DELETE' })
+          .then(loadBanks)
+          .catch(function (e) { toast('删除失败', e.message); });
+      });
+    });
+    box.querySelectorAll('[data-bank-open]').forEach(function (btn) {
+      btn.addEventListener('click', function () { openBank(btn.dataset.bankOpen); });
+    });
+    // 题库被删掉时，它那份展开着的详情也要跟着关——否则页面上留着的是一套
+    // 已经不存在的题目，改它的分值只会拿到 404。
+    var open = openBankId();
+    if (open && !BANKS.some(function (b) { return b.bank_id === open; })) closeBankDetail();
+    else syncBankOpenState();
+    Icons.hydrate(box);
+  }
+
+  /* 题库详情：逐题列出标准答案与分值，分值可改。
+     「系统推定」的分值必须能改——不能改的话，推定就成了教师无法反驳的判断。
+
+     展开态记在 #bank-detail 的 dataset 上，而不是模块变量里：详情的 DOM 与状态
+     同生共死，任何一方被清掉都不会留下「按钮说展开着、下面却是空的」的残影。 */
+  function openBankId() {
+    var box = $('#bank-detail');
+    return (box && box.dataset.openBank) || '';
+  }
+
+  function closeBankDetail() {
+    var box = $('#bank-detail');
+    if (!box) return;
+    delete box.dataset.openBank;
+    box.innerHTML = '';
+    syncBankOpenState();
+  }
+
+  /* 按钮既是入口也是收起开关，文案与 aria 必须跟着展开态走——
+     不然展开后它还写着「查看/改分值」，等于告诉用户再点一次会再展开一遍。 */
+  function syncBankOpenState() {
+    var open = openBankId();
+    $$('[data-bank-open]').forEach(function (btn) {
+      var on = btn.dataset.bankOpen === open;
+      btn.textContent = on ? '收起' : '查看/改分值';
+      btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+    });
+  }
+
+  function openBank(bankId) {
+    var box = $('#bank-detail');
+    if (!box) return;
+    if (openBankId() === bankId) { closeBankDetail(); return; }
+    box.dataset.openBank = bankId;
+    syncBankOpenState();
+    box.innerHTML = spinner('读取题库');
+    api('/api/bank/' + encodeURIComponent(bankId)).then(function (bk) {
+      if (openBankId() !== bankId) return;   // 请求飞在路上时用户点了收起 / 换了一套
+      box.innerHTML =
+        '<div class="bank-detail">' +
+        '<p class="hint">标注「系统推定」的分值是按题型推的（卷面没印分值），可直接修改。</p>' +
+        bk.questions.map(function (q) {
+          return '<div class="bank-q">' +
+            '<span class="bank-q__no">' + esc(q.no || q.qid) + '</span>' +
+            '<span class="bank-q__body">' +
+              '<span class="bank-q__stem">' + esc((q.stem || '').slice(0, 80)) + '</span>' +
+              '<span class="bank-q__ans">标准答案：' +
+                esc((q.standard_answer || '（答案页此题为空）').slice(0, 80)) + '</span>' +
+            '</span>' +
+            '<span class="bank-q__type">' + esc(q.qtype) + '</span>' +
+            '<input class="input input--sm bank-q__score" type="number" min="0.5" max="150" ' +
+              'step="0.5" value="' + q.max_score + '" data-qid="' + esc(q.qid) + '" ' +
+              'aria-label="' + esc(q.no || q.qid) + ' 分值">' +
+            '<span class="bank-q__src' + (q.score_source === 'default' ? ' is-guess' : '') + '">' +
+              (q.score_source === 'printed' ? '卷面印的'
+                : q.score_source === 'teacher' ? '教师已改' : '系统推定') +
+            '</span>' +
+          '</div>';
+        }).join('') + '</div>';
+
+      box.querySelectorAll('.bank-q__score').forEach(function (inp) {
+        inp.addEventListener('change', function () {
+          var val = Number(inp.value);
+          if (!(val > 0)) { toast('分值无效', '分值需要大于 0'); return; }
+          api('/api/bank/' + encodeURIComponent(bankId) + '/score', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ qid: inp.dataset.qid, max_score: val })
+          }).then(function (d) {
+            var src = inp.parentNode.querySelector('.bank-q__src');
+            if (src) { src.textContent = '教师已改'; src.classList.remove('is-guess'); }
+            toast('分值已更新', '这套题库现在满分 ' + d.total_score + ' 分');
+            loadBanks();
+          }).catch(function (e) { toast('改分值失败', e.message); });
+        });
       });
     }).catch(function (e) {
-      showRecogError('读取样例图片失败：' + e.message);
+      if (openBankId() !== bankId) return;
+      box.innerHTML = '<p class="hint">题库读取失败：' + esc(e.message) + '</p>';
     });
   }
 
@@ -744,15 +1166,32 @@
   var NAME_MAX = 20;      // 与后端 _clean_name 的截断长度一致
 
   function stageFiles(files) {
-    var maxMB = (CONFIG.guard && CONFIG.guard.max_image_mb) || 8;
     files.forEach(function (f) {
       // 去扩展名当默认名，并截到后端会保留的长度。不截的话，微信 / 相机的
       // 机器文件名（32 位十六进制之类）会让用户看到一个自己没打过的长名字，
       // 而真正用上的只有前 20 个字符。
       var raw = f.name.replace(/\.[^.]+$/, '').slice(0, NAME_MAX);
-      STAGED_FILES.push({ file: f, name: raw, blobUrl: URL.createObjectURL(f) });
+      STAGED_FILES.push({
+        file: f, name: raw, pdf: isPdf(f),
+        // PDF 没法用 <img> 直接显示缩略图，列表里改用一个文件角标
+        blobUrl: isPdf(f) ? '' : URL.createObjectURL(f)
+      });
     });
     renderStaging();
+  }
+
+  /* 「全部增强批改」按钮：配了强模型才给——按钮在而功能不在，比没有按钮更糟。
+     单独抽出来是因为 config 是异步回来的，可能晚于用户选文件；那时暂存区已经
+     渲染过一轮，只补这个按钮即可，重跑整个 renderStaging 会把页面滚回暂存区。 */
+  function syncStageStrongBtn() {
+    var sBtn = $('#stage-grade-strong-btn');
+    var sLbl = $('#stage-grade-strong-label');
+    if (!sBtn) return;
+    var cfg = CONFIG.strong_recognize || {};
+    sBtn.style.display = cfg.available ? '' : 'none';
+    sBtn.title = '每份都用 ' + (cfg.model || '强模型') +
+      ' 识别：比常规准，但每份约 1 分钟，' + STAGED_FILES.length + ' 份要等更久';
+    if (sLbl) sLbl.textContent = '全部增强批改（' + STAGED_FILES.length + ' 份）';
   }
 
   function renderStaging() {
@@ -761,6 +1200,8 @@
     var title = $('#stage-title');
     var gBtn  = $('#stage-grade-btn');
     var gLbl  = $('#stage-grade-label');
+    var sBtn  = $('#stage-grade-strong-btn');
+    var sLbl  = $('#stage-grade-strong-label');
     var cBtn  = $('#stage-clear-btn');
     if (!box) return;
 
@@ -768,11 +1209,15 @@
     box.style.display = '';
     if (title) title.textContent = '待批清单 · 共 ' + STAGED_FILES.length + ' 份';
     if (gLbl)  gLbl.textContent  = '全部批改（' + STAGED_FILES.length + ' 份）';
+    syncStageStrongBtn();
 
     // 渲染每一份的缩略图 + 改名输入框 + 单独批改/移除按钮
     list.innerHTML = STAGED_FILES.map(function (it, idx) {
       return '<div class="stage-item">' +
-        '<img class="stage-item__thumb" src="' + esc(it.blobUrl) + '" alt="">' +
+        (it.pdf
+          ? '<span class="stage-item__thumb stage-item__thumb--pdf" ' +
+              'data-icon="fileText" data-icon-size="20" title="PDF · 批改时按页拆开"></span>'
+          : '<img class="stage-item__thumb" src="' + esc(it.blobUrl) + '" alt="">') +
         '<input class="input input--sm stage-item__name" type="text" ' +
           'placeholder="学生姓名" value="' + esc(it.name) + '" maxlength="' + NAME_MAX + '" ' +
           'data-idx="' + idx + '" aria-label="学生姓名">' +
@@ -817,21 +1262,8 @@
     });
 
     // 全部批改（只绑一次，通过 onclick 覆写避免重复绑定）
-    if (gBtn) gBtn.onclick = function () {
-      var copy = STAGED_FILES.slice();
-      STAGED_FILES.forEach(function (it) { URL.revokeObjectURL(it.blobUrl); });
-      STAGED_FILES = [];
-      renderStaging();
-      if (copy.length === 1) {
-        handleFileWithName(copy[0].file, copy[0].name);
-      } else {
-        var renamed = copy.map(function (it) {
-          it.file._stageName = it.name;
-          return it.file;
-        });
-        runBatch(renamed);
-      }
-    };
+    if (gBtn) gBtn.onclick = function () { gradeAllStaged(false); };
+    if (sBtn) sBtn.onclick = function () { gradeAllStaged(true); };
     // 清空
     if (cBtn) cBtn.onclick = function () {
       STAGED_FILES.forEach(function (it) { URL.revokeObjectURL(it.blobUrl); });
@@ -842,29 +1274,87 @@
     box.scrollIntoView({ behavior: M.reduced ? 'auto' : 'smooth', block: 'nearest' });
   }
 
+  /* 清空暂存区，把这一批送去批改。strong=true 时整批改用强模型识别。
+
+     为什么批量需要单独的入口：单份路径上的「字迹潦草？换强模型重读」是批完之后
+     的补救，一叠字迹都潦草的作业按那条路走，得等常规批改跑完再一份份点回去重读，
+     且第一遍的错判已经进了工作台。所以在送批前给一次选择。 */
+  function gradeAllStaged(strong) {
+    var copy = STAGED_FILES.slice();
+    if (!copy.length) return;
+    STAGED_FILES.forEach(function (it) { URL.revokeObjectURL(it.blobUrl); });
+    STAGED_FILES = [];
+    renderStaging();
+    if (copy.length === 1) {
+      handleFileWithName(copy[0].file, copy[0].name, strong);
+    } else {
+      var renamed = copy.map(function (it) {
+        it.file._stageName = it.name;
+        return it.file;
+      });
+      runBatch(renamed, strong);
+    }
+  }
+
   // 带自定义学生名的单文件识别入口
-  function handleFileWithName(file, studentName) {
-    var maxMB = (CONFIG.guard && CONFIG.guard.max_image_mb) || 8;
-    markPlate(null);
+  function handleFileWithName(file, studentName, strong) {
     var sheet = $('#recog-sheet');
     sheet.style.display = '';
     $('#recog-result').style.display = 'none';
-    $('#recog-status').innerHTML = spinner('正在处理图片');
+    $('#recog-status').innerHTML = spinner(isPdf(file) ? '正在拆页' : '正在处理图片');
     sheet.scrollIntoView({ behavior: M.reduced ? 'auto' : 'smooth', block: 'start' });
-    compressImage(file).then(function (blob) {
-      if (blob.size > maxMB * 1024 * 1024) {
-        showRecogError('压缩后仍有 ' + (blob.size / 1048576).toFixed(1) + 'MB，超过 ' +
-          maxMB + 'MB 上限。');
-        return;
+
+    // 照片和 PDF 走同一条路：都先交给服务端留底并拆页。
+    // 照片其实只有一页，但仍然要留底——批改痕迹要画回学生自己那张纸，
+    // 服务端手里得有原图。以前照片是直接把 base64 送去识别、不留底的，
+    // 于是批完就没法在原图上留痕。
+    uploadPages(file, 'student').then(function (res) {
+      if (!res.pages.length) { showRecogError('这份文件没有可处理的页'); return; }
+      if (res.pages.length === 1) {
+        recognizePage(res.pages[0],
+                      res.kind === 'pdf' ? 'PDF 已拆页（共 1 页）' : '', studentName, strong);
+      } else {
+        openPdfPicker(file.name || '学生作业', res, studentName, strong);
       }
-      $('#chosen-img').src = URL.createObjectURL(blob);
-      var note = (blob !== file)
-        ? '已自动压缩 ' + (file.size / 1048576).toFixed(1) + 'MB → ' + (blob.size / 1048576).toFixed(1) + 'MB'
-        : '';
-      return blobToB64(blob).then(function (b64) {
-        return recognize(b64, blob.type || file.type || 'image/png', note, studentName);
+    }).catch(function (e) { showRecogError(e.message); });
+  }
+
+  /* PDF 拆出多页时让用户先选页。也给「全部批改」——一本作业册逐页点，
+     每点一次等一轮，是把一次批改变成排队。全批走批量链路，每页一份结果。 */
+  function openPdfPicker(name, res, studentName, strong) {
+    var allLabel = (strong ? '全部增强批改（' : '全部批改（') + res.page_total + ' 页）';
+    $('#recog-status').innerHTML =
+      '<div class="note"><span class="note__ico">' + I('fileText', { size: 18 }) +
+      '</span><div><b>' + esc(name) + '</b> 共 ' + res.page_total + ' 页，已自动拆页。' +
+      '<br>可整本全批，也可先点选其中一页。</div></div>' +
+      '<div class="toolbar" style="margin:12px 0 0;">' +
+      '<button class="btn btn--accent btn--sm" type="button" id="pdf-all-btn">' +
+      I('layers', { size: 14 }) + '<span>' + esc(allLabel) + '</span></button>' +
+      '</div>' +
+      '<div class="pdf-pages">' +
+      res.pages.map(function (p, i) {
+        return '<button class="pdf-page" type="button" data-pdf-i="' + i + '">' +
+          '<img src="' + esc(p.url) + '" alt="第 ' + p.page_no + ' 页">' +
+          '<span>第 ' + p.page_no + ' 页</span></button>';
+      }).join('') + '</div>';
+
+    var status = $('#recog-status');
+    var allBtn = $('#pdf-all-btn');
+    if (allBtn) {
+      allBtn.addEventListener('click', function () {
+        status.innerHTML = '';
+        runBatchPages(res.pages, studentName || name, strong);
+      });
+    }
+    status.querySelectorAll('[data-pdf-i]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var page = res.pages[Number(btn.dataset.pdfI)];
+        status.innerHTML = '';
+        recognizePage(page, '第 ' + page.page_no + ' / ' + res.page_total + ' 页',
+                      studentName, strong);
       });
     });
+    Icons.hydrate(status);
   }
 
   function onFileChosen(ev) {
@@ -887,39 +1377,72 @@
   var BATCH_MAX = 20;   // 公开演示单次上限，超限提示拆批
   var BATCH_TOKEN = 0;  // 批次令牌：重入时作废旧批次，防并行交叉
   var BATCH_LIST = null; // 当前批次列表，renderBatchDone/selectBatchResult 共用
-  // 进度区被两种流程共用：批量照片（量词「张」）与整份试卷（量词「道」）
-  var BATCH_MODE = 'photos';
-  var BATCH_PAPER_ID = '';
 
-  function runBatch(files) {
+  function runBatch(files, strong) {
     if (files.length > BATCH_MAX) {
-      alert('单次最多 ' + BATCH_MAX + ' 张，已选 ' + files.length +
-        ' 张。请拆成多次上传。');
+      alert('单次最多 ' + BATCH_MAX + ' 份，已选 ' + files.length +
+        ' 份。请拆成多次上传。');
       return;
     }
-    var token = ++BATCH_TOKEN;
-    BATCH_MODE = 'photos';    // 与整份试卷共用进度区，量词不同，进来先复位
-    BATCH_PAPER_ID = '';
     var list = files.map(function (f) {
-      // 未经暂存区的直传（拖入 / 整卷）也要截，f.name 这里是带扩展名的原始文件名
+      // 未经暂存区的直传（拖入）也要截，f.name 这里是带扩展名的原始文件名
       return { file: f, name: (f._stageName || f.name).slice(0, NAME_MAX),
                status: 'queued', text: '待处理' };
     });
+    startBatch(list, strong);
+  }
+
+  /* PDF 全批：拆好的每一页各算一份，送进同一条批量链路。
+     入口在拆页选择界面上——那里本来只能挑一页批，一份 12 页的作业册
+     要点 12 次、每次等一轮。 */
+  function runBatchPages(pages, baseName, strong) {
+    if (pages.length > BATCH_MAX) {
+      alert('单次最多 ' + BATCH_MAX + ' 页，这份共 ' + pages.length +
+        ' 页。请逐页批，或拆分 PDF 后再传。');
+      return;
+    }
+    var list = pages.map(function (p) {
+      return { page: p, name: pageItemName(baseName, p),
+               status: 'queued', text: '待处理' };
+    });
+    startBatch(list, strong);
+  }
+
+  /* 页名 = 文件名 + 页号。先给页号留位再截文件名：直接截整串的话，
+     名字长一点的作业每页都会截成同一个前缀，工作台里十几份同名，分不出谁是谁。 */
+  function pageItemName(baseName, page) {
+    var suffix = ' · 第 ' + page.page_no + ' 页';
+    var base = (baseName || '作业').slice(0, Math.max(1, NAME_MAX - suffix.length));
+    return base + suffix;
+  }
+
+  function startBatch(list, strong) {
+    var token = ++BATCH_TOKEN;
     var sheet = $('#batch-sheet');
     sheet.style.display = '';
     $('#recog-sheet').style.display = 'none';
     $('#batch-done').style.display = 'none';
     sheet.scrollIntoView({ behavior: M.reduced ? 'auto' : 'smooth', block: 'start' });
     renderBatch(list);
-    processBatch(list, 0, token);
+    processBatch(list, 0, token, strong);
   }
 
   function renderBatch(list) {
     var done = list.filter(function (it) { return it.status === 'ok' || it.status === 'fail'; }).length;
     var pct = Math.round(done / list.length * 100);
+    /* 「可以走开」必须写在界面上，否则教师只会盯着进度条等。
+       超时预算已经按离开式批改放宽（识别 300s / 强模型 900s / 批改 300s），
+       一份作业走完整条链路是分钟级的——不说清楚，慢就会被当成卡死。
+       只在还没批完时提示；推送那半句仅在真配了 webhook 时说，
+       否则就是承诺一个不存在的通知。 */
+    var waitHint = done < list.length
+      ? '<span class="hint"> · 每份通常 1-2 分钟，可以离开页面'
+        + (CONFIG && CONFIG.feishu_webhook_configured
+           ? '，全部批完会自动推送飞书审核卡片' : '')
+        + '</span>'
+      : '';
     $('#batch-progress').innerHTML =
-      '已处理 <b class="mono">' + done + ' / ' + list.length + '</b>' +
-      (BATCH_MODE === 'paper' ? ' 道' : ' 张');
+      '已处理 <b class="mono">' + done + ' / ' + list.length + '</b> 份' + waitHint;
     $('#batch-bar-fill').style.width = pct + '%';
     $('#batch-list').innerHTML = list.map(function (it, i) {
       var cls = 'batch-item';
@@ -944,18 +1467,12 @@
     var ok = list.filter(function (it) { return it.status === 'ok'; }).length;
     var fail = list.length - ok;
     var box = $('#batch-done');
-    // 整份试卷与批量照片共用这块进度区，但量词不同：一份卷子是「道题」，
-    // 批量上传是「张照片」。写死「张」会让整卷批改的完成提示读起来是错的。
-    var paper = (BATCH_MODE === 'paper');
-    var unit = paper ? ' 道' : ' 张';
     box.style.display = '';
     box.innerHTML =
       '<div class="note ' + (fail ? 'note--amber' : 'note--green') + '">' +
       '<span class="note__ico">' + I(fail ? 'alert' : 'check', { size: 18 }) + '</span>' +
-      '<div><b>' + (paper ? '整份批改完成' : '批量完成') + '</b>：成功 ' + ok + unit +
-      (fail ? '，失败 ' + fail + unit : '') +
-      (paper && BATCH_PAPER_ID
-        ? '。同卷各题共享编号 <b>' + esc(BATCH_PAPER_ID) + '</b>' : '') +
+      '<div><b>批量完成</b>：成功 ' + ok + ' 份' +
+      (fail ? '，失败 ' + fail + ' 份' : '') +
       '。已进入当前文件夹与教师工作台，按红黄绿置信度分流——<b>优先审红、黄桶</b>。</div>' +
       '</div>' +
       '<div class="toolbar" style="margin:14px 0 0;">' +
@@ -1049,125 +1566,245 @@
     }
   }
 
-  function processBatch(list, idx, token) {
+  /* 送批载荷：识别阶段产出的元信号必须跟着题目一起回传。
+
+     这里以前在 processBatch 与 gradePaper 里各手写了一份字段清单，识别侧新增的
+     字段没人记得同步两处——qtype / overflow / attribution_confidence 加上之后，
+     服务端 _clean_page_questions 建好了接收位、批改端写好了消费逻辑，前端却始终
+     没传，于是三阶段识别标出来的越界作答与归属把握在批改层恒为缺省值，等于没做。
+     抽成一处，以后识别侧加字段只改这里。 */
+  function gradeItem(q, answerOverride) {
+    return {
+      no: q.no || '', subject: q.subject || '', stem: q.stem || '',
+      answer: answerOverride !== undefined ? answerOverride : (q.answer || ''),
+      printed_max_score: q.printed_max_score || null,
+      bbox: q.bbox || null,
+      // 学生作答的位置：批改痕迹的勾叉画在这里，不传就只能画在页边
+      answer_box: q.answer_box || null,
+      // 题型决定这道题该不该看解题步骤，客观题只核对答案
+      qtype: q.qtype || '',
+      // 越界作答与归属把握：这道题的转写可不可信
+      overflow: !!q.overflow,
+      attribution_confidence: typeof q.attribution_confidence === 'number'
+        ? q.attribution_confidence : null,
+      // 定向复识留痕：改写过的题，以及模型自己都说看不清的题
+      refined: !!q.refined,
+      refine_changed: !!q.refine_changed,
+      refine_reason: q.refine_reason || '',
+      legible_hint: q.legible_hint === false ? false : null
+    };
+  }
+
+
+  function processBatch(list, idx, token, strong) {
     if (idx >= list.length) return;
     var it = list[idx];
     it.status = 'working';
-    it.text = '识别中';
+    it.text = strong ? '强模型识别中（1-2 分钟）' : '识别中';
     renderBatch(list);
-    var maxMB = (CONFIG.guard && CONFIG.guard.max_image_mb) || 8;
 
-    compressImage(it.file).then(function (blob) {
-      // token 守卫：paper grading 会 BATCH_TOKEN++，作废本批次的递归，
-      // 但已经发出的 fetch 会继续跑完并在 resolve 里调 renderBatch(photoList)，
-      // 把整版试卷的进度区用照片数据覆盖掉。在这里检查一次，凡是 token 已变的
-      // 就提前返回——不再更新 UI，也不再调用后续的识别/批改请求。
-      if (token !== BATCH_TOKEN) return;
-      if (blob.size > maxMB * 1024 * 1024) {
-        it.status = 'fail';
-        it.text = '超过 ' + maxMB + 'MB 上限';
-        renderBatch(list);
-        if (token === BATCH_TOKEN) processBatch(list, idx + 1, token);
-        return;
-      }
-      return blobToB64(blob).then(function (b64) {
-        return api('/api/recognize-image', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_base64: b64, mime: blob.type || 'image/png' })
-        }).then(function (r) {
-          if (r.engine === 'none') {
-            it.status = 'fail';
-            it.text = '未能识别：离线演示模式只识别下方内置样例';
-            it.html = RECOG_GUIDE[r.reason] || RECOG_GUIDE.no_match;
-            renderBatch(list);
-            if (token === BATCH_TOKEN) processBatch(list, idx + 1, token);
-            return;
-          }
-          it.text = '批改中';
+    function next() {
+      if (token === BATCH_TOKEN) processBatch(list, idx + 1, token, strong);
+    }
+
+    // 与单份路径同一条链路：先留底拆页，再识别，再整页批改。
+    // 批量以前走的是「一份 = 一道题」的 grade-image，于是批量上传的作业
+    // 既没有批改痕迹、也用不上题库——同一个动作在两条入口里结果不一样。
+    //
+    // it.page 已经是拆好的页（PDF 全批入口、或上一项展开时插进来的），不必再传一次。
+    var ready = it.page
+      ? Promise.resolve(it.page)
+      : uploadPages(it.file, 'student').then(function (up) {
+          if (token !== BATCH_TOKEN) return null;
+          var pages = up.pages || [];
+          if (!pages.length) throw new Error('没有可处理的页');
+          if (pages.length > 1) expandPdfPages(list, idx, it, pages);
+          return pages[0];
+        });
+
+    ready.then(function (page) {
+      if (token !== BATCH_TOKEN || !page) return;
+      return api('/api/recognize-image', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ page_id: page.page_id, strong: !!strong })
+      }).then(function (r) {
+        if (token !== BATCH_TOKEN) return;
+        if (r.engine === 'none') {
+          it.status = 'fail';
+          it.text = '未能识别：离线演示模式只识别下方内置样例';
+          it.html = RECOG_GUIDE[r.reason] || RECOG_GUIDE.no_match;
           renderBatch(list);
-          var body;
-          if (r.engine === 'vlm') {
-            body = { ocr_text: r.text || '', ocr_clarity: r.clarity, engine: r.engine,
-                     folder_id: ACTIVE_FOLDER || undefined };
-            if (r.question_id) {
-              body.question_id = r.question_id;
-            } else if (r.question_text) {
-              // 同单份路径：题库外作业走题面 + 学科的判别分体系
-              body.stem = r.question_text;
-              body.subject = r.subject || undefined;
-              body.printed_max_score = r.printed_max_score || undefined;
-            } else {
-              it.status = 'fail';
-              it.text = '未能提取题面';
-              renderBatch(list);
-              if (token === BATCH_TOKEN) processBatch(list, idx + 1, token);
-              return;
-            }
-          } else if (r.matched_submission_id) {
-            body = { matched_submission_id: r.matched_submission_id, engine: r.engine,
-                     folder_id: ACTIVE_FOLDER || undefined };
-          } else {
-            it.status = 'fail';
-            it.text = '未能判定题目';
-            renderBatch(list);
-            if (token === BATCH_TOKEN) processBatch(list, idx + 1, token);
-            return;
+          next();
+          return;
+        }
+        var qs = r.questions || [];
+        if (!qs.length) {
+          it.status = 'fail';
+          it.text = '未能提取题面';
+          renderBatch(list);
+          next();
+          return;
+        }
+        it.text = '批改中（' + qs.length + ' 道题）';
+        renderBatch(list);
+        return api('/api/grade-page', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            page_id: page.page_id,
+            questions: qs.map(function (q) { return gradeItem(q); }),
+            subject: r.subject || undefined,
+            clarity: r.clarity,
+            bank_id: ACTIVE_BANK || undefined,
+            student_name: it.name || undefined,
+            engine: r.engine,
+            folder_id: ACTIVE_FOLDER || undefined
+          })
+        }).then(function (res) {
+          if (token !== BATCH_TOKEN) return;
+          it.status = 'ok';
+          it.result = res;   // 保留该份完整批改结果，供批量卡片就地展开证据链
+          it.text = res.total_score + ' / ' + res.max_score + ' 分 · 置信度 ' +
+            Math.round(res.confidence) + ' · ' + esc(STATUS_TEXT[res.status] || res.status);
+          // 批量是降级最容易发生的地方（连打几十次，网关一抖就掉到单次路径），
+          // 也是最难发现的地方——列表里只有分数，没人会去点开看识别详情。
+          // 这一份的题库匹配大概率偏差，标出来让教师知道该重跑哪几份。
+          if (r.staged === false && r.staged_error) {
+            it.text += ' · ⚠ 已降级识别';
           }
-          return api('/api/grade-image', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-          }).then(function (res) {
-            it.status = 'ok';
-            it.result = res;   // 保留该份完整批改结果，供批量卡片就地展开证据链
-            it.text = res.total_score + ' / ' + res.max_score + ' 分 · 置信度 ' +
-              Math.round(res.confidence) + ' · ' + esc(STATUS_TEXT[res.status] || res.status);
-            if (idx === list.length - 1 && token === BATCH_TOKEN) CURRENT = res;
-            renderBatch(list);
-            if (token === BATCH_TOKEN) processBatch(list, idx + 1, token);
-          });
+          if (idx === list.length - 1 && token === BATCH_TOKEN) CURRENT = res;
+          renderBatch(list);
+          next();
         });
       });
     }).catch(function (e) {
       it.status = 'fail';
       it.text = '失败：' + e.message;
       renderBatch(list);
-      if (token === BATCH_TOKEN) processBatch(list, idx + 1, token);
+      next();
     });
   }
 
-  /* 识别不了是公开体验里最常见的一步：必须给出路，而不是甩一句「失败」 */
+  /* 一份多页 PDF = 多份作业：第 2 页起就地插到当前项后面，逐页批完。
+     以前批量只批第 1 页并写一句「本次只批第 1 页」，一本 12 页的作业册
+     批完只有 1 页有结果，其余 11 页既没进工作台也无从补批。
+     超出单次上限的部分如实说明，不静默丢。 */
+  function expandPdfPages(list, idx, it, pages) {
+    var base = it.name;
+    it.name = pageItemName(base, pages[0]);
+    it.page = pages[0];
+    var rest = pages.slice(1);
+    var room = Math.max(0, BATCH_MAX - list.length);
+    var dropped = Math.max(0, rest.length - room);
+    if (dropped) rest = rest.slice(0, room);
+    var extra = rest.map(function (p) {
+      return { page: p, name: pageItemName(base, p), status: 'queued', text: '待处理' };
+    });
+    list.splice.apply(list, [idx + 1, 0].concat(extra));
+    // 立刻刷新清单：不刷的话，新增的页要等当前这页批完（十几秒起）才冒出来，
+    // 进度条会先显示 0/1 再跳成 0/12，看着像卡住了又自己变了。
+    renderBatch(list);
+    if (dropped) {
+      toast('本次少批 ' + dropped + ' 页',
+            base + ' 共 ' + pages.length + ' 页，单次上限 ' + BATCH_MAX +
+            ' 份，后 ' + dropped + ' 页没有批改，请另起一批。');
+    }
+  }
+
+  /* 识别不了是公开体验里最常见的一步：必须给出路，而不是甩一句「失败」。
+     内置样例现在也是真实作业原件，同样要联网识别，所以这里没有「换成样例
+     就能跑」的兜底可以给——只能如实说清楚是哪一环出的问题、还能做什么。 */
   var RECOG_GUIDE = {
-    no_match:
-      '这张照片不在内置样例库中。当前是<b>离线演示模式</b>——识别环节通过与内置手写样例照片比对来模拟，' +
-      '因此只认得下方图库里的样例。<br>点下方任意一张样例照片，同样能走完整条动线：' +
-      '识别 → 过程级批改 → 红黄绿分流 → 教师终审 → 班级看板。',
+    vlm_not_configured:
+      '服务端还没有配置多模态识别密钥（<code>ZHIPI_VLM_API_KEY</code>）。' +
+      '识别与批改都要联网调用大模型，内置的三科真实作业也不例外。<br>' +
+      '自行部署时在环境变量里配好密钥后重启即可；' +
+      '②③④ 三屏用的是内置基线数据，现在就能看。',
     vlm_unavailable:
-      '真实识别暂时不可用（公开体验的每日额度已用尽）。<b>离线链路完全不受影响</b>——' +
-      '点下方任意一张内置样例照片，仍可完整体验批改、分流与教师终审。',
+      '真实识别暂时不可用：公开体验的每日额度已用尽。<br>' +
+      '可以明天再来，或自行部署配置自己的密钥；' +
+      '②③④ 三屏的工作台、班级看板与错因画像不受影响，现在就能看。',
     vlm_failed:
-      '多模态识别调用失败，可能是网络或上游服务波动。可稍后重试，' +
-      '或先用下方内置样例照片体验完整流程。'
+      '多模态识别调用失败，可能是网络或上游服务波动。<br>' +
+      '可稍后重试；若这张照片字迹特别潦草或拍得很斜，' +
+      '换一份内置样例先跑通链路，再回头调这张。'
   };
 
   function recognize(b64, mime, note, studentName) {
+    return recognizeWith({ image_base64: b64, mime: mime }, note, studentName);
+  }
+
+  /* 按已上传的页图识别（PDF 拆页后的走法）。
+     服务端手里留着那一页的原图，批改完才画得回去。 */
+  /* 「字迹潦草？换强模型重读」按钮。只在服务端确实配了强模型时出现——
+     按钮在而功能不在，比没有按钮更糟。已经是强模型的结果就不再提供。 */
+  function renderStrongButton(r) {
+    var box = $('#strong-recog-box');
+    if (!box) return;
+    var cfg = CONFIG.strong_recognize || {};
+    var show = cfg.available && r && r.engine === 'vlm' && !r.strong;
+    box.style.display = show ? '' : 'none';
+    if (!show) return;
+    box.innerHTML =
+      '<button class="btn btn--sm" type="button" id="strong-recog-btn">' +
+        I('scan', { size: 14 }) + '<span>字迹潦草？换强模型重读</span></button>' +
+      '<span class="hint" style="margin-left:8px">' +
+        esc(cfg.model || '强模型') + '，约 1 分钟，比常规识别准但慢</span>';
+    Icons.hydrate(box);
+    var btn = $('#strong-recog-btn');
+    if (btn) btn.addEventListener('click', strongRecognize);
+  }
+
+
+  function recognizePage(page, note, studentName) {
+    var img = $('#chosen-img');
+    if (img) img.src = page.url;
+    return recognizeWith({ page_id: page.page_id }, note, studentName);
+  }
+
+  /* 强模型重识别：把最近一次识别用过的那份入参原样再跑一遍，只多带 strong。
+
+     为什么做成按钮而不是自动：强模型一次调用 60 秒上下，是常规档的十倍，
+     整体默认打开会把演示拖垮。而「这份字迹潦草」恰恰是教师一眼就能判断、
+     系统很难自知的事（模型读错时的自报置信度与读对时一样高），所以把开关
+     交给人——看着不对就点一下重读。 */
+  var LAST_RECOG_BODY = null;
+
+  function strongRecognize() {
+    if (!LAST_RECOG_BODY) return;
+    var btn = $('#strong-recog-btn');
+    if (btn && btn.disabled) return;
+    if (btn) btn.disabled = true;
+    var body = {};
+    Object.keys(LAST_RECOG_BODY).forEach(function (k) { body[k] = LAST_RECOG_BODY[k]; });
+    body.strong = true;
+    recognizeWith(body, '强模型重识别', RECOG && RECOG.student_name)
+      .catch(function () { })
+      .then(function () { if (btn) btn.disabled = false; });
+  }
+
+  function recognizeWith(body, note, studentName) {
     RECOG = null;
+    LAST_RECOG_BODY = body;
+    var strong = !!body.strong;
     var sheet = $('#recog-sheet');
     sheet.style.display = '';
     $('#recog-result').style.display = 'none';
-    $('#recog-status').innerHTML = spinner('正在识别手写内容');
+    $('#recog-status').innerHTML = spinner(strong
+      ? '正在用强模型重新识别（实测整页 1-2 分钟，可以先做别的）'
+      : '正在识别手写内容（整页三阶段，通常 1 分钟出头）');
     sheet.scrollIntoView({ behavior: M.reduced ? 'auto' : 'smooth', block: 'start' });
 
     return api('/api/recognize-image', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_base64: b64, mime: mime })
+      body: JSON.stringify(body)
     }).then(function (r) {
       if (r.engine === 'none') {
         $('#recog-status').innerHTML =
           '<div class="note note--amber"><span class="note__ico">' + I('alert', { size: 18 }) +
           '</span><div><b>未能识别这张照片。</b><br>' +
-          (RECOG_GUIDE[r.reason] || RECOG_GUIDE.no_match) +
-          '<div class="mt-4"><button class="btn btn--sm" type="button" id="use-sample">' +
-          I('image', { size: 14 }) + '<span>用内置样例照片体验</span>' +
+          (RECOG_GUIDE[r.reason] || RECOG_GUIDE.vlm_failed) +
+          '<div class="mt-4"><button class="btn btn--sm" type="button" data-goto="teacher">' +
+          I('table', { size: 14 }) + '<span>先去看教师工作台</span>' +
           I('arrowRight', { size: 14 }) + '</button></div>' +
           (r.error ? '<p class="hint mt-4">技术详情：' + esc(r.error) + '</p>' : '') +
           '</div></div>';
@@ -1183,10 +1820,7 @@
         esc(ENGINE_TEXT[r.engine] || r.engine) + '</span>');
       var clarityCls = r.clarity >= 85 ? 'factor--ok' : (r.clarity >= 60 ? 'factor--warn' : 'factor--bad');
       badges.push('<span class="factor ' + clarityCls + '">卷面清晰度 <b>' + r.clarity + '</b></span>');
-      if (r.matched_submission_id) {
-        badges.push('<span class="factor factor--ok">命中内置样例 <b>' +
-          esc(r.student_name || '') + ' · ' + esc(r.subject || '') + '</b></span>');
-      } else if (r.question_id) {
+      if (r.question_id) {
         badges.push('<span class="factor factor--ok">自动判题 <b>' +
           esc(r.subject || '') + ' · ' + esc(r.question_title || '') + '</b></span>');
       } else if (r.subject) {
@@ -1206,7 +1840,24 @@
       }
       if (note) badges.push('<span class="factor">' + esc(note) + '</span>');
       if (r.quota_note) badges.push('<span class="factor factor--warn">' + esc(r.quota_note) + '</span>');
+      // 三阶段识别挂了、降级走了单次这条备用路。以前这件事只存在于返回值里
+      // （staged_error），日志不打、界面不显示，于是「这一页为什么大量题对不上
+      // 题库」在任何一处都查不到——教师以为是题库没建好。降级出来的转写确实
+      // 更差：实测英语完形填空会把相邻几道题的题干读成同一段，只有一道能配上。
+      if (r.staged === false && r.staged_error) {
+        badges.push('<span class="factor factor--warn">已降级为备用识别</span>');
+      }
+      if (r.strong) {
+        badges.push('<span class="factor factor--ok">强模型识别 <b>' +
+          esc(r.model_tier || '') + '</b></span>');
+      }
+      if (r.strong_error) {
+        // 强模型挂了会静默回落常规链路。不说的话，教师以为自己点的那一下生效了，
+        // 看到的却还是同一份转写。
+        badges.push('<span class="factor factor--warn">强模型未成功，已回落常规识别</span>');
+      }
       $('#recog-badges').innerHTML = badges.join('');
+      renderStrongButton(r);
 
       renderPaperList(r);
 
@@ -1225,188 +1876,120 @@
     });
   }
 
-  /* 一图多题 / 整份试卷：把认出来的每道题都列出来。
-     单题时整块隐藏，界面与原来完全一致——绝大多数上传都是单题，
-     不该为了少数整卷场景给所有人多加一块东西。 */
+  /* 一图多题 / 整页作业：把认出来的每道题都列出来，并给出「批改整页」入口。
+     单题时整块隐藏，界面与原来完全一致——绝大多数单张照片只有一道题，
+     不该为了整页场景给所有人多加一块东西。 */
   function renderPaperList(r) {
     var box = $('#paper-sheet');
     var btn = $('#paper-grade-btn');
     var qs = (r && r.questions) || [];
+    // 有 page_id 就能整页批改，哪怕只认出一道题（整页批改的口径也更好）
+    var canPage = !!(r && r.page_id) && qs.length >= 1;
     if (!box || qs.length < 2) {
       if (box) { box.style.display = 'none'; box.innerHTML = ''; }
-      if (btn) btn.style.display = 'none';
+      if (btn) btn.style.display = canPage && qs.length === 1 ? '' : 'none';
+      if (canPage && qs.length === 1) {
+        $('#paper-grade-label').textContent = '批改整页（1 道）';
+      }
       return;
     }
 
-    var cap = r.gradable_count || qs.length;
+    // 记号的落点：优先贴着学生作答，其次贴着题目框，与 marks._anchor 同口径
+    var onAnswer = qs.filter(function (q) { return !!q.answer_box; }).length;
+    var located = qs.filter(function (q) { return !!(q.answer_box || q.bbox); }).length;
     var rows = qs.map(function (q) {
-      var no = '<span class="paper-q__no">' + q.index + '</span>';
+      var no = '<span class="paper-q__no">' + esc(q.no || q.index) + '</span>';
       var score = q.printed_max_score
         ? '<span class="paper-q__pm">卷面 ' + q.printed_max_score + ' 分</span>' : '';
-      // 超出上限的题如实标灰，题面仍然留着，可稍后单独提交
-      var off = q.gradable === false
-        ? '<span class="paper-q__off">超出本次上限</span>' : '';
-      return '<label class="paper-q' + (q.gradable === false ? ' is-off' : '') + '">' +
+      return '<label class="paper-q">' +
         no +
         '<span class="paper-q__body">' +
           '<span class="paper-q__t">' + esc(q.subject || '') + ' · ' +
             esc(q.title || ('第 ' + q.index + ' 题')) + '</span>' +
           '<span class="paper-q__s">' + esc((q.answer || '').slice(0, 60) || '（未识别到作答）') +
           '</span>' +
-        '</span>' + score + off +
+        '</span>' + score +
         '</label>';
     }).join('');
 
     box.style.display = '';
     box.innerHTML =
       '<div class="paper-head">' +
-        '<b>这张图认出 ' + qs.length + ' 道题</b>' +
-        '<span class="hint-inline">下方转写框只对应第 1 题；整份批改会为每道题单独出一份结果</span>' +
+        '<b>这一页认出 ' + qs.length + ' 道题</b>' +
+        '<span class="hint-inline">「批改整页」一次批完全部题目，勾叉直接画在学生作答旁；' +
+        '下方转写框只对应第 1 题</span>' +
       '</div>' +
-      (r.paper_note ? '<div class="note note--amber"><span class="note__ico">' +
-        I('alert', { size: 18 }) + '</span><div>' + esc(r.paper_note) + '</div></div>' : '') +
+      // 定位不到位置的题，痕迹会画在页边并标上题号。说清楚，教师才知道
+      // 那几个记号为什么不贴着题目——而不是以为系统认错了题。
+      (located < qs.length
+        ? '<p class="hint">其中 ' + (qs.length - located) + ' 道题未能定位到页面位置，' +
+          '批改痕迹将画在页边并标注题号。</p>'
+        : (onAnswer < qs.length
+          ? '<p class="hint">其中 ' + (qs.length - onAnswer) + ' 道题只定位到题目、' +
+            '未定位到作答位置，这几处记号会画在题目右侧而不是答案旁。</p>'
+          : '')) +
       '<div class="paper-list">' + rows + '</div>';
 
     if (btn) {
-      btn.style.display = '';
-      $('#paper-grade-label').textContent = '批改整份（' + cap + ' 道）';
+      btn.style.display = canPage ? '' : 'none';
+      $('#paper-grade-label').textContent = '批改整页（' + qs.length + ' 道）';
     }
     Icons.hydrate(box);
   }
 
-  /* 整份试卷批改：每道题一次独立批改，共享 paper_id。
-     刻意串行而不并发：单 worker 部署下并发只会让每个请求都变慢，而且
-     配额与限流都是按次计的，串行才能在额度用尽时干净地停在某一道题上，
-     前面已批的结果全部有效。 */
+  /* 整页批改：一次调用批完这一页的全部题目，并在学生原图上留痕。
+
+     这里以前是「一道题一次请求」的串行循环，还配了一个「本次最多批 8 道」的
+     上限。改成整页一次调用之后，成本与等待不再随题数线性膨胀，模型也终于
+     能看到同一页上各题之间的关系（第 (2) 问用第 (1) 问的结论、一段短文挂
+     五个小题），于是上限和循环一起去掉了。 */
   function gradePaper() {
-    if (!RECOG || !RECOG.questions || RECOG.questions.length < 2) return;
+    if (!RECOG || !RECOG.page_id) return;
+    var qs = RECOG.questions || [];
+    if (!qs.length) return;
     var btn = $('#paper-grade-btn');
-    if (btn && btn.disabled) return;  // 防双击重入：第一次点击禁用后，第二次在此返回
-
-    var hint = $('#grade-hint');
-    var todo = RECOG.questions.filter(function (q) { return q.gradable !== false; });
-    if (!todo.length) { hint.textContent = '没有可批改的题目'; return; }
-
-    // 禁用按钮，防双击重入；完成或出错时重新启用
+    if (btn && btn.disabled) return;  // 防双击重入
     if (btn) btn.disabled = true;
 
-    // paper_id 只是本会话内的分组键，不参与鉴权，前端生成即可
-    var pid = 'P' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-    var total = todo.length;
-    var engine = RECOG.engine;
-    var folder = ACTIVE_FOLDER || undefined;
-    var name = RECOG.student_name;
+    var hint = $('#grade-hint');
+    hint.innerHTML = '<span class="spin">' + I('loader', { size: 14 }) + '</span> 整页批改中（' +
+      qs.length + ' 道题一次批完）';
 
-    var list = todo.map(function (q) {
-      return { name: '第 ' + q.index + ' 题 · ' + (q.subject || ''),
-               status: 'wait', text: '排队中', q: q };
+    // 教师若在转写框里改过第 1 题，改动要真实生效——这是「教师可控」的落点
+    var edited = $('#ocr-text').value;
+    var payload = qs.map(function (q, i) {
+      // 只有「这页就一道题」时，转写框里的编辑才对得上第 1 题
+      return gradeItem(q, (i === 0 && edited && qs.length === 1) ? edited : undefined);
     });
-    BATCH_MODE = 'paper';
-    BATCH_PAPER_ID = pid;
-    // BATCH_TOKEN++ 作废正在进行的批量照片批次，防两条流程交叉写进度区。
-    // 同时用 myToken 捕获本次批次令牌：photo batch 的 step 闭包捕获的是旧 token，
-    // 之后它发出的 fetch 一旦 resolve，在 renderBatch(photoList) 里检查
-    // `if (token !== BATCH_TOKEN)` 就能提前返回（见 processBatch 里的守卫）。
-    var myToken = ++BATCH_TOKEN;
 
-    $('#batch-sheet').style.display = '';
-    $('#batch-list').innerHTML = '';
-    $('#batch-done').style.display = 'none';
-    renderBatch(list);
-    $('#batch-sheet').scrollIntoView({
-      behavior: M.reduced ? 'auto' : 'smooth', block: 'start' });
-    hint.textContent = '整份批改中，请勿离开本页';
-
-    function done() {
+    api('/api/grade-page', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        page_id: RECOG.page_id,
+        questions: payload,
+        subject: RECOG.subject || undefined,
+        clarity: RECOG.clarity,
+        bank_id: ACTIVE_BANK || undefined,
+        student_name: RECOG.student_name || undefined,
+        engine: RECOG.engine,
+        folder_id: ACTIVE_FOLDER || undefined
+      })
+    }).then(function (res) {
+      BATCH_LIST = null;
+      CURRENT = res;
       hint.textContent = '';
       if (btn) btn.disabled = false;
+      renderResult();
+      switchTab('result');
+      window.scrollTo({ top: 0, behavior: M.reduced ? 'auto' : 'smooth' });
+      var meta = activeFolderMeta();
+      autoPushFeishu((meta ? meta.name + ' · ' : '') +
+        (res.student_name || '上传作业') + ' 整页批改完成');
+      loadFolders();
       loadTeacher();
-    }
-
-    function step(i) {
-      // token 守卫：若用户此后又触发了新批次（照片批改），本轮 paper 已失效。
-      // 停止递归但不改 list 里的状态——那边的进度区已被新批次重绘，改了也没人看。
-      if (myToken !== BATCH_TOKEN) {
-        if (btn) btn.disabled = false;
-        return;
-      }
-      if (i >= list.length) {
-        // 完成提示由 renderBatchDone 统一出（它已在最后一条上被 renderBatch 调用），
-        // 这里不再另写一份，免得两处文案各说一套
-        done();
-        return;
-      }
-      var it = list[i];
-      var q = it.q;
-      it.status = 'working';    // 'working' 与 renderBatch 的 .is-busy 检查一致
-      it.text = '批改中';
-      renderBatch(list);
-
-      var body = { ocr_text: q.answer || '', ocr_clarity: RECOG.clarity,
-                   engine: engine, folder_id: folder,
-                   stem: q.stem, subject: q.subject || undefined,
-                   printed_max_score: q.printed_max_score || undefined,
-                   paper_id: pid, paper_index: q.index, paper_total: total };
-      if (name) body.student_name = name;
-      // 作答为空的题也要送批：空白卷同样是判分对象，跳过等于悄悄漏批
-      if (!body.ocr_text) body.ocr_text = '（未作答）';
-
-      api('/api/grade-image', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      }).then(function (res) {
-        if (myToken !== BATCH_TOKEN) { if (btn) btn.disabled = false; return; }
-        it.status = 'ok';
-        it.result = res;
-        it.text = res.total_score + ' / ' + res.max_score + ' 分 · 置信度 ' +
-          Math.round(res.confidence) + ' · ' + (STATUS_TEXT[res.status] || res.status);
-        CURRENT = res;
-        renderBatch(list);
-        step(i + 1);
-      }).catch(function (e) {
-        if (myToken !== BATCH_TOKEN) { if (btn) btn.disabled = false; return; }
-        it.status = 'fail';
-        // 失败原因要留在那道题上：整份批改里一句笼统的"失败"没法定位是哪道题
-        it.text = '失败：' + e.message;
-        renderBatch(list);
-        // 额度耗尽（429）或超时（504）时停止：后续每道题都会同样失败，
-        // 继续发只是在浪费配额。已批完的结果全部有效，不会因停止而撤销。
-        var msg = e.message || '';
-        if (msg.indexOf('429') >= 0 || msg.indexOf('额度') >= 0 ||
-            msg.indexOf('504') >= 0 || msg.indexOf('超时') >= 0) {
-          for (var j = i + 1; j < list.length; j++) {
-            list[j].status = 'fail';
-            list[j].text = '跳过（前一题 ' +
-              (msg.indexOf('429') >= 0 || msg.indexOf('额度') >= 0 ? '额度耗尽' : '超时') + '）';
-          }
-          renderBatch(list);
-          done();
-          return;
-        }
-        step(i + 1);
-      });
-    }
-    step(0);
-  }
-
-  /* 识别失败后的兜底入口：改用内置样例。
-     内置样例只挂在 Demo 夹下，所以先切到 Demo 夹再展开夹内清单——
-     体验者此刻可能正停在某个自建夹上，直接开当前夹会开出一个空列表。 */
-  function useSampleInstead() {
-    $('#recog-sheet').style.display = 'none';
-    if (ACTIVE_FOLDER === 'demo') { openFolderDetail(); return; }
-    api('/api/folders/active', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ folder_id: 'demo' })
-    }).then(function (d) {
-      ACTIVE_FOLDER = d.active_folder_id || 'demo';
-      FOLDERS.forEach(function (f) { f.is_active = (f.folder_id === ACTIVE_FOLDER); });
-      renderFolders();
-      openFolderDetail();
-    }).catch(function () {
-      // 切夹失败也要给出路：至少把夹区滚到眼前，让人自己点 Demo 夹
-      $('#folder-grid').scrollIntoView({
-        behavior: M.reduced ? 'auto' : 'smooth', block: 'center' });
+    }).catch(function (e) {
+      hint.textContent = '整页批改失败：' + e.message;
+      if (btn) btn.disabled = false;
     });
   }
 
@@ -1416,7 +1999,7 @@
     hint.innerHTML = '<span class="spin">' + I('loader', { size: 14 }) + '</span> 批改中';
     var body;
     if (RECOG.engine === 'vlm') {
-      // VLM 模式下一律按「当前转写文本」批改，哪怕命中了内置样例——
+      // 一律按「当前转写文本」批改，而不是识别时的原始输出——
       // 否则教师对转写的修正就成了摆设（教师可控原则）
       body = {
         ocr_text: $('#ocr-text').value,
@@ -1438,9 +2021,6 @@
         return;
       }
       if (RECOG.student_name) body.student_name = RECOG.student_name;
-    } else if (RECOG.matched_submission_id) {
-      body = { matched_submission_id: RECOG.matched_submission_id, engine: RECOG.engine,
-               folder_id: ACTIVE_FOLDER || undefined };
     } else {
       hint.textContent = '未能判定题目，无法批改';
       return;
@@ -1455,7 +2035,7 @@
       renderResult();
       switchTab('result');
       window.scrollTo({ top: 0, behavior: M.reduced ? 'auto' : 'smooth' });
-      // 上传件批改完成后自动飞书提醒；样例命中不刷群
+      // 上传件批改完成后自动飞书提醒
       if (res && res.source === 'upload') {
         var meta = activeFolderMeta();
         autoPushFeishu((meta ? meta.name + ' · ' : '') +
@@ -1477,9 +2057,128 @@
     return ['partial', 'is-warn', '部分得分'];
   }
 
+  /* 整页总分的口径说明。满分 = 各题分值之和，而分值有三个来源：
+     题库（教师传的答案页）、卷面印的数字、系统按题型推定的。
+     推定占了多少必须写出来——不写，老师会把这个总分当卷面分抄进成绩册。 */
+  function pageBasisNote(r) {
+    var total = r.question_count || (r.questions || []).length;
+    var printed = r.printed_score_count || 0;
+    if (r.bank_name) {
+      var m = r.matched_count || 0;
+      return '按题库《' + esc(r.bank_name) + '》逐题比对，' + m + ' / ' + total +
+        ' 题对上题库分值' +
+        (m < total ? '；其余 ' + (total - m) + ' 题题库中无对应题，分值按题型推定，教师可复核'
+                   : '');
+    }
+    return '无题库：' + (printed ? printed + ' 题用卷面印的分值，' : '') +
+      (total - printed) + ' 题分值按题型推定。' +
+      '<b>先传教师答案页可按标准答案逐题比对</b>，「答案匹配度」一维也才计分。';
+  }
+
+  /* 带批改痕迹的学生原图。整页批改才有。
+     这块放在结果页最前面：老师看一份作业的第一反应是「卷子上批成什么样」，
+     而不是先读五个置信度因子。 */
+  function pageMarkHtml(r) {
+    if (!r.marked_url) return '';
+    var acc = r.mark_stats || {};
+    return '<div class="sheet">' +
+      '<div class="toolbar">' +
+        '<h3>批改痕迹（学生原件）</h3>' +
+        '<span class="spacer"></span>' +
+        '<a class="btn btn--ghost btn--sm" href="' + esc(r.marked_url) + '" download>' +
+          '<span data-icon="arrowDown" data-icon-size="14"></span><span>下载批改件</span></a>' +
+      '</div>' +
+      '<div class="marked">' +
+        '<img class="marked__img" src="' + esc(r.marked_url) + '" ' +
+          'alt="批改后的学生作业，勾叉画在每题的学生作答旁">' +
+        // 坐标准不准要如实报，别让老师以为记号一定贴着答案
+        (acc.located != null
+          ? '<div class="marked__note"><b>' + acc.located + ' / ' + acc.total +
+            '</b> 道题的记号按识别到的位置落笔' +
+            (acc.on_answer != null && acc.on_answer < acc.located
+              ? '（其中 ' + acc.on_answer + ' 道贴着学生作答，' +
+                (acc.located - acc.on_answer) + ' 道只定位到题目、画在题目右侧）'
+              : '') +
+            (acc.total > acc.located
+              ? '，其余 ' + (acc.total - acc.located) + ' 道未定位到坐标，记号画在页边并标注题号'
+              : '') + '。批改件与原件分开保存，学生原图不会被改写。</div>'
+          : '') +
+      '</div>' +
+      (r.mark_error
+        ? '<div class="note note--amber"><span class="note__ico">' +
+          I('alert', { size: 18 }) + '</span><div>' + esc(r.mark_error) + '</div></div>'
+        : '') +
+      '</div>';
+  }
+
+  /* 整页批改的逐题总览表。步骤链在下面另有一块，这里只回答
+     「哪几道题扣了分」——一页十几道题时，那才是老师第一眼要找的。 */
+  function pageQuestionsHtml(r) {
+    var qs = r.questions || [];
+    if (!qs.length) return '';
+    return '<div class="sheet">' +
+      '<div class="toolbar">' +
+        '<h3>逐题得分（共 ' + qs.length + ' 道）</h3>' +
+        '<span class="spacer"></span>' +
+        '<span class="hint-inline">' + (r.bank_name
+          ? '按题库《' + esc(r.bank_name) + '》的标准答案逐题比对'
+          : '无题库，由大模型自行判分') + '</span>' +
+      '</div>' +
+      '<div class="pq-list">' + qs.map(function (q) {
+        var st = stepState(q.score, q.max_score);
+        return '<div class="pq ' + st[1] + '">' +
+          '<span class="pq__no">' + esc(q.no || q.index) + '</span>' +
+          '<span class="pq__mark">' + I(st[0], { size: 16 }) + '</span>' +
+          '<span class="pq__body">' +
+            '<span class="pq__stem">' + esc((q.stem || '').slice(0, 70)) + '</span>' +
+            '<span class="pq__ans">作答：' +
+              esc((q.student_answer || '（未作答）').slice(0, 70)) + '</span>' +
+            (q.error_tag ? '<span class="pq__tags"><span class="tag tag--sm">' +
+              esc(q.error_tag) + '</span></span>' : '') +
+            // 没对上题库的题要说出来：它的分是模型自定口径给的，
+            // 也没有计入答案匹配度，教师有权知道这条差别。
+            (r.bank_name && !q.matched
+              ? '<span class="pq__tags"><span class="tag tag--sm tag--quiet">' +
+                '题库中无此题</span></span>' : '') +
+            // 教师页把小问拆成了多条、学生页是一整块时，这道题的满分是
+            // 几条小问加出来的。不写出来，教师看到「8 分」无从对账。
+            (q.absorbed && q.absorbed.length
+              ? '<span class="pq__tags"><span class="tag tag--sm tag--quiet">' +
+                '含题库 ' + q.absorbed.map(function (a) {
+                  return esc(a.no || a.qid);
+                }).join('、') + '</span></span>' : '') +
+          '</span>' +
+          '<span class="pq__score">' + q.score + '<span class="pq__max">/' +
+            q.max_score + '</span></span>' +
+        '</div>';
+      }).join('') + '</div></div>';
+  }
+
   // 步骤状态 → 分流章的色位。语义不同（这是「这一步对不对」，不是「这份要不要人审」），
   // 但三色阶一致，复用同一套 stamp 类。
   var STEP_STAMP = { 'is-ok': 'g', 'is-warn': 'y', 'is-bad': 'r' };
+
+  /* 待复核题清单：识别层自己报出「这道没读准」的题，点名摆在教师备注上方。
+
+     为什么要单独占一块而不是只写进备注文字：这是唯一会让一份**分数好看**的
+     作业停下来的信号——置信度是整页一个数，一道题读不准会被其它因子稀释，
+     教师扫一眼分数就过了。注意它只覆盖「系统知道自己没把握」的题；模型自信
+     读错的题这里不会出现（见 pagegrader._review_flags 顶部实测记录），那类
+     只能靠教师看转写发现。 */
+  function reviewBlock(r) {
+    var flags = r.review_flags || [];
+    if (!flags.length) return '';
+    return '<h3 class="block-title">待人工复核</h3>' +
+      '<div class="muted" style="margin-bottom:8px">' +
+        '以下题目系统未能可靠读取，判分仅供参考，请对照原图确认：</div>' +
+      '<div class="factor-wrap">' +
+        flags.map(function (f) {
+          return '<span class="stamp stamp--y">第 ' + esc(String(f.no || f.index)) +
+                 ' 题 · ' + esc(f.reason) + '</span>';
+        }).join('') +
+      '</div>';
+  }
+
 
   function renderResult() {
     var r = CURRENT;
@@ -1522,9 +2221,11 @@
     var sk = STATUS_STAMP[r.status] || 'y';
     // score_basis === 'system'：题库外作业，分数是五维度体系判别分而非试卷实际分值
     var sysBasis = (r.score_basis === 'system');
+    var isPage = (r.grade_scope === 'page');
 
     $('#result-body').innerHTML =
       mine +
+      pageMarkHtml(r) +
       '<div class="sheet">' +
         '<div class="toolbar">' +
           '<div>' +
@@ -1538,7 +2239,9 @@
 
         '<div class="score-row">' +
           '<div class="score-card">' +
-            '<div class="lab">' + (sysBasis ? '体系判别分 Discriminant' : '总分 Score') + '</div>' +
+            '<div class="lab">' +
+              (sysBasis ? '体系判别分 Discriminant'
+                : isPage ? '整页总分 Page Score' : '总分 Score') + '</div>' +
             '<div class="val"><span id="ro-score">0</span><small> / ' + r.max_score + '</small></div>' +
             // 题库外作业：15 分是本体系的判别口径，不是试卷上那道题的分值。
             // 不写清楚，老师会直接把它当成实际得分抄进成绩册。
@@ -1547,6 +2250,9 @@
                 (r.printed_max_score
                   ? '；卷面标注 <b>' + r.printed_max_score + '</b> 分，可按比例折算'
                   : '') + '</div>'
+              // 整页满分 = 各题分值之和。有几道的分值是系统按题型推的，必须说出来，
+              // 否则老师会把这个总分当成卷面分抄进成绩册。
+              : isPage ? '<div class="score-card__note">' + pageBasisNote(r) + '</div>'
               : '') +
           '</div>' +
           '<div class="score-card">' +
@@ -1577,6 +2283,7 @@
         crossNote +
       '</div>' +
 
+      (isPage ? '' :
       '<div class="sheet">' +
         '<div class="toolbar"><h3>题目与作答</h3></div>' +
         '<div class="kv">' +
@@ -1594,11 +2301,13 @@
               esc(r.standard_answer) + '</div>') +
           '<div class="kv__k">学生作答</div><div class="kv__v pre">' + esc(r.ocr_text) + '</div>' +
         '</div>' +
-      '</div>' +
+      '</div>') +
+
+      (isPage ? pageQuestionsHtml(r) : '') +
 
       '<div class="sheet">' +
         '<div class="toolbar">' +
-          '<h3>逐批改节点与证据链</h3>' +
+          '<h3>' + (isPage ? '逐题判分与证据链' : '逐批改节点与证据链') + '</h3>' +
           '<span class="spacer"></span>' +
           '<span class="hint-inline" style="max-width:300px;text-align:right;">' +
             '每一步判分都引用学生作答原文作为依据，老师是在「审」而不是在「信」。</span>' +
@@ -1611,6 +2320,7 @@
       '<div class="sheet">' +
         '<div class="toolbar"><h3>个性化评语</h3></div>' +
         '<p class="quote">' + esc(r.student_feedback) + '</p>' +
+        reviewBlock(r) +
         '<h3 class="block-title">教师备注</h3><div class="muted">' + esc(r.teacher_note) + '</div>' +
       '</div>';
 
@@ -1726,13 +2436,18 @@
           (r.printed_max_score ? '；卷面标注 ' + r.printed_max_score + ' 分' : '') +
           '">判别</span>'
         : '';
-      // 同一张卷子拆出的多行要能看出同源，否则「张三」在表里出现 8 次
-      // 像是交了 8 份作业
-      var paperMark = (r.paper_id && r.paper_total > 1)
-        ? '<span class="paper-mark" title="整份试卷第 ' + r.paper_index + ' 题（共 ' +
-          r.paper_total + ' 题）·同卷编号 ' + esc(r.paper_id) + '">卷 ' +
-          r.paper_index + '/' + r.paper_total + '</span>'
-        : '';
+      // 同一份作业拆出的多行要能看出同源，否则「张三」在表里出现 8 次
+      // 像是交了 8 份作业。两种来源：单题批改按 paper_id 聚，整页批改按页码。
+      var paperMark = '';
+      if (r.paper_id && r.paper_total > 1) {
+        paperMark = '<span class="paper-mark" title="同一份作业第 ' + r.paper_index +
+          ' 题（共 ' + r.paper_total + ' 题）·分组编号 ' + esc(r.paper_id) + '">题 ' +
+          r.paper_index + '/' + r.paper_total + '</span>';
+      } else if (r.page_total > 1) {
+        paperMark = '<span class="paper-mark" title="多页作业的第 ' + r.page_no +
+          ' 页（共 ' + r.page_total + ' 页）">页 ' + r.page_no + '/' + r.page_total +
+          '</span>';
+      }
       return '<tr>' +
         '<td><b>' + esc(r.student_name) + '</b>' + mine + '</td>' +
         '<td>' + esc(r.subject) + ' · ' + esc(r.question_title) + paperMark + '</td>' +
@@ -2426,6 +3141,8 @@
     $('#back-home').addEventListener('click', backHome);
     $('#reset-btn').addEventListener('click', resetDemo);
     $('#file-input').addEventListener('change', onFileChosen);
+    var tIn = $('#teacher-file-input');
+    if (tIn) tIn.addEventListener('change', onTeacherFiles);
     $('#grade-btn').addEventListener('click', submitImageGrade);
     $('#paper-grade-btn').addEventListener('click', gradePaper);
 
@@ -2451,23 +3168,37 @@
       if (b) switchTab(b.dataset.tab);
     });
 
-    // 拖拽上传：桌面端把照片直接拖进来
+    // 拖拽上传：桌面端把作业直接拖进来
     var dz = $('#dropzone');
-    ['dragenter', 'dragover'].forEach(function (ev) {
-      dz.addEventListener(ev, function (e) {
-        e.preventDefault(); dz.classList.add('is-over');
+    var tdz = $('#teacher-dropzone');
+    [[dz, stageFiles], [tdz, buildBank]].forEach(function (pair) {
+      var zone = pair[0], handler = pair[1];
+      if (!zone) return;
+      ['dragenter', 'dragover'].forEach(function (ev) {
+        zone.addEventListener(ev, function (e) {
+          e.preventDefault(); zone.classList.add('is-over');
+        });
+      });
+      ['dragleave', 'drop'].forEach(function (ev) {
+        zone.addEventListener(ev, function (e) {
+          e.preventDefault(); zone.classList.remove('is-over');
+        });
+      });
+      zone.addEventListener('drop', function (e) {
+        var fs = e.dataTransfer && e.dataTransfer.files;
+        if (!fs || !fs.length) return;
+        handler(Array.prototype.slice.call(fs));
       });
     });
-    ['dragleave', 'drop'].forEach(function (ev) {
-      dz.addEventListener(ev, function (e) {
-        e.preventDefault(); dz.classList.remove('is-over');
-      });
-    });
-    dz.addEventListener('drop', function (e) {
-      var fs = e.dataTransfer && e.dataTransfer.files;
-      if (!fs || !fs.length) return;
-      var files = Array.prototype.slice.call(fs);
-      stageFiles(files);   // 拖入也进暂存区，不自动识别
+
+    // 题库夹的合并勾选：走 change 而不是 click——点 label 文字也会切换选中，
+    // 那时 click 的 target 是 label，closest('[data-bank-pick]') 找不到。
+    document.addEventListener('change', function (e) {
+      var cb = e.target;
+      if (!cb || !cb.dataset || !cb.dataset.bankPick) return;
+      if (cb.checked) BANK_PICKS[cb.dataset.bankPick] = 1;
+      else delete BANK_PICKS[cb.dataset.bankPick];
+      syncBankPickBar();
     });
 
     // 全局委托：动态生成的按钮都在这里接
@@ -2478,17 +3209,26 @@
         selectFolder(fcard.dataset.folder);
         return;
       }
-      // 样例入口现在只有一处：夹内清单里的「批改」按钮
-      var pick = t.closest && t.closest('[data-sample]');
-      if (pick && pick.dataset.url) {
-        selectSample(pick.dataset.sample, pick.dataset.url);
+      // 内置样例入口：学生页进待批清单，教师答案页建题库
+      var stage = t.closest && t.closest('[data-demo-stage]');
+      if (stage) { stageDemoItems([stage.dataset.demoStage]); return; }
+      var bank = t.closest && t.closest('[data-demo-bank]');
+      if (bank) { bankFromDemoItems([bank.dataset.demoBank]); return; }
+      if (t.closest && t.closest('#bank-merge-btn')) {
+        bankFromDemoItems(Object.keys(BANK_PICKS));
+        return;
+      }
+      if (t.closest && t.closest('#bank-pick-clear')) {
+        BANK_PICKS = {};
+        $$('[data-bank-pick]').forEach(function (cb) { cb.checked = false; });
+        syncBankPickBar();
         return;
       }
 
       var goto = t.closest && t.closest('[data-goto]');
       if (goto) { switchTab(goto.dataset.goto); return; }
 
-      if (t.closest && t.closest('#use-sample')) { useSampleInstead(); return; }
+
       if (t.closest && t.closest('#intro-close')) {
         localStorage.setItem('zhipi_intro_hidden', '1');
         $('#intro-slot').innerHTML = '';
@@ -2572,19 +3312,23 @@
       }
       renderIntro();
       renderChain();
+      // 「全部增强批改」按钮的显隐取自这份配置。config 是异步回来的，
+      // 万一用户在它到达前就选好了文件，暂存区已经渲染过一轮、按钮不会自己出现。
+      renderStaging();
       Icons.hydrate();
     }).catch(function () { /* 配置拿不到不阻断主流程 */ });
 
     loadFolders();
+    loadBanks();
 
-    api('/api/sample-images').then(function (data) {
+    api('/api/demo-pages').then(function (data) {
       renderGallery(data);
       Icons.hydrate();
     }).catch(function (e) {
-      // 样例清单拿不到时，把话说在识别引擎那一行——#gallery 容器已经撤掉，
+      // 内置样例清单拿不到时，把话说在识别引擎那一行——#gallery 容器已经撤掉，
       // 往它上面写会直接抛 null。夹内清单自己会显示各自的加载失败。
       var hint = $('#engine-hint');
-      if (hint) hint.innerHTML = '样例清单加载失败：' + esc(e.message);
+      if (hint) hint.innerHTML = '内置样例清单加载失败：' + esc(e.message);
     });
 
     // 首屏三色统计取真实分流数据，不写死数字
